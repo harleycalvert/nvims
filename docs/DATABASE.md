@@ -2,7 +2,7 @@
 
 PostgreSQL schema for a national, potentially AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.11`: its entities, relationships, business rules, and the
+describes the design of `v0.12`: its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -24,6 +24,7 @@ mapping to the AVETMISS NAT reporting files.
   - [6. Holidays](#6-holidays)
   - [7. Communications](#7-communications)
   - [8. Completions, compliance & audit](#8-completions-compliance--audit)
+  - [9. Workplan](#9-workplan)
 - [Table reference](#table-reference)
 - [Data dictionary](#data-dictionary)
 - [AVETMISS NAT file mapping](#avetmiss-nat-file-mapping)
@@ -49,6 +50,8 @@ The schema covers the full SMS lifecycle:
 - **Public holidays** — recurrence rules expanded into concrete observances.
 - **Communications** — email/SMS campaigns and per-recipient delivery logs.
 - **Compliance** — AVETMISS NAT export sources, program completions, and an audit trail.
+- **Workplan** — annual teacher workplan per VTSA 2024 clause 32.4: Teaching Delivery,
+  CAPPS, and Education-Related Duties allocations with an approval workflow.
 
 ---
 
@@ -77,6 +80,7 @@ graph TD
     H[Holidays<br/>rules · observances]
     M[Communications<br/>templates · campaigns · deliveries]
     A[Compliance & Audit<br/>completions · avetmiss_submissions · audit_log]
+    W[Workplan<br/>workplans · workplan_approvals · workplan_entries]
 
     P --> E
     C --> E
@@ -89,6 +93,8 @@ graph TD
     E --> A
     P --> A
     I --> A
+    P --> W
+    T --> W
 ```
 
 ---
@@ -331,6 +337,49 @@ erDiagram
     STUDENTS ||--o{ STUDENT_PROGRESS_REPORTS : "documents"
 ```
 
+### 9. Workplan
+
+```mermaid
+erDiagram
+    TEACHERS ||--o{ WORKPLANS : "has annual workplan"
+    APP_USERS ||--o{ WORKPLANS : "submitted by"
+    WORKPLANS ||--o{ WORKPLAN_APPROVALS : "approval steps"
+    APP_USERS ||--o{ WORKPLAN_APPROVALS : "approver"
+    WORKPLANS ||--o{ WORKPLAN_ENTRIES : "line items"
+    SUBJECTS ||--o{ WORKPLAN_ENTRIES : "unit context (nullable)"
+    PROGRAMS ||--o{ WORKPLAN_ENTRIES : "course context (nullable)"
+    ACADEMIC_PERIODS ||--o{ WORKPLAN_ENTRIES : "semester (nullable)"
+    CLASS_SESSIONS ||--o{ WORKPLAN_ENTRIES : "CELCAT link (nullable)"
+
+    WORKPLANS {
+        bigserial id PK
+        bigint teacher_id FK
+        smallint calendar_year
+        smallint version
+        varchar status "Draft | Submitted | Approved"
+        numeric time_fraction "FTE"
+        numeric capps_ratio "0.750 = 45 min per teaching hour"
+        numeric accountable_hours_required
+        numeric agreed_overtime_hours
+    }
+    WORKPLAN_ENTRIES {
+        bigserial id PK
+        bigint workplan_id FK
+        varchar entry_type "Teaching Delivery | CAPPS | Education Related Duties"
+        varchar activity_name
+        numeric total_hours
+        date activity_start_date "nullable — CELCAT session date"
+        bigint class_session_id FK "nullable"
+    }
+    WORKPLAN_APPROVALS {
+        bigserial id PK
+        bigint workplan_id FK
+        bigint approver_id FK
+        varchar approval_role "Teacher | LineManager"
+        timestamptz approved_at
+    }
+```
+
 ---
 
 ## Table reference
@@ -426,12 +475,15 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | `student_notes` | Timestamped, authored notes per student (multiple per student). | → `students`, `app_users` |
 | `avetmiss_submissions` | Record of each NAT submission to the STA/NCVER. | → `training_orgs`, `app_users` |
 | `audit_log` | Append-only change trail (old/new `jsonb`, actor, action). | → `app_users` |
+| `workplans` | Annual VTSA 2024 cl. 32.4 workplan per teacher per year. | → `teachers`, `app_users` |
+| `workplan_approvals` | Teacher/LineManager approval steps for a workplan. | → `workplans`, `app_users` |
+| `workplan_entries` | Teaching Delivery / CAPPS / ERD line items on a workplan. | → `workplans`, `subjects`, `programs`, `academic_periods`, `class_sessions` |
 
 ---
 
 ## Data dictionary
 
-Every table and column, generated from `v0.11`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
+Every table and column, generated from `v0.12`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
 
 ### Identity & reference
 
@@ -1643,6 +1695,85 @@ Every table and column, generated from `v0.11`. **Null** = whether the column ac
 - `CONSTRAINT fk_audit_actor FOREIGN KEY (actor_id) REFERENCES public.app_users(id) ON DELETE SET NULL`
 - `CONSTRAINT chk_audit_action CHECK (action IN ('INSERT', 'UPDATE', 'DELETE'))`
 
+#### `workplans`
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `teacher_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teachers |
+| `calendar_year` | `smallint` | no |  |  |
+| `version` | `smallint` | no | `1` |  |
+| `status` | `varchar(20)` | no | `'Draft'` |  |
+| `time_fraction` | `numeric(4,3)` | no | `1.000` |  |
+| `capps_ratio` | `numeric(4,3)` | no | `0.750` |  |
+| `accountable_hours_required` | `numeric(7,2)` | no |  |  |
+| `agreed_overtime_hours` | `numeric(6,2)` | no | `0.00` |  |
+| `submitted_by` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;app_users |
+| `submitted_at` | `timestamp with time zone` | yes |  |  |
+| `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+| `updated_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT uq_workplan UNIQUE (teacher_id, calendar_year, version)`
+- `CONSTRAINT fk_workplan_teacher FOREIGN KEY (teacher_id) REFERENCES public.teachers(id) ON DELETE RESTRICT`
+- `CONSTRAINT fk_workplan_submitted_by FOREIGN KEY (submitted_by) REFERENCES public.app_users(id) ON DELETE SET NULL`
+- `CONSTRAINT chk_workplan_status CHECK (status IN ('Draft', 'Submitted', 'Approved'))`
+- `CONSTRAINT chk_workplan_fraction CHECK (time_fraction > 0 AND time_fraction <= 1)`
+- `CONSTRAINT chk_workplan_capps_ratio CHECK (capps_ratio > 0 AND capps_ratio <= 1)`
+- `CONSTRAINT chk_workplan_req_hours CHECK (accountable_hours_required > 0)`
+- `CONSTRAINT chk_workplan_overtime CHECK (agreed_overtime_hours >= 0)`
+
+#### `workplan_approvals`
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `workplan_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;workplans |
+| `approver_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;app_users |
+| `approval_role` | `varchar(30)` | no |  |  |
+| `approved_at` | `timestamp with time zone` | no | `CURRENT_TIMESTAMP` |  |
+| `notes` | `text` | yes |  |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT uq_workplan_approval UNIQUE (workplan_id, approval_role)`
+- `CONSTRAINT fk_wa_workplan FOREIGN KEY (workplan_id) REFERENCES public.workplans(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_wa_approver FOREIGN KEY (approver_id) REFERENCES public.app_users(id) ON DELETE RESTRICT`
+- `CONSTRAINT chk_wa_role CHECK (approval_role IN ('Teacher', 'LineManager'))`
+
+#### `workplan_entries`
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `workplan_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;workplans |
+| `entry_type` | `varchar(30)` | no |  |  |
+| `activity_name` | `varchar(100)` | no |  |  |
+| `subject_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;subjects |
+| `program_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;programs |
+| `academic_period_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;academic_periods |
+| `activity_start_date` | `date` | yes |  |  |
+| `activity_end_date` | `date` | yes |  |  |
+| `total_hours` | `numeric(6,2)` | no |  |  |
+| `comments` | `text` | yes |  |  |
+| `class_session_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;class_sessions |
+| `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_we_workplan FOREIGN KEY (workplan_id) REFERENCES public.workplans(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_we_subject FOREIGN KEY (subject_id) REFERENCES public.subjects(id) ON DELETE SET NULL`
+- `CONSTRAINT fk_we_program FOREIGN KEY (program_id) REFERENCES public.programs(id) ON DELETE SET NULL`
+- `CONSTRAINT fk_we_period FOREIGN KEY (academic_period_id) REFERENCES public.academic_periods(id) ON DELETE SET NULL`
+- `CONSTRAINT fk_we_session FOREIGN KEY (class_session_id) REFERENCES public.class_sessions(id) ON DELETE SET NULL`
+- `CONSTRAINT chk_we_type CHECK (entry_type IN ('Teaching Delivery', 'CAPPS', 'Education Related Duties'))`
+- `CONSTRAINT chk_we_hours CHECK (total_hours > 0)`
+- `CONSTRAINT chk_we_dates CHECK (activity_end_date IS NULL OR activity_end_date >= activity_start_date)`
+
 ---
 
 ## AVETMISS NAT file mapping
@@ -1701,6 +1832,39 @@ Teaching hour limits are enforced from **actual sessions**, not the weekly templ
   `teacher_period_allocations` row on first use (UPSERT) and enforces the per-period cap.
 - `fn_recompute_teacher_period_balance(teacher, period)` rebuilds a per-period balance
   from scratch (no-op if `max_hours_per_period` is NULL).
+
+### Workplan (VTSA 2024 clause 32.4)
+
+Each teacher produces one workplan per calendar year (versioned; `uq_workplan` enforces uniqueness on `teacher_id, calendar_year, version`). The workplan records three activity categories as line items in `workplan_entries`:
+
+| `entry_type` | Source | Cap |
+|---|---|---|
+| `Teaching Delivery` | CELCAT sessions (`class_session_id`) or manual | 800 h/year max (standard VET) |
+| `CAPPS` | Derived from teaching hours | min `capps_ratio × actual_teaching_hours` |
+| `Education Related Duties` | Manual or imported | No fixed cap |
+
+**Key fields on `workplans`:**
+
+- `time_fraction` — teacher FTE for this year (e.g. `0.800` for 80% part-time). Determines `accountable_hours_required`.
+- `accountable_hours_required` — total contracted hours (e.g. 1740.40 for 1.0 FTE). Stored explicitly from employment conditions, not derived.
+- `capps_ratio` — default `0.750` (45 minutes CAPPS per teaching hour, VTSA 2024 standard). Overridable per workplan.
+- `agreed_overtime_hours` — approved overtime above the standard teaching cap.
+
+**CAPPS minimum calculation:**
+
+```
+min_capps_required = actual_teaching_hours × capps_ratio
+```
+
+`actual_teaching_hours` is read from `teacher_yearly_balances.booked_hours` (session-derived, the authoritative hours source). `vw_workplan_summary` computes this alongside planned totals.
+
+**Approval workflow:**
+
+`status` progresses `Draft → Submitted → Approved`. Each step is recorded in `workplan_approvals` with `approval_role IN ('Teacher', 'LineManager')`. The unique constraint on `(workplan_id, approval_role)` prevents duplicate steps. `workplans.submitted_by` / `submitted_at` record who submitted the workplan to the line manager.
+
+**CELCAT integration:**
+
+`workplan_entries` rows with `entry_type = 'Teaching Delivery'` and a non-null `class_session_id` are CELCAT-sourced. Rows without a session link are manually entered (e.g. aggregated ERD blocks). `activity_start_date` / `activity_end_date` are populated for session-level rows; NULL for aggregated entries.
 
 ### Double-booking prevention
 
@@ -1766,6 +1930,7 @@ exactly one recipient relation is set per row.
 **Views:**
 - `vw_teacher_academic_workloads` — per-teacher booked vs allocated hours, remaining annual capacity, % utilisation, and sector.
 - `vw_teacher_period_workloads` — per-period breakdown for teachers with `max_hours_per_period` set (HE/DUAL); includes `sequence_number` for ordered reporting. VET-only teachers with no period allocation do not appear.
+- `vw_workplan_summary` — per-workplan totals for each entry type (planned_teaching_hours, planned_capps_hours, planned_erd_hours, planned_total_hours), plus actual_teaching_hours from `teacher_yearly_balances` and min_capps_required (= `booked_hours × capps_ratio`).
 
 ---
 
@@ -1788,6 +1953,9 @@ exactly one recipient relation is set per row.
 - **Soft-delete, don't hard-delete.** Set `deleted_at`/`deleted_by`; the enrolment chain is
   `RESTRICT` by design.
 - **`timestamptz` everywhere** for clean `pgx` round-tripping.
+- **Workplan submission.** When a teacher submits their workplan, set `status = 'Submitted'`, `submitted_by = <app_users.id>`, and `submitted_at = NOW()` in a single UPDATE. Insert a `workplan_approvals` row with `approval_role = 'Teacher'` once the teacher self-certifies.
+- **Query workplan vs actuals via the view.** `SELECT * FROM vw_workplan_summary WHERE teacher_id = $1 AND calendar_year = $2` gives planned totals, actual teaching hours, and the minimum CAPPS entitlement in one row. Do not recompute CAPPS in application code.
+- **CELCAT import.** For session-sourced Teaching Delivery entries, populate `class_session_id`, `activity_start_date`, and `activity_end_date` from the CELCAT record. Leave these NULL for manually entered ERD or aggregated blocks.
 
 ---
 
@@ -1809,4 +1977,4 @@ exactly one recipient relation is set per row.
 
 ---
 
-*Generated from `v0.11` (2026-06-08).*
+*Generated from `v0.12` (2026-06-08).*

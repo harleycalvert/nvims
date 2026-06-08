@@ -1,42 +1,24 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.11, 2026-06-08
+-- AVETMISS-compliant SMS schema  --  version 0.12, 2026-06-08
 -- =========================================================================
--- Changes from v10:
---   1.  teacher_sector ENUM ('VET', 'HE', 'DUAL') added. teachers.sector
---       defaults to 'VET' for backwards compatibility with existing records.
---   2.  academic_periods.period_type extended: BLOCK (6-8 week intensive
---       blocks) and ROLLING (monthly rolling intakes for RTOs/private
---       colleges) added alongside existing TERM, SEMESTER, TRIMESTER, YEAR.
---   3.  academic_periods.sequence_number (smallint, nullable) added so
---       periods can be ordered within a year (e.g. Semester 1 = 1, 2 = 2;
---       Trimester 1 = 1, 2 = 2, 3 = 3; Block 4 = 4, etc.).
---   4.  teachers.max_hours_per_period (nullable) added. When set, enables
---       per-period workload tracking via teacher_period_allocations. Intended
---       for HE/DUAL teachers on semester/trimester contracts.
---   5.  teacher_period_allocations table added: per-academic-period hour cap
---       and running total for teachers with max_hours_per_period configured.
---       Auto-created via UPSERT the first time a session is booked.
---   6.  programs.he_flag, programs.credit_points, and programs.aqf_level added
---       to distinguish and characterise HE qualifications alongside VET programs.
---       aqf_level (1–10) is nullable and applies to both VET and HE programs.
---   7.  subjects.credit_points added for HE unit credit point values.
---   8.  he_enrolment_details gains academic_period_id (the semester/trimester
---       this enrolment applies to) and credit_points_enrolled.
---   9.  Hard-coded 800.00 fallback removed from fn_adjust_teacher_balance and
---       fn_recompute_teacher_balance. teachers.default_max_hours_per_year
---       (NOT NULL) is the sole source for the yearly cap; change it per
---       teacher to whatever their contract specifies.
---  10.  fn_adjust_teacher_period_balance() added: single-point-of-control for
---       per-period hour adjustments, enforcing the per-period cap.
---  11.  fn_recompute_teacher_period_balance() added: full rebuild of a
---       teacher/period balance from sessions (for backfills/repairs).
---  12.  fn_session_teacher_hours() updated to also drive period allocations
---       for teachers whose max_hours_per_period is set.
---  13.  fn_session_change_hours() updated equivalently.
---  14.  fn_generate_sessions() comment updated (removed "800h" reference).
---  15.  New indexes on teacher_period_allocations and he_enrolment_details.
---  16.  vw_teacher_academic_workloads updated to surface teacher sector.
---  17.  vw_teacher_period_workloads view added for HE per-period reporting.
+-- Changes from v0.11:
+--   1.  workplans table: annual teacher workplan document per VTSA 2024
+--       clause 32.4. Stores FTE (time_fraction), CAPPS ratio, total
+--       accountable hours required, agreed overtime, status workflow
+--       (Draft → Submitted → Approved), and the submitting user.
+--   2.  workplan_approvals table: one row per approval step (Teacher or
+--       LineManager). Records approver, timestamp, and optional notes.
+--   3.  workplan_entries table: individual activity line items across the
+--       three clause 32.4 categories (Teaching Delivery / CAPPS /
+--       Education Related Duties). Optionally links to a subject, program,
+--       academic_period, and/or class_session (for CELCAT-sourced rows).
+--   4.  Indexes on workplans(teacher_id, calendar_year) and
+--       workplan_entries(workplan_id), (workplan_id, entry_type,
+--       academic_period_id), and class_session_id.
+--   5.  trg_touch_workplans wired to fn_set_updated_at().
+--   6.  vw_workplan_summary: planned hours by category, minimum CAPPS
+--       required (ratio × actual teaching), and actual teaching hours
+--       sourced from teacher_yearly_balances.
 -- =========================================================================
 
 BEGIN;
@@ -1106,6 +1088,88 @@ CREATE TABLE IF NOT EXISTS public.audit_log (
 );
 
 -- =========================================================================
+-- 8.5. WORKPLAN (VTSA 2024 CLAUSE 32.4 — ANNUAL TEACHER ALLOCATION)
+-- =========================================================================
+-- Captures each teacher's agreed annual allocation of Teaching Delivery,
+-- CAPPS, and Education-Related Duties hours, split by academic period.
+-- Follows the Victorian TAFE Teaching Staff Agreement 2024 (clause 32.4):
+--   (a) Teaching Delivery — face-to-face, online or other means, including
+--       in-class assessment and supervision; capped at 800 h p.a.
+--   (b) CAPPS — curriculum, assessment (out-of-class), planning, preparation,
+--       student consultation; 45 minutes allocated per teaching hour (0.75).
+--   (c) Education-Related Duties — compliance, industry/community engagement,
+--       PD per Schedule 7, applied research, travel and meetings.
+CREATE TABLE IF NOT EXISTS public.workplans (
+    id bigserial NOT NULL,
+    teacher_id bigint NOT NULL,
+    calendar_year smallint NOT NULL,
+    version smallint NOT NULL DEFAULT 1,
+    status varchar(20) NOT NULL DEFAULT 'Draft',
+    time_fraction numeric(4,3) NOT NULL DEFAULT 1.000,          -- full-year FTE
+    capps_ratio numeric(4,3) NOT NULL DEFAULT 0.750,            -- CAPPS minutes per teaching minute (0.75 = 45 min)
+    accountable_hours_required numeric(7,2) NOT NULL,           -- contractual total derived from employment conditions
+    agreed_overtime_hours numeric(6,2) NOT NULL DEFAULT 0.00,   -- agreed excess teaching duty hours
+    submitted_by bigint NULL,                                    -- app_users.id of the person who submitted for approval
+    submitted_at timestamp with time zone NULL,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT uq_workplan UNIQUE (teacher_id, calendar_year, version),
+    CONSTRAINT fk_workplan_teacher FOREIGN KEY (teacher_id) REFERENCES public.teachers(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_workplan_submitted_by FOREIGN KEY (submitted_by) REFERENCES public.app_users(id) ON DELETE SET NULL,
+    CONSTRAINT chk_workplan_status CHECK (status IN ('Draft', 'Submitted', 'Approved')),
+    CONSTRAINT chk_workplan_fraction CHECK (time_fraction > 0 AND time_fraction <= 1),
+    CONSTRAINT chk_workplan_capps_ratio CHECK (capps_ratio > 0 AND capps_ratio <= 1),
+    CONSTRAINT chk_workplan_req_hours CHECK (accountable_hours_required > 0),
+    CONSTRAINT chk_workplan_overtime CHECK (agreed_overtime_hours >= 0)
+);
+
+-- One row per approval step in the standard VTSA workflow: first the teacher
+-- approves their own workplan, then the line manager confirms.
+CREATE TABLE IF NOT EXISTS public.workplan_approvals (
+    id bigserial NOT NULL,
+    workplan_id bigint NOT NULL,
+    approver_id bigint NOT NULL,
+    approval_role varchar(30) NOT NULL,
+    approved_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    notes text NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uq_workplan_approval UNIQUE (workplan_id, approval_role),
+    CONSTRAINT fk_wa_workplan FOREIGN KEY (workplan_id) REFERENCES public.workplans(id) ON DELETE CASCADE,
+    CONSTRAINT fk_wa_approver FOREIGN KEY (approver_id) REFERENCES public.app_users(id) ON DELETE RESTRICT,
+    CONSTRAINT chk_wa_role CHECK (approval_role IN ('Teacher', 'LineManager'))
+);
+
+-- Individual activity line items that make up a workplan. Covers all three
+-- clause 32.4 categories. CELCAT-sourced Teaching Delivery rows carry an
+-- activity_start_date (the session date) and may link to a class_session.
+-- Aggregated or manually-entered rows leave dates NULL.
+CREATE TABLE IF NOT EXISTS public.workplan_entries (
+    id bigserial NOT NULL,
+    workplan_id bigint NOT NULL,
+    entry_type varchar(30) NOT NULL,           -- 'Teaching Delivery' | 'CAPPS' | 'Education Related Duties'
+    activity_name varchar(100) NOT NULL,        -- e.g. 'Teaching Duties CELCAT', 'Planning', 'Mentoring'
+    subject_id bigint NULL,                     -- unit/subject being taught or assessed (nullable)
+    program_id bigint NULL,                     -- course context (nullable)
+    academic_period_id bigint NULL,             -- semester or period this entry falls in (nullable)
+    activity_start_date date NULL,              -- populated for CELCAT session-level entries
+    activity_end_date date NULL,                -- populated for CELCAT session-level entries
+    total_hours numeric(6,2) NOT NULL,
+    comments text NULL,
+    class_session_id bigint NULL,               -- FK to class_sessions when imported from CELCAT
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_we_workplan FOREIGN KEY (workplan_id) REFERENCES public.workplans(id) ON DELETE CASCADE,
+    CONSTRAINT fk_we_subject FOREIGN KEY (subject_id) REFERENCES public.subjects(id) ON DELETE SET NULL,
+    CONSTRAINT fk_we_program FOREIGN KEY (program_id) REFERENCES public.programs(id) ON DELETE SET NULL,
+    CONSTRAINT fk_we_period FOREIGN KEY (academic_period_id) REFERENCES public.academic_periods(id) ON DELETE SET NULL,
+    CONSTRAINT fk_we_session FOREIGN KEY (class_session_id) REFERENCES public.class_sessions(id) ON DELETE SET NULL,
+    CONSTRAINT chk_we_type CHECK (entry_type IN ('Teaching Delivery', 'CAPPS', 'Education Related Duties')),
+    CONSTRAINT chk_we_hours CHECK (total_hours > 0),
+    CONSTRAINT chk_we_dates CHECK (activity_end_date IS NULL OR activity_end_date >= activity_start_date)
+);
+
+-- =========================================================================
 -- 9. DEFERRED CROSS-FK RELATIONSHIPS
 -- =========================================================================
 ALTER TABLE IF EXISTS public.student_course_enrollments ADD CONSTRAINT fk_se_student   FOREIGN KEY (student_id) REFERENCES public.students (id) ON DELETE RESTRICT;
@@ -1163,6 +1227,11 @@ CREATE INDEX IF NOT EXISTS idx_notes_type            ON public.student_notes(not
 CREATE INDEX IF NOT EXISTS idx_tpa_teacher           ON public.teacher_period_allocations(teacher_id);
 CREATE INDEX IF NOT EXISTS idx_tpa_period            ON public.teacher_period_allocations(academic_period_id);
 CREATE INDEX IF NOT EXISTS idx_he_enrol_period       ON public.he_enrolment_details(academic_period_id) WHERE (academic_period_id IS NOT NULL);
+-- NEW v12: workplan lookup indexes.
+CREATE INDEX IF NOT EXISTS idx_workplans_teacher_year     ON public.workplans(teacher_id, calendar_year);
+CREATE INDEX IF NOT EXISTS idx_we_workplan                ON public.workplan_entries(workplan_id);
+CREATE INDEX IF NOT EXISTS idx_we_type_period             ON public.workplan_entries(workplan_id, entry_type, academic_period_id);
+CREATE INDEX IF NOT EXISTS idx_we_session                 ON public.workplan_entries(class_session_id) WHERE (class_session_id IS NOT NULL);
 
 -- =========================================================================
 -- 11. COMPLIANCE & TEACHING-HOURS ENGINE (sessions are the source of truth)
@@ -1189,6 +1258,7 @@ CREATE OR REPLACE TRIGGER trg_touch_learning_access_plans      BEFORE UPDATE ON 
 CREATE OR REPLACE TRIGGER trg_touch_classes                    BEFORE UPDATE ON public.classes                    FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
 CREATE OR REPLACE TRIGGER trg_touch_student_notes              BEFORE UPDATE ON public.student_notes              FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
 CREATE OR REPLACE TRIGGER trg_touch_message_templates          BEFORE UPDATE ON public.message_templates          FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+CREATE OR REPLACE TRIGGER trg_touch_workplans                  BEFORE UPDATE ON public.workplans                  FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
 -- (teacher_yearly_balances.updated_at is set explicitly by the hours engine, so no trigger here.)
 
 -- Auto-populate class_slots.academic_period_id from its class so the exclusion
@@ -1750,5 +1820,33 @@ SELECT
 FROM public.teacher_period_allocations tpa
 JOIN public.teachers t ON t.id = tpa.teacher_id
 JOIN public.academic_periods ap ON ap.id = tpa.academic_period_id;
+
+-- NEW v12: workplan summary — planned hours by category, minimum CAPPS
+-- required (capps_ratio × actual teaching delivery hours), and actual
+-- teaching hours from teacher_yearly_balances. One row per workplan.
+CREATE OR REPLACE VIEW public.vw_workplan_summary AS
+SELECT
+    w.id AS workplan_id,
+    w.teacher_id,
+    w.calendar_year,
+    w.version,
+    w.status,
+    w.time_fraction,
+    w.capps_ratio,
+    w.accountable_hours_required,
+    w.agreed_overtime_hours,
+    COALESCE(SUM(CASE WHEN e.entry_type = 'Teaching Delivery'       THEN e.total_hours END), 0.00) AS planned_teaching_hours,
+    COALESCE(SUM(CASE WHEN e.entry_type = 'CAPPS'                   THEN e.total_hours END), 0.00) AS planned_capps_hours,
+    COALESCE(SUM(CASE WHEN e.entry_type = 'Education Related Duties' THEN e.total_hours END), 0.00) AS planned_erd_hours,
+    COALESCE(SUM(e.total_hours), 0.00)                                                              AS planned_total_hours,
+    COALESCE(tyb.booked_hours, 0.00)                                                                AS actual_teaching_hours,
+    ROUND(COALESCE(tyb.booked_hours, 0.00) * w.capps_ratio, 2)                                     AS min_capps_required
+FROM public.workplans w
+LEFT JOIN public.workplan_entries e ON e.workplan_id = w.id
+LEFT JOIN public.teacher_yearly_balances tyb
+       ON tyb.teacher_id = w.teacher_id AND tyb.calendar_year = w.calendar_year
+GROUP BY w.id, w.teacher_id, w.calendar_year, w.version, w.status,
+         w.time_fraction, w.capps_ratio, w.accountable_hours_required,
+         w.agreed_overtime_hours, tyb.booked_hours;
 
 COMMIT;
