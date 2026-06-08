@@ -2,7 +2,7 @@
 
 PostgreSQL schema for a national, potentially AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.14`: its entities, relationships, business rules, and the
+describes the design of `v0.16`: its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -558,7 +558,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 
 ## Data dictionary
 
-Every table and column, generated from `v0.14`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
+Every table and column, generated from `v0.16`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
 
 ### Identity & reference
 
@@ -2147,6 +2147,7 @@ Timesheets bridge session-derived actual hours to fortnightly payroll. The recor
 
 | Function | Type | What it does |
 |---|---|---|
+| `fn_upper_family_name` | trigger fn | `BEFORE INSERT OR UPDATE OF family_name ON people` — normalises `family_name` to `UPPER()` so all insert paths store consistent uppercase surnames. |
 | `fn_set_updated_at` | trigger fn | Touches `updated_at = NOW()` on UPDATE (attached to all `updated_at` tables). |
 | `fn_set_slot_period` | trigger fn | Auto-fills `class_slots.academic_period_id` from its class. |
 | `fn_adjust_teacher_balance` | helper | Single point for booking/un-booking yearly teacher hours. Cap read from `teachers.default_max_hours_per_year` (no hardcoded fallback). `FOR UPDATE` serialises concurrent writers. |
@@ -2227,4 +2228,4 @@ Timesheets bridge session-derived actual hours to fortnightly payroll. The recor
 
 ---
 
-*Generated from `v0.14` (2026-06-08).*
+*Generated from `v0.16` (2026-06-08).*

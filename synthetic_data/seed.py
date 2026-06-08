@@ -49,8 +49,29 @@ TRUNCATE
     public.staff, public.teachers, public.app_users, public.people,
     public.subject_programs, public.subjects, public.programs,
     public.rooms, public.buildings, public.delivery_locations,
-    public.training_orgs, public.faculties, public.secondary_schools
-RESTART IDENTITY CASCADE
+    public.training_orgs, public.academic_periods,
+    public.faculties, public.secondary_schools
+CASCADE
+"""
+
+# setval needs only USAGE (not ownership), unlike TRUNCATE RESTART IDENTITY.
+RESET_SEQS_SQL = """
+SELECT setval(seq, 1, false)
+FROM (
+    SELECT pg_get_serial_sequence('public.' || t, 'id') AS seq
+    FROM unnest(ARRAY[
+        'message_recipients','messages',
+        'timesheet_entries','timesheets','pay_periods',
+        'workplan_entries','workplan_approvals','workplans',
+        'session_attendance','class_enrollments',
+        'client_subject_enrolments','student_course_enrollments',
+        'teacher_yearly_balances','teacher_period_allocations',
+        'class_sessions','class_slots','class_exceptions','classes',
+        'student_guardians','students','app_users','people',
+        'subjects','programs','rooms','buildings','delivery_locations',
+        'training_orgs','faculties','secondary_schools'
+    ]) AS t(t)
+) sub WHERE seq IS NOT NULL
 """
 
 
@@ -339,7 +360,7 @@ def seed(cur):
 
     # ── People ────────────────────────────────────────────────────────────────
     print("people, app_users, teachers, staff, students...")
-    N_TEACHERS, N_STAFF, N_STUDENTS = 10, 3, 50
+    N_TEACHERS, N_STAFF, N_STUDENTS = 12, 3, 120
     teacher_persons = [make_person("staff.wattlevalley.edu.au",   25, 60) for _ in range(N_TEACHERS)]
     staff_persons   = [make_person("staff.wattlevalley.edu.au",   25, 60) for _ in range(N_STAFF)]
     student_persons = [make_person("student.wattlevalley.edu.au", 17, 45) for _ in range(N_STUDENTS)]
@@ -364,17 +385,16 @@ def seed(cur):
     admin_uid    = one(cur, "app_users", ["person_id","username","role"],
                        (None, "sysadmin", "Admin"))
     trainer_uids = many(cur, "app_users", ["person_id","username","role"],
-        [(pid, f"t.trainer{i+1}", "Trainer") for i, pid in enumerate(teacher_pids[:3])])
+        [(pid, f"t.trainer{i+1}", "Trainer") for i, pid in enumerate(teacher_pids[:6])])
     many(cur, "app_users", ["person_id","username","role"],
         [(staff_pids[0], "compliance1", "Compliance"),
          (staff_pids[1], "reception1",  "Reception")])
-    # pid → app_user_id for the 3 teachers who have logins
-    teacher_uid_map = {pid: uid for pid, uid in zip(teacher_pids[:3], trainer_uids)}
+    # pid → app_user_id for teachers who have logins
+    teacher_uid_map = {pid: uid for pid, uid in zip(teacher_pids[:6], trainer_uids)}
 
     # ── Teachers (shared PK = people.id) ─────────────────────────────────────
-    FAC_CYCLE = [fac_biz]*4 + [fac_health]*3 + [fac_trades]*3
-    EMP_CYCLE = ["Full-Time","Full-Time","Full-Time","Part-Time","Full-Time",
-                 "Full-Time","Part-Time","Full-Time","Full-Time","Full-Time"]
+    FAC_CYCLE = [fac_biz]*4 + [fac_health]*4 + [fac_trades]*4
+    EMP_CYCLE = (["Full-Time"]*3 + ["Part-Time"]) * 3
     teachers = []
     for i, (pid, p) in enumerate(zip(teacher_pids, teacher_persons)):
         emp   = EMP_CYCLE[i]
@@ -424,49 +444,85 @@ def seed(cur):
          for s in students[:15]])
 
     # ── Classes ───────────────────────────────────────────────────────────────
+    # Each class = one subject for one cohort group.
+    # GROUP_CFG: (period_code, prog_code, group_code, loc_id, cap)
+    # For each entry, N_SUBJS subject-level classes are created (one per subject).
     print("classes, class_subjects, class_slots...")
-    CLASS_CFG = [
-        ("SEM1-2025","BSB50120",loc_shep,25),
-        ("SEM1-2025","CHC43015",loc_shep,20),
-        ("SEM2-2025","BSB40120",loc_shep,25),
-        ("SEM2-2025","CHC52021",loc_wan, 20),
-        ("SEM1-2026","MEM30319",loc_wan, 16),
-        ("SEM1-2026","ICT50220",loc_shep,22),
-        ("SEM2-2026","BSB30120",loc_shep,25),
-        ("SEM2-2026","CHC33015",loc_wan, 20),
-    ]
-    classes = []
-    for pc, prog_code, loc_id, cap in CLASS_CFG:
-        p   = periods[pc]
-        cid = one(cur, "classes",
-            ["class_code","academic_period_id","delivery_location_id","enrolment_cap"],
-            (f"{prog_code}-{pc}", p["id"], loc_id, cap))
-        classes.append(dict(id=cid, pc=pc, prog_code=prog_code,
-                            period_id=p["id"], loc_id=loc_id,
-                            p_start=p["start"], p_end=p["end"]))
 
+    N_SUBJS = 3   # number of subjects per group to create classes for
+
+    # Weekday allocated per subject index within a group (0→Mon, 1→Wed, 2→Thu)
+    SUBJ_WEEKDAY = [1, 3, 4]
+
+    GROUP_CFG = [
+        # SEM1-2025
+        ("SEM1-2025","BSB50120","G1",loc_shep,25),
+        ("SEM1-2025","BSB50120","G2",loc_shep,22),
+        ("SEM1-2025","BSB50120","G3",loc_wan, 20),
+        ("SEM1-2025","CHC43015","G1",loc_shep,20),
+        ("SEM1-2025","CHC43015","G2",loc_shep,18),
+        ("SEM1-2025","CHC43015","G3",loc_wan, 20),
+        # SEM2-2025
+        ("SEM2-2025","BSB40120","G1",loc_shep,25),
+        ("SEM2-2025","BSB40120","G2",loc_shep,22),
+        ("SEM2-2025","BSB40120","G3",loc_wan, 20),
+        ("SEM2-2025","CHC52021","G1",loc_wan, 20),
+        ("SEM2-2025","CHC52021","G2",loc_wan, 18),
+        ("SEM2-2025","CHC52021","G3",loc_shep,20),
+        # SEM1-2026
+        ("SEM1-2026","MEM30319","G1",loc_wan, 16),
+        ("SEM1-2026","MEM30319","G2",loc_wan, 14),
+        ("SEM1-2026","ICT50220","G1",loc_shep,22),
+        ("SEM1-2026","ICT50220","G2",loc_shep,20),
+        ("SEM1-2026","ICT50220","G3",loc_shep,18),
+        # SEM2-2026
+        ("SEM2-2026","BSB30120","G1",loc_shep,25),
+        ("SEM2-2026","BSB30120","G2",loc_shep,22),
+        ("SEM2-2026","BSB30120","G3",loc_wan, 20),
+        ("SEM2-2026","CHC33015","G1",loc_wan, 20),
+        ("SEM2-2026","CHC33015","G2",loc_wan, 18),
+        ("SEM2-2026","CHC33015","G3",loc_shep,20),
+    ]
+
+    # Build flat list of individual subject-classes
+    classes = []
+    for pc, prog_code, grp, loc_id, cap in GROUP_CFG:
+        p = periods[pc]
+        subj_codes = PROG_SUBJS[prog_code][:N_SUBJS]
+        for si, sc in enumerate(subj_codes):
+            cid = one(cur, "classes",
+                ["class_code","group_code","academic_period_id",
+                 "delivery_location_id","enrolment_cap"],
+                (f"{prog_code}-{pc}-{grp}-{sc}", grp,
+                 p["id"], loc_id, cap))
+            classes.append(dict(id=cid, pc=pc, prog_code=prog_code, grp=grp,
+                                subj_code=sc, subj_idx=si,
+                                period_id=p["id"], loc_id=loc_id,
+                                p_start=p["start"], p_end=p["end"]))
+
+    # Each class has exactly one subject
     bulk(cur, "class_subjects", ["class_id","subject_id","subject_label"],
-        [(c["id"], subj_by_code[sc], sc)
-         for c in classes
-         for sc in PROG_SUBJS.get(c["prog_code"], [])[:3]])
+        [(c["id"], subj_by_code[c["subj_code"]], c["subj_code"])
+         for c in classes])
 
     # ── Class slots ───────────────────────────────────────────────────────────
-    # Within each period: slot[0] → teacher pair index A on Monday,
-    #                     slot[1] → teacher pair index B on Tuesday.
-    # Different teacher pairs per period keep EXCLUDE constraints satisfied.
-    PERIOD_TEACHER_PAIRS = {
-        "SEM1-2025": (0,1), "SEM2-2025": (2,3),
-        "SEM1-2026": (4,5), "SEM2-2026": (6,7),
-    }
-    period_slot_count = defaultdict(int)
+    # Subject index → weekday (Mon/Wed/Thu). Within a period+weekday, each
+    # class must use a different teacher (no_teacher_double_booking EXCLUDE)
+    # and a different room (no_room_session_double_booking EXCLUDE).
+    period_day_room    = defaultdict(int)        # (pc, weekday) -> next room offset
+    period_day_teacher = defaultdict(int)        # (pc, weekday) -> next teacher offset
     slots = []
-    for i, c in enumerate(classes):
-        idx     = period_slot_count[c["pc"]]
-        period_slot_count[c["pc"]] += 1
-        t_idx   = PERIOD_TEACHER_PAIRS[c["pc"]][idx]
-        teacher = teachers[t_idx]
-        room_id = room_ids[i % len(room_ids)]
-        weekday = [1, 2][idx]   # Monday=1, Tuesday=2
+    for c in classes:
+        weekday = SUBJ_WEEKDAY[c["subj_idx"]]
+        key = (c["pc"], weekday)
+
+        r_off   = period_day_room[key]    % len(room_ids)
+        t_off   = period_day_teacher[key] % N_TEACHERS
+        period_day_room[key]    += 1
+        period_day_teacher[key] += 1
+
+        room_id = room_ids[r_off]
+        teacher = teachers[t_off]
         slot_id = one(cur, "class_slots",
             ["class_id","academic_period_id","room_id","teacher_id",
              "day_of_week","start_time","end_time"],
@@ -500,18 +556,29 @@ def seed(cur):
         [(sid, tpid, "Lead") for sid, _, tpid, _ in all_sessions])
 
     # ── Session attendance ────────────────────────────────────────────────────
+    # Each student is assigned to one (period, program, group); they attend all
+    # subject-classes within that group.
     print("session_attendance...")
-    class_student_map = defaultdict(list)
+    group_keys = [(pc, prog, grp) for pc, prog, grp, *_ in GROUP_CFG]
+    class_lookup = defaultdict(list)  # (pc, prog, grp) -> [class dict, ...]
+    for c in classes:
+        class_lookup[(c["pc"], c["prog_code"], c["grp"])].append(c)
+
+    student_group = {}   # student_pid -> (pc, prog, grp)
     for i, s in enumerate(students):
-        class_student_map[classes[i % len(classes)]["id"]].append(s["pid"])
+        student_group[s["pid"]] = group_keys[i % len(group_keys)]
+
+    class_student_map = defaultdict(list)
+    for s in students:
+        for c in class_lookup[student_group[s["pid"]]]:
+            class_student_map[c["id"]].append(s["pid"])
 
     att_statuses = ["Present"]*7 + ["Absent-Notified"]*2 + ["Online", "Excused"]
     att_rows = []
     for sid, cls_id, _, cancelled in all_sessions:
         if cancelled:
             continue
-        pool = class_student_map[cls_id]
-        for spid in random.sample(pool, min(3, len(pool))):
+        for spid in class_student_map[cls_id]:
             att_rows.append((sid, spid, random.choice(att_statuses),
                              None, None, admin_uid))
     bulk(cur, "session_attendance",
@@ -519,34 +586,31 @@ def seed(cur):
          "minutes_attended","notes","recorded_by"], att_rows)
 
     # ── Course enrolments ─────────────────────────────────────────────────────
+    # Each student gets one SCE for their program, then one CSE + CE per
+    # subject-class in their assigned group.
     print("enrolments...")
-    sce_rows = []   # (student, class) pairs to build CSEs afterwards
-    for i, s in enumerate(students):
-        c = classes[i % len(classes)]
+    ce_rows   = []
+    cse_count = 0
+    for s in students:
+        pc, prog_code, grp = student_group[s["pid"]]
+        group_classes = class_lookup[(pc, prog_code, grp)]
+        if not group_classes:
+            continue
+        c0 = group_classes[0]
         sce_id = one(cur, "student_course_enrollments",
             ["student_id","program_id","enrollment_status",
              "commencement_date","commencing_program_id","funding_state_code"],
-            (s["pid"], prog_by_code[c["prog_code"]], "Active",
-             c["p_start"], "4", "VIC"))
-        sce_rows.append((sce_id, s, c))
-
-    # Subject enrolments (first 2 subjects per student's class)
-    seen_ce   = set()
-    ce_rows   = []
-    cse_count = 0
-    for sce_id, s, c in sce_rows:
-        for sc in PROG_SUBJS.get(c["prog_code"], [])[:2]:
+            (s["pid"], prog_by_code[prog_code], "Active",
+             c0["p_start"], "4", "VIC"))
+        for c in group_classes:
             cse_id = one(cur, "client_subject_enrolments",
                 ["student_id","student_course_enrollment_id","subject_id",
                  "delivery_location_id","activity_start_date","activity_end_date",
                  "scheduled_hours","funding_source_national","outcome_id_national"],
-                (s["pid"], sce_id, subj_by_code[sc], c["loc_id"],
-                 c["p_start"], c["p_end"], subj_nom_hrs[sc], "11", "70"))
+                (s["pid"], sce_id, subj_by_code[c["subj_code"]], c["loc_id"],
+                 c["p_start"], c["p_end"], subj_nom_hrs[c["subj_code"]], "11", "70"))
             cse_count += 1
-            key = (c["id"], s["pid"])
-            if key not in seen_ce:
-                seen_ce.add(key)
-                ce_rows.append((c["id"], cse_id))
+            ce_rows.append((c["id"], cse_id))
 
     bulk(cur, "class_enrollments",
         ["class_id","client_subject_enrolment_id"], ce_rows)
@@ -638,7 +702,7 @@ def seed(cur):
     print()
     print(f"  {N_TEACHERS} teachers  {N_STAFF} staff  {N_STUDENTS} students")
     print(f"  {len(classes)} classes  {n_sessions} sessions  {n_att} attendance records")
-    print(f"  {len(sce_rows)} course enrolments  {cse_count} subject enrolments")
+    print(f"  {N_STUDENTS} course enrolments  {cse_count} subject enrolments")
     print(f"  {len(pay_periods)} pay periods  {n_ts} timesheets")
     print(f"  {n_wps} workplans")
     print(f"  teacher_yearly_balances populated automatically by trigger")
@@ -663,6 +727,7 @@ def main():
                 if args.clean:
                     print("Truncating seeded tables...")
                     cur.execute(TRUNCATE_SQL)
+                    cur.execute(RESET_SEQS_SQL)
                 print("Seeding...")
                 seed(cur)
         print("\nCommitted.")

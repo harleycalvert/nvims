@@ -3,3 +3,7 @@ A National VET Information Management System (NVIMS), Student Management System 
 
 ## Development
 This is currently in an early development stage. It is not yet functional, not even for testing purposes. 
+
+<p align="center">
+  <img src="docs/img/nvims-overview.png" width="">
+</p>
