@@ -76,16 +76,16 @@ The schema covers the full SMS lifecycle:
 
 ```mermaid
 graph TD
-    P[Identity<br/>people, students, teachers, staff, app_users]
-    C[Curriculum<br/>programs, subjects]
-    E[Enrolment<br/>course & subject enrolments + extensions]
-    I[RTO Infrastructure<br/>training_orgs, delivery_locations, buildings, rooms]
-    T[Timetabling<br/>classes, slots, sessions, attendance]
-    H[Holidays<br/>rules, observances]
-    M[Communications<br/>templates, campaigns, deliveries]
-    A[Compliance & Audit<br/>completions, avetmiss_submissions, audit_log]
-    W[Workplan<br/>workplans, workplan_approvals, workplan_entries]
-    S[Timesheet<br/>pay_periods, timesheets, timesheet_entries]
+    P["Identity — people, students, teachers, staff, app_users"]
+    C["Curriculum — programs, subjects"]
+    E["Enrolment — course & subject enrolments, extensions"]
+    I["RTO Infrastructure — training_orgs, delivery_locations, buildings, rooms"]
+    T["Timetabling — classes, slots, sessions, attendance"]
+    H["Holidays — rules, observances"]
+    M["Communications — templates, campaigns, deliveries"]
+    A["Compliance & Audit — completions, avetmiss_submissions, audit_log"]
+    W["Workplan — workplans, approvals, entries"]
+    S["Timesheet — pay_periods, timesheets, entries"]
 
     P --> E
     C --> E
