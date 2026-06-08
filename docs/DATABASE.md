@@ -1,4 +1,4 @@
-# AVETMISS Student Management System — Database Design
+# A National VET Information Management System (NVIMS), Student Management System (SMS) — Database Design
 
 PostgreSQL schema for a national, potentially AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
