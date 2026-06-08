@@ -1,26 +1,41 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.13, 2026-06-08
+-- AVETMISS-compliant SMS schema  --  version 0.14, 2026-06-08
 -- =========================================================================
--- Changes from v0.12:
---   1.  pay_periods table: administrator-defined pay periods (typically
+-- Changes from v0.13:
+--   1.  messages table: teacher-composed individual messages. Separate from
+--       the campaign system. Status workflow Draft -> Sent -> Failed.
+--       sender_id FK to app_users (must hold Teacher role).
+--   2.  message_recipients table: per-recipient delivery rows for direct
+--       messages. Mirrors message_deliveries but adds teacher_id FK and an
+--       is_cc boolean. recipient_type covers Student/Guardian/Staff/Teacher.
+--       Exactly one of the four nullable recipient FKs is set, enforced by
+--       num_nonnulls(). read_at records inbox acknowledgement.
+--   3.  fn_cc_sender_on_send / trg_cc_sender_on_send: after messages.status
+--       transitions to 'Sent', automatically inserts a message_recipients
+--       row with is_cc = true pointing back to the sender. Sender resolved
+--       as Teacher first, then Staff; service accounts produce no CC row.
+--   4.  trg_touch_messages wired to fn_set_updated_at().
+--   5.  Indexes on messages(sender_id, status) and
+--       message_recipients(message_id), (teacher_id).
+-- Changes from v0.12 (retained as v0.13):
+--   6.  pay_periods table: administrator-defined pay periods (typically
 --       fortnightly). Unique on period_start and on (calendar_year,
 --       period_name). Provides an ordered, named sequence for timesheet
 --       generation and payroll export.
---   2.  timesheets table: one timesheet per teacher per pay period. Status
---       workflow Draft → Submitted → Approved → Exported. Stores who
+--   7.  timesheets table: one timesheet per teacher per pay period. Status
+--       workflow Draft -> Submitted -> Approved -> Exported. Stores who
 --       submitted and approved, export timestamp and format. No banking,
---       super, or rate data — this record carries hours only.
---   3.  timesheet_entries table: individual hour lines. entry_type mirrors
+--       super, or rate data -- this record carries hours only.
+--   8.  timesheet_entries table: individual hour lines. entry_type mirrors
 --       workplan categories plus Other. class_session_id links
 --       auto-populated Teaching Delivery rows to their source session;
 --       workplan_entry_id optionally links to the annual plan for
 --       reconciliation. is_overtime flag separates ordinary from overtime.
---   4.  Indexes on timesheets(teacher_id), (pay_period_id), (status) and
+--   9.  Indexes on timesheets(teacher_id), (pay_period_id), (status) and
 --       timesheet_entries(timesheet_id), (class_session_id).
---   5.  trg_touch_timesheets wired to fn_set_updated_at().
---   6.  vw_timesheet_summary: per-timesheet ordinary/overtime totals and
+--  10.  trg_touch_timesheets wired to fn_set_updated_at().
+--  11.  vw_timesheet_summary: per-timesheet ordinary/overtime totals and
 --       per-category breakdowns (teaching, CAPPS, ERD, other).
---       sourced from teacher_yearly_balances.
 -- =========================================================================
 
 BEGIN;
@@ -1056,6 +1071,58 @@ CREATE TABLE IF NOT EXISTS public.message_deliveries (
     CONSTRAINT chk_delivery_one_recipient CHECK (num_nonnulls(student_id, guardian_id, staff_id) = 1)
 );
 
+-- NEW v14: teacher-composed individual messages (distinct from bulk campaigns).
+-- sender_id must reference an app_users row whose role is 'Trainer'.
+-- Application layer enforces the role check; the schema carries the FK only.
+CREATE TABLE IF NOT EXISTS public.messages (
+    id bigserial NOT NULL,
+    sender_id bigint NOT NULL,
+    channel varchar(10) NOT NULL,
+    subject varchar(200) NULL,
+    body_html text NULL,
+    body_plain text NOT NULL,
+    status varchar(20) NOT NULL DEFAULT 'Draft',
+    sent_at timestamp with time zone NULL,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_msg_sender FOREIGN KEY (sender_id) REFERENCES public.app_users(id) ON DELETE RESTRICT,
+    CONSTRAINT chk_msg_channel CHECK (channel IN ('Email', 'SMS')),
+    CONSTRAINT chk_msg_status CHECK (status IN ('Draft', 'Sent', 'Failed'))
+);
+
+-- NEW v14: per-recipient delivery rows for direct messages.
+-- Exactly one of student_id / guardian_id / staff_id / teacher_id is set.
+-- is_cc = true marks the auto-CC inserted for the sender by trg_cc_sender_on_send.
+-- read_at is set by the application when the recipient opens the message.
+CREATE TABLE IF NOT EXISTS public.message_recipients (
+    id bigserial NOT NULL,
+    message_id bigint NOT NULL,
+    recipient_type varchar(10) NOT NULL,
+    is_cc boolean NOT NULL DEFAULT false,
+    student_id bigint NULL,
+    guardian_id bigint NULL,
+    staff_id bigint NULL,
+    teacher_id bigint NULL,
+    address_used varchar(200) NOT NULL,
+    status varchar(20) NOT NULL DEFAULT 'Pending',
+    provider_message_id varchar(100) NULL,
+    sent_at timestamp with time zone NULL,
+    delivered_at timestamp with time zone NULL,
+    read_at timestamp with time zone NULL,
+    failure_reason text NULL,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_mr_message FOREIGN KEY (message_id) REFERENCES public.messages(id) ON DELETE CASCADE,
+    CONSTRAINT fk_mr_student FOREIGN KEY (student_id) REFERENCES public.students(id) ON DELETE CASCADE,
+    CONSTRAINT fk_mr_guardian FOREIGN KEY (guardian_id) REFERENCES public.student_guardians(id) ON DELETE CASCADE,
+    CONSTRAINT fk_mr_staff FOREIGN KEY (staff_id) REFERENCES public.staff(id) ON DELETE CASCADE,
+    CONSTRAINT fk_mr_teacher FOREIGN KEY (teacher_id) REFERENCES public.teachers(id) ON DELETE CASCADE,
+    CONSTRAINT chk_mr_recipient CHECK (recipient_type IN ('Student', 'Guardian', 'Staff', 'Teacher')),
+    CONSTRAINT chk_mr_status CHECK (status IN ('Pending', 'Sent', 'Delivered', 'Failed', 'Bounced', 'OptedOut', 'Read')),
+    CONSTRAINT chk_mr_one_recipient CHECK (num_nonnulls(student_id, guardian_id, staff_id, teacher_id) = 1)
+);
+
 CREATE TABLE IF NOT EXISTS public.avetmiss_submissions (
     id bigserial NOT NULL,
     training_org_id bigint NOT NULL,
@@ -1309,6 +1376,12 @@ CREATE INDEX IF NOT EXISTS idx_timesheets_status          ON public.timesheets(s
 CREATE INDEX IF NOT EXISTS idx_te_timesheet               ON public.timesheet_entries(timesheet_id);
 CREATE INDEX IF NOT EXISTS idx_te_session                 ON public.timesheet_entries(class_session_id) WHERE (class_session_id IS NOT NULL);
 
+-- NEW v14: direct message lookup indexes.
+CREATE INDEX IF NOT EXISTS idx_messages_sender            ON public.messages(sender_id);
+CREATE INDEX IF NOT EXISTS idx_messages_status            ON public.messages(status) WHERE (status = 'Draft');
+CREATE INDEX IF NOT EXISTS idx_mr_message                 ON public.message_recipients(message_id);
+CREATE INDEX IF NOT EXISTS idx_mr_teacher                 ON public.message_recipients(teacher_id) WHERE (teacher_id IS NOT NULL);
+
 -- =========================================================================
 -- 11. COMPLIANCE & TEACHING-HOURS ENGINE (sessions are the source of truth)
 -- =========================================================================
@@ -1336,7 +1409,61 @@ CREATE OR REPLACE TRIGGER trg_touch_student_notes              BEFORE UPDATE ON 
 CREATE OR REPLACE TRIGGER trg_touch_message_templates          BEFORE UPDATE ON public.message_templates          FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
 CREATE OR REPLACE TRIGGER trg_touch_workplans                  BEFORE UPDATE ON public.workplans                  FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
 CREATE OR REPLACE TRIGGER trg_touch_timesheets                 BEFORE UPDATE ON public.timesheets                 FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+CREATE OR REPLACE TRIGGER trg_touch_messages                   BEFORE UPDATE ON public.messages                   FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
 -- (teacher_yearly_balances.updated_at is set explicitly by the hours engine, so no trigger here.)
+
+-- NEW v14: auto-insert a CC recipient row for the sender when a direct message
+-- transitions to 'Sent'. Sender is resolved as Teacher first, then Staff;
+-- service accounts without a person_id row silently produce no CC.
+CREATE OR REPLACE FUNCTION public.fn_cc_sender_on_send()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+    v_teacher_id bigint;
+    v_staff_id   bigint;
+    v_email      text;
+BEGIN
+    -- Resolve sender as teacher
+    SELECT t.id, COALESCE(t.teacher_email, p.primary_email)
+      INTO v_teacher_id, v_email
+      FROM public.app_users au
+      JOIN public.people   p ON p.id = au.person_id
+      JOIN public.teachers t ON t.id = au.person_id
+     WHERE au.id = NEW.sender_id;
+
+    IF FOUND THEN
+        INSERT INTO public.message_recipients(
+            message_id, recipient_type, is_cc, teacher_id, address_used, status, sent_at
+        ) VALUES (
+            NEW.id, 'Teacher', true, v_teacher_id, v_email, 'Sent', NEW.sent_at
+        );
+        RETURN NEW;
+    END IF;
+
+    -- Fall back to staff sender
+    SELECT s.id, COALESCE(s.staff_email, p.primary_email)
+      INTO v_staff_id, v_email
+      FROM public.app_users au
+      JOIN public.people p ON p.id = au.person_id
+      JOIN public.staff  s ON s.id = au.person_id
+     WHERE au.id = NEW.sender_id;
+
+    IF FOUND THEN
+        INSERT INTO public.message_recipients(
+            message_id, recipient_type, is_cc, staff_id, address_used, status, sent_at
+        ) VALUES (
+            NEW.id, 'Staff', true, v_staff_id, v_email, 'Sent', NEW.sent_at
+        );
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_cc_sender_on_send
+    AFTER UPDATE OF status ON public.messages
+    FOR EACH ROW
+    WHEN (NEW.status = 'Sent' AND OLD.status <> 'Sent')
+    EXECUTE FUNCTION public.fn_cc_sender_on_send();
 
 -- Auto-populate class_slots.academic_period_id from its class so the exclusion
 -- constraint key stays correct without relying on the application.

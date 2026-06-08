@@ -2,7 +2,7 @@
 
 PostgreSQL schema for a national, potentially AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.13`: its entities, relationships, business rules, and the
+describes the design of `v0.14`: its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -49,7 +49,7 @@ The schema covers the full SMS lifecycle:
   teacher double-booking prevention, and configurable per-teacher teaching hour caps
   (annual and optionally per-academic-period for HE/DUAL-sector teachers).
 - **Public holidays** — recurrence rules expanded into concrete observances.
-- **Communications** — email/SMS campaigns and per-recipient delivery logs.
+- **Communications** — email/SMS bulk campaigns, per-recipient delivery logs, and teacher-to-recipient direct messages with automatic sender CC.
 - **Compliance** — AVETMISS NAT export sources, program completions, and an audit trail.
 - **Workplan** — annual teacher workplan per VTSA 2024 clause 32.4: Teaching Delivery,
   CAPPS, and Education-Related Duties allocations with an approval workflow.
@@ -82,7 +82,7 @@ graph TD
     I[RTO Infrastructure<br/>training_orgs, delivery_locations, buildings, rooms]
     T[Timetabling<br/>classes, slots, sessions, attendance]
     H[Holidays<br/>rules, observances]
-    M[Communications<br/>templates, campaigns, deliveries]
+    M[Communications<br/>templates, campaigns, deliveries, messages, recipients]
     A[Compliance & Audit<br/>completions, avetmiss_submissions, audit_log]
     W[Workplan<br/>workplans, workplan_approvals, workplan_entries]
     S[Timesheet<br/>pay_periods, timesheets, timesheet_entries]
@@ -317,17 +317,39 @@ erDiagram
     APP_USERS ||--o{ MESSAGE_CAMPAIGNS : "sent by"
     CLASSES ||--o{ MESSAGE_CAMPAIGNS : "targets (optional)"
     PROGRAMS ||--o{ MESSAGE_CAMPAIGNS : "targets (optional)"
-    STUDENTS ||--o{ MESSAGE_DELIVERIES : "recipient"
-    STUDENT_GUARDIANS ||--o{ MESSAGE_DELIVERIES : "recipient"
-    STAFF ||--o{ MESSAGE_DELIVERIES : "recipient"
+    STUDENTS ||--o{ MESSAGE_DELIVERIES : recipient
+    STUDENT_GUARDIANS ||--o{ MESSAGE_DELIVERIES : recipient
+    STAFF ||--o{ MESSAGE_DELIVERIES : recipient
+    APP_USERS ||--o{ MESSAGES : "sent by"
+    MESSAGES ||--o{ MESSAGE_RECIPIENTS : "delivers to"
+    STUDENTS ||--o{ MESSAGE_RECIPIENTS : recipient
+    STUDENT_GUARDIANS ||--o{ MESSAGE_RECIPIENTS : recipient
+    STAFF ||--o{ MESSAGE_RECIPIENTS : recipient
+    TEACHERS ||--o{ MESSAGE_RECIPIENTS : recipient
 
     MESSAGE_DELIVERIES {
         bigserial id PK
         bigint campaign_id FK
-        bigint student_id FK "exactly one of"
-        bigint guardian_id FK "the three"
-        bigint staff_id FK "is set"
+        bigint student_id FK "one of four"
+        bigint guardian_id FK "recipient FKs"
+        bigint staff_id FK "is non-null"
         varchar status
+    }
+    MESSAGES {
+        bigserial id PK
+        bigint sender_id FK
+        varchar channel
+        varchar status
+        timestamptz sent_at
+    }
+    MESSAGE_RECIPIENTS {
+        bigserial id PK
+        bigint message_id FK
+        varchar recipient_type
+        boolean is_cc
+        bigint teacher_id FK "one of four"
+        varchar status
+        timestamptz read_at
     }
 ```
 
@@ -513,6 +535,8 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | `message_templates` | Reusable email/SMS templates. | → `app_users` |
 | `message_campaigns` | A send to an audience (individual/class/program/cohort/broadcast/guardian). | → `message_templates`, `app_users`, `classes`, `programs` |
 | `message_deliveries` | Per-recipient delivery log with provider status. Exactly one recipient relation set. | → `message_campaigns`, `students`/`student_guardians`/`staff` |
+| `messages` | Teacher-composed individual direct message (not a campaign). Draft → Sent → Failed. | → `app_users` |
+| `message_recipients` | Per-recipient delivery row for a direct message. `is_cc = true` marks the auto-CC row inserted for the sender. Exactly one of four recipient FKs is set. | → `messages`, `students`/`student_guardians`/`staff`/`teachers` |
 
 ### Compliance & audit
 
@@ -534,7 +558,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 
 ## Data dictionary
 
-Every table and column, generated from `v0.13`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
+Every table and column, generated from `v0.14`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
 
 ### Identity & reference
 
@@ -1640,6 +1664,61 @@ Every table and column, generated from `v0.13`. **Null** = whether the column ac
 - `CONSTRAINT chk_delivery_status CHECK (status IN ('Pending', 'Sent', 'Delivered', 'Failed', 'Bounced', 'OptedOut'))`
 - `CONSTRAINT chk_delivery_one_recipient CHECK (num_nonnulls(student_id, guardian_id, staff_id) = 1)`
 
+#### `messages`
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `sender_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;app_users |
+| `channel` | `varchar(10)` | no |  |  |
+| `subject` | `varchar(200)` | yes |  |  |
+| `body_html` | `text` | yes |  |  |
+| `body_plain` | `text` | no |  |  |
+| `status` | `varchar(20)` | no | `'Draft'` |  |
+| `sent_at` | `timestamp with time zone` | yes |  |  |
+| `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+| `updated_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_msg_sender FOREIGN KEY (sender_id) REFERENCES public.app_users(id) ON DELETE RESTRICT`
+- `CONSTRAINT chk_msg_channel CHECK (channel IN ('Email', 'SMS'))`
+- `CONSTRAINT chk_msg_status CHECK (status IN ('Draft', 'Sent', 'Failed'))`
+
+#### `message_recipients`
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `message_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;messages |
+| `recipient_type` | `varchar(10)` | no |  |  |
+| `is_cc` | `boolean` | no | `false` |  |
+| `student_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;students |
+| `guardian_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;student_guardians |
+| `staff_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;staff |
+| `teacher_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teachers |
+| `address_used` | `varchar(200)` | no |  |  |
+| `status` | `varchar(20)` | no | `'Pending'` |  |
+| `provider_message_id` | `varchar(100)` | yes |  |  |
+| `sent_at` | `timestamp with time zone` | yes |  |  |
+| `delivered_at` | `timestamp with time zone` | yes |  |  |
+| `read_at` | `timestamp with time zone` | yes |  |  |
+| `failure_reason` | `text` | yes |  |  |
+| `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_mr_message FOREIGN KEY (message_id) REFERENCES public.messages(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_mr_student FOREIGN KEY (student_id) REFERENCES public.students(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_mr_guardian FOREIGN KEY (guardian_id) REFERENCES public.student_guardians(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_mr_staff FOREIGN KEY (staff_id) REFERENCES public.staff(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_mr_teacher FOREIGN KEY (teacher_id) REFERENCES public.teachers(id) ON DELETE CASCADE`
+- `CONSTRAINT chk_mr_recipient CHECK (recipient_type IN ('Student', 'Guardian', 'Staff', 'Teacher'))`
+- `CONSTRAINT chk_mr_status CHECK (status IN ('Pending', 'Sent', 'Delivered', 'Failed', 'Bounced', 'OptedOut', 'Read'))`
+- `CONSTRAINT chk_mr_one_recipient CHECK (num_nonnulls(student_id, guardian_id, staff_id, teacher_id) = 1)`
+
 ### Compliance & audit
 
 #### `program_completions`
@@ -2022,8 +2101,24 @@ the authoritative check is verification against the OSIR registry.
 
 ### Single-recipient invariant
 
-`message_deliveries` enforces `num_nonnulls(student_id, guardian_id, staff_id) = 1`, so
-exactly one recipient relation is set per row.
+`message_deliveries` enforces `num_nonnulls(student_id, guardian_id, staff_id) = 1` and
+`message_recipients` enforces `num_nonnulls(student_id, guardian_id, staff_id, teacher_id) = 1`,
+so exactly one recipient relation is set per row in each table.
+
+### Direct messages
+
+Teachers compose individual messages via `messages` (channel `Email` or `SMS`). Recipients are
+recorded in `message_recipients`, one row per address. The application layer restricts composition
+to `app_users` with role `Trainer`.
+
+**Sender CC.** When `messages.status` transitions from any state to `'Sent'`, the trigger
+`trg_cc_sender_on_send` fires and inserts a `message_recipients` row with `is_cc = true` pointing
+back to the sender. The sender's preferred address is `teachers.teacher_email` (falling back to
+`people.primary_email`). Staff senders follow the same pattern using `staff.staff_email`. Service
+accounts without a `person_id` produce no CC row.
+
+**Read tracking.** When a recipient opens the message in the application, set `read_at` on their
+`message_recipients` row. `status = 'Read'` may also be used where provider tracking is unavailable.
 
 ### Timesheet
 
@@ -2068,6 +2163,7 @@ Timesheets bridge session-derived actual hours to fortnightly payroll. The recor
 | `fn_generate_sessions` | utility | Explodes `class_slots` into `class_sessions` across the period, skipping holidays/exceptions; seeds `session_teachers`. Session booking triggers the annual and per-period cap checks. |
 | `fn_validate_training_plan_compliance`, `fn_validate_traineeship_constraints` | trigger fn | Apprenticeship/traineeship date guards. |
 | `fn_audit` | trigger fn | Writes to `audit_log`; reads the actor from `app.current_user_id`. |
+| `fn_cc_sender_on_send` | trigger fn | After `messages.status` transitions to `'Sent'`, inserts a `message_recipients` row with `is_cc = true` for the sender. Resolves sender as Teacher then Staff; service accounts produce no CC row. |
 
 **Views:**
 - `vw_teacher_academic_workloads` — per-teacher booked vs allocated hours, remaining annual capacity, % utilisation, and sector.
@@ -2088,8 +2184,16 @@ Timesheets bridge session-derived actual hours to fortnightly payroll. The recor
   `academic_periods`. After adding/editing a `holiday_rule`, call
   `SELECT fn_materialise_holidays(:year);`.
 - **Scan nullable recipient relations safely.** On `message_deliveries`, exactly one of
-  `student_id`/`guardian_id`/`staff_id` is set — use `*int64` / `sql.NullInt64` and branch on
-  the non-null one.
+  `student_id`/`guardian_id`/`staff_id` is set. On `message_recipients`, exactly one of
+  `student_id`/`guardian_id`/`staff_id`/`teacher_id` is set — use `*int64` / `sql.NullInt64`
+  and branch on the non-null one.
+- **Sending a direct message.** INSERT a `messages` row with `status = 'Draft'`, add
+  `message_recipients` rows for each addressee, then UPDATE `messages SET status = 'Sent',
+  sent_at = NOW()`. The trigger `trg_cc_sender_on_send` inserts the sender CC automatically;
+  do not insert it manually.
+- **Read tracking.** When the recipient reads the message in the UI, `UPDATE message_recipients
+  SET read_at = NOW(), status = 'Read' WHERE id = $1`. Filter the inbox with
+  `WHERE is_cc = false AND read_at IS NULL` for unread counts.
 - **Per-period caps are opt-in.** Set `teachers.max_hours_per_period` only for HE or DUAL
   teachers on semester/trimester/block contracts. VET-only teachers with NULL are unaffected;
   their `teacher_period_allocations` rows will not be created.
@@ -2123,4 +2227,4 @@ Timesheets bridge session-derived actual hours to fortnightly payroll. The recor
 
 ---
 
-*Generated from `v0.13` (2026-06-08).*
+*Generated from `v0.14` (2026-06-08).*
