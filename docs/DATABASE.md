@@ -76,16 +76,16 @@ The schema covers the full SMS lifecycle:
 
 ```mermaid
 graph TD
-    P[Identity<br/>people · students · teachers · staff · app_users]
-    C[Curriculum<br/>programs · subjects]
+    P[Identity<br/>people, students, teachers, staff, app_users]
+    C[Curriculum<br/>programs, subjects]
     E[Enrolment<br/>course & subject enrolments + extensions]
-    I[RTO Infrastructure<br/>training_orgs · delivery_locations · buildings · rooms]
-    T[Timetabling<br/>classes · slots · sessions · attendance]
-    H[Holidays<br/>rules · observances]
-    M[Communications<br/>templates · campaigns · deliveries]
-    A[Compliance & Audit<br/>completions · avetmiss_submissions · audit_log]
-    W[Workplan<br/>workplans · workplan_approvals · workplan_entries]
-    S[Timesheet<br/>pay_periods · timesheets · timesheet_entries]
+    I[RTO Infrastructure<br/>training_orgs, delivery_locations, buildings, rooms]
+    T[Timetabling<br/>classes, slots, sessions, attendance]
+    H[Holidays<br/>rules, observances]
+    M[Communications<br/>templates, campaigns, deliveries]
+    A[Compliance & Audit<br/>completions, avetmiss_submissions, audit_log]
+    W[Workplan<br/>workplans, workplan_approvals, workplan_entries]
+    S[Timesheet<br/>pay_periods, timesheets, timesheet_entries]
 
     P --> E
     C --> E
@@ -150,7 +150,7 @@ erDiagram
     }
     TEACHERS {
         bigint id PK,FK
-        enum sector "VET | HE | DUAL"
+        enum sector "VET/HE/DUAL"
         numeric default_max_hours_per_year
         numeric max_hours_per_period "NULL = annual cap only"
     }
@@ -178,7 +178,7 @@ erDiagram
         boolean vet_flag
         boolean he_flag
         integer credit_points "total qualification cp (HE)"
-        smallint aqf_level "1–10, nullable"
+        smallint aqf_level "1-10, nullable"
     }
     SUBJECTS {
         bigserial id PK
@@ -297,7 +297,7 @@ erDiagram
         bigserial id PK
         varchar holiday_name
         varchar state_code FK "NULL = national"
-        varchar recurrence "ONCE | ANNUAL_FIXED | ANNUAL_NTH_DOW | ANNUAL_EASTER_OFFSET"
+        varchar recurrence "ONCE/ANNUAL_FIXED/NTH_DOW/EASTER_OFFSET"
         boolean observe_substitute
     }
     HOLIDAY_OBSERVANCES {
@@ -364,7 +364,7 @@ erDiagram
         bigint teacher_id FK
         smallint calendar_year
         smallint version
-        varchar status "Draft | Submitted | Approved"
+        varchar status "Draft/Submitted/Approved"
         numeric time_fraction "FTE"
         numeric capps_ratio "0.750 = 45 min per teaching hour"
         numeric accountable_hours_required
@@ -373,17 +373,17 @@ erDiagram
     WORKPLAN_ENTRIES {
         bigserial id PK
         bigint workplan_id FK
-        varchar entry_type "Teaching Delivery | CAPPS | Education Related Duties"
+        varchar entry_type "Teaching Delivery/CAPPS/ERD"
         varchar activity_name
         numeric total_hours
-        date activity_start_date "nullable — populated for session-linked rows"
+        date activity_start_date "nullable, session-linked"
         bigint class_session_id FK "nullable"
     }
     WORKPLAN_APPROVALS {
         bigserial id PK
         bigint workplan_id FK
         bigint approver_id FK
-        varchar approval_role "Teacher | LineManager"
+        varchar approval_role "Teacher/LineManager"
         timestamptz approved_at
     }
 ```
@@ -410,21 +410,21 @@ erDiagram
         bigserial id PK
         bigint teacher_id FK
         bigint pay_period_id FK
-        varchar status "Draft | Submitted | Approved | Exported"
+        varchar status "Draft/Submitted/Approved/Exported"
         timestamptz submitted_at
         timestamptz approved_at
         timestamptz exported_at
-        varchar export_format "PDF | XLSX (nullable)"
+        varchar export_format "PDF/XLSX, nullable"
     }
     TIMESHEET_ENTRIES {
         bigserial id PK
         bigint timesheet_id FK
         date entry_date
-        varchar entry_type "Teaching Delivery | CAPPS | Education Related Duties | Other"
+        varchar entry_type "Teaching/CAPPS/ERD/Other"
         numeric hours
         boolean is_overtime
-        bigint class_session_id FK "nullable — auto-populated"
-        bigint workplan_entry_id FK "nullable — reconciliation"
+        bigint class_session_id FK "nullable, auto-populated"
+        bigint workplan_entry_id FK "nullable, reconciliation"
     }
 ```
 
