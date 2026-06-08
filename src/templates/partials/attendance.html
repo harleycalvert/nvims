@@ -1,0 +1,41 @@
+{{define "attendance"}}
+{{if not .Sessions}}
+  <p class="hint">No sessions found for the selected classes.</p>
+{{else}}
+  <div class="table-wrap">
+    <table class="att-table">
+      <thead>
+        <tr>
+          <th class="col-name">Student</th>
+          {{range .Sessions}}
+          <th class="col-date" title="{{dateFull .SessionDate}} — {{.ClassCode}}">
+            {{dateShort .SessionDate}}<br>
+            <span class="class-tag">{{.ClassCode}}</span>
+          </th>
+          {{end}}
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Rows}}
+        {{$row := .}}
+        <tr>
+          <td class="col-name">{{.LastName}}, {{.FirstName}}</td>
+          {{range $.Sessions}}
+          {{$status := index $row.Attendance .ID}}
+          <td class="att-cell {{statusCSS $status}}" title="{{if $status}}{{$status}}{{else}}Not recorded{{end}}">{{statusAbbr $status}}</td>
+          {{end}}
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  <div class="legend">
+    <span class="att-cell att-present">P</span> Present
+    <span class="att-cell att-online">O</span> Online
+    <span class="att-cell att-notified">AN</span> Absent (notified)
+    <span class="att-cell att-excused">E</span> Excused
+    <span class="att-cell att-absent">A</span> Absent
+    <span class="att-cell att-none">–</span> Not recorded
+  </div>
+{{end}}
+{{end}}

@@ -1,0 +1,24 @@
+{{define "classes"}}
+{{if not .Classes}}
+  <p class="hint">No classes found for this period.</p>
+{{else}}
+  <fieldset class="class-fieldset">
+    <legend>Classes</legend>
+    {{range .Classes}}
+    <label class="class-label">
+      <input type="checkbox"
+        name="class_id"
+        value="{{.ID}}"
+        hx-get="/attendance"
+        hx-trigger="change"
+        hx-target="#attendance-panel"
+        hx-include="[name='class_id']:checked">
+      {{.ClassCode}}
+    </label>
+    {{end}}
+  </fieldset>
+{{end}}
+<div id="attendance-panel" hx-swap-oob="true">
+  <p class="hint">Check one or more classes above to view attendance.</p>
+</div>
+{{end}}
