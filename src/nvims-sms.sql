@@ -1,23 +1,25 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.12, 2026-06-08
+-- AVETMISS-compliant SMS schema  --  version 0.13, 2026-06-08
 -- =========================================================================
--- Changes from v0.11:
---   1.  workplans table: annual teacher workplan document per VTSA 2024
---       clause 32.4. Stores FTE (time_fraction), CAPPS ratio, total
---       accountable hours required, agreed overtime, status workflow
---       (Draft → Submitted → Approved), and the submitting user.
---   2.  workplan_approvals table: one row per approval step (Teacher or
---       LineManager). Records approver, timestamp, and optional notes.
---   3.  workplan_entries table: individual activity line items across the
---       three clause 32.4 categories (Teaching Delivery / CAPPS /
---       Education Related Duties). Optionally links to a subject, program,
---       academic_period, and/or class_session (for CELCAT-sourced rows).
---   4.  Indexes on workplans(teacher_id, calendar_year) and
---       workplan_entries(workplan_id), (workplan_id, entry_type,
---       academic_period_id), and class_session_id.
---   5.  trg_touch_workplans wired to fn_set_updated_at().
---   6.  vw_workplan_summary: planned hours by category, minimum CAPPS
---       required (ratio × actual teaching), and actual teaching hours
+-- Changes from v0.12:
+--   1.  pay_periods table: administrator-defined pay periods (typically
+--       fortnightly). Unique on period_start and on (calendar_year,
+--       period_name). Provides an ordered, named sequence for timesheet
+--       generation and payroll export.
+--   2.  timesheets table: one timesheet per teacher per pay period. Status
+--       workflow Draft → Submitted → Approved → Exported. Stores who
+--       submitted and approved, export timestamp and format. No banking,
+--       super, or rate data — this record carries hours only.
+--   3.  timesheet_entries table: individual hour lines. entry_type mirrors
+--       workplan categories plus Other. class_session_id links
+--       auto-populated Teaching Delivery rows to their source session;
+--       workplan_entry_id optionally links to the annual plan for
+--       reconciliation. is_overtime flag separates ordinary from overtime.
+--   4.  Indexes on timesheets(teacher_id), (pay_period_id), (status) and
+--       timesheet_entries(timesheet_id), (class_session_id).
+--   5.  trg_touch_timesheets wired to fn_set_updated_at().
+--   6.  vw_timesheet_summary: per-timesheet ordinary/overtime totals and
+--       per-category breakdowns (teaching, CAPPS, ERD, other).
 --       sourced from teacher_yearly_balances.
 -- =========================================================================
 
@@ -1141,22 +1143,22 @@ CREATE TABLE IF NOT EXISTS public.workplan_approvals (
 );
 
 -- Individual activity line items that make up a workplan. Covers all three
--- clause 32.4 categories. CELCAT-sourced Teaching Delivery rows carry an
--- activity_start_date (the session date) and may link to a class_session.
+-- clause 32.4 categories. Session-linked Teaching Delivery rows carry an
+-- activity_start_date (the session date) and link to a class_session.
 -- Aggregated or manually-entered rows leave dates NULL.
 CREATE TABLE IF NOT EXISTS public.workplan_entries (
     id bigserial NOT NULL,
     workplan_id bigint NOT NULL,
     entry_type varchar(30) NOT NULL,           -- 'Teaching Delivery' | 'CAPPS' | 'Education Related Duties'
-    activity_name varchar(100) NOT NULL,        -- e.g. 'Teaching Duties CELCAT', 'Planning', 'Mentoring'
+    activity_name varchar(100) NOT NULL,        -- e.g. 'Teaching Session', 'Planning', 'Mentoring'
     subject_id bigint NULL,                     -- unit/subject being taught or assessed (nullable)
     program_id bigint NULL,                     -- course context (nullable)
     academic_period_id bigint NULL,             -- semester or period this entry falls in (nullable)
-    activity_start_date date NULL,              -- populated for CELCAT session-level entries
-    activity_end_date date NULL,                -- populated for CELCAT session-level entries
+    activity_start_date date NULL,              -- populated for session-linked entries
+    activity_end_date date NULL,                -- populated for session-linked entries
     total_hours numeric(6,2) NOT NULL,
     comments text NULL,
-    class_session_id bigint NULL,               -- FK to class_sessions when imported from CELCAT
+    class_session_id bigint NULL,               -- FK to class_sessions for session-linked entries
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     CONSTRAINT fk_we_workplan FOREIGN KEY (workplan_id) REFERENCES public.workplans(id) ON DELETE CASCADE,
@@ -1167,6 +1169,72 @@ CREATE TABLE IF NOT EXISTS public.workplan_entries (
     CONSTRAINT chk_we_type CHECK (entry_type IN ('Teaching Delivery', 'CAPPS', 'Education Related Duties')),
     CONSTRAINT chk_we_hours CHECK (total_hours > 0),
     CONSTRAINT chk_we_dates CHECK (activity_end_date IS NULL OR activity_end_date >= activity_start_date)
+);
+
+-- =========================================================================
+-- 8.6. TIMESHEET (FORTNIGHTLY PAYROLL HOURS — AUTO-POPULATED FROM SESSIONS)
+-- =========================================================================
+
+-- Administrator-defined pay periods (typically fortnightly).
+CREATE TABLE IF NOT EXISTS public.pay_periods (
+    id            bigserial    NOT NULL,
+    period_start  date         NOT NULL,
+    period_end    date         NOT NULL,
+    period_name   varchar(50)  NOT NULL,    -- e.g. 'FN01 2026'
+    calendar_year smallint     NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uq_pay_period_start UNIQUE (period_start),
+    CONSTRAINT uq_pay_period_name  UNIQUE (calendar_year, period_name),
+    CONSTRAINT chk_pp_dates CHECK (period_end > period_start)
+);
+
+-- One timesheet per teacher per pay period. Carries hours only —
+-- no banking, super, or pay-rate data (submitted to external payroll).
+CREATE TABLE IF NOT EXISTS public.timesheets (
+    id             bigserial    NOT NULL,
+    teacher_id     bigint       NOT NULL,
+    pay_period_id  bigint       NOT NULL,
+    status         varchar(20)  NOT NULL DEFAULT 'Draft',
+    submitted_by   bigint       NULL,
+    submitted_at   timestamp with time zone NULL,
+    approved_by    bigint       NULL,
+    approved_at    timestamp with time zone NULL,
+    exported_at    timestamp with time zone NULL,
+    export_format  varchar(10)  NULL,       -- 'PDF', 'XLSX', etc.
+    notes          text         NULL,
+    created_at     timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at     timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT uq_timesheet       UNIQUE (teacher_id, pay_period_id),
+    CONSTRAINT fk_ts_teacher      FOREIGN KEY (teacher_id)    REFERENCES public.teachers(id)    ON DELETE RESTRICT,
+    CONSTRAINT fk_ts_pay_period   FOREIGN KEY (pay_period_id) REFERENCES public.pay_periods(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_ts_submitted_by FOREIGN KEY (submitted_by)  REFERENCES public.app_users(id)   ON DELETE SET NULL,
+    CONSTRAINT fk_ts_approved_by  FOREIGN KEY (approved_by)   REFERENCES public.app_users(id)   ON DELETE SET NULL,
+    CONSTRAINT chk_ts_status  CHECK (status IN ('Draft', 'Submitted', 'Approved', 'Exported')),
+    CONSTRAINT chk_ts_export  CHECK (exported_at IS NULL OR export_format IS NOT NULL)
+);
+
+-- Individual hour lines on a timesheet.
+-- Teaching Delivery rows are auto-populated from class_sessions (class_session_id set).
+-- CAPPS rows are derived from teaching hours × workplan.capps_ratio.
+-- Education Related Duties and Other rows are manually entered.
+CREATE TABLE IF NOT EXISTS public.timesheet_entries (
+    id                 bigserial    NOT NULL,
+    timesheet_id       bigint       NOT NULL,
+    entry_date         date         NOT NULL,
+    entry_type         varchar(30)  NOT NULL,
+    description        varchar(200) NULL,
+    hours              numeric(5,2) NOT NULL,
+    is_overtime        boolean      NOT NULL DEFAULT false,
+    class_session_id   bigint       NULL,
+    workplan_entry_id  bigint       NULL,
+    created_at         timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_te_timesheet      FOREIGN KEY (timesheet_id)      REFERENCES public.timesheets(id)        ON DELETE CASCADE,
+    CONSTRAINT fk_te_session        FOREIGN KEY (class_session_id)  REFERENCES public.class_sessions(id)   ON DELETE SET NULL,
+    CONSTRAINT fk_te_workplan_entry FOREIGN KEY (workplan_entry_id) REFERENCES public.workplan_entries(id)  ON DELETE SET NULL,
+    CONSTRAINT chk_te_type  CHECK (entry_type IN ('Teaching Delivery', 'CAPPS', 'Education Related Duties', 'Other')),
+    CONSTRAINT chk_te_hours CHECK (hours > 0)
 );
 
 -- =========================================================================
@@ -1233,6 +1301,14 @@ CREATE INDEX IF NOT EXISTS idx_we_workplan                ON public.workplan_ent
 CREATE INDEX IF NOT EXISTS idx_we_type_period             ON public.workplan_entries(workplan_id, entry_type, academic_period_id);
 CREATE INDEX IF NOT EXISTS idx_we_session                 ON public.workplan_entries(class_session_id) WHERE (class_session_id IS NOT NULL);
 
+-- NEW v13: timesheet lookup indexes.
+CREATE INDEX IF NOT EXISTS idx_pay_periods_year           ON public.pay_periods(calendar_year);
+CREATE INDEX IF NOT EXISTS idx_timesheets_teacher         ON public.timesheets(teacher_id);
+CREATE INDEX IF NOT EXISTS idx_timesheets_pay_period      ON public.timesheets(pay_period_id);
+CREATE INDEX IF NOT EXISTS idx_timesheets_status          ON public.timesheets(status) WHERE (status <> 'Exported');
+CREATE INDEX IF NOT EXISTS idx_te_timesheet               ON public.timesheet_entries(timesheet_id);
+CREATE INDEX IF NOT EXISTS idx_te_session                 ON public.timesheet_entries(class_session_id) WHERE (class_session_id IS NOT NULL);
+
 -- =========================================================================
 -- 11. COMPLIANCE & TEACHING-HOURS ENGINE (sessions are the source of truth)
 -- =========================================================================
@@ -1259,6 +1335,7 @@ CREATE OR REPLACE TRIGGER trg_touch_classes                    BEFORE UPDATE ON 
 CREATE OR REPLACE TRIGGER trg_touch_student_notes              BEFORE UPDATE ON public.student_notes              FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
 CREATE OR REPLACE TRIGGER trg_touch_message_templates          BEFORE UPDATE ON public.message_templates          FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
 CREATE OR REPLACE TRIGGER trg_touch_workplans                  BEFORE UPDATE ON public.workplans                  FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+CREATE OR REPLACE TRIGGER trg_touch_timesheets                 BEFORE UPDATE ON public.timesheets                 FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
 -- (teacher_yearly_balances.updated_at is set explicitly by the hours engine, so no trigger here.)
 
 -- Auto-populate class_slots.academic_period_id from its class so the exclusion
@@ -1848,5 +1925,31 @@ LEFT JOIN public.teacher_yearly_balances tyb
 GROUP BY w.id, w.teacher_id, w.calendar_year, w.version, w.status,
          w.time_fraction, w.capps_ratio, w.accountable_hours_required,
          w.agreed_overtime_hours, tyb.booked_hours;
+
+-- NEW v13: timesheet summary — ordinary and overtime hours by category.
+-- Joins pay_periods for period dates and name; one row per timesheet.
+CREATE OR REPLACE VIEW public.vw_timesheet_summary AS
+SELECT
+    ts.id                                                                                                      AS timesheet_id,
+    ts.teacher_id,
+    pp.period_start,
+    pp.period_end,
+    pp.period_name,
+    pp.calendar_year,
+    ts.status,
+    ts.exported_at,
+    ts.export_format,
+    COALESCE(SUM(CASE WHEN te.entry_type = 'Teaching Delivery'        AND NOT te.is_overtime THEN te.hours END), 0.00) AS teaching_ordinary_hours,
+    COALESCE(SUM(CASE WHEN te.entry_type = 'CAPPS'                    AND NOT te.is_overtime THEN te.hours END), 0.00) AS capps_ordinary_hours,
+    COALESCE(SUM(CASE WHEN te.entry_type = 'Education Related Duties' AND NOT te.is_overtime THEN te.hours END), 0.00) AS erd_ordinary_hours,
+    COALESCE(SUM(CASE WHEN te.entry_type = 'Other'                    AND NOT te.is_overtime THEN te.hours END), 0.00) AS other_ordinary_hours,
+    COALESCE(SUM(CASE WHEN NOT te.is_overtime THEN te.hours END), 0.00)                                                AS ordinary_hours,
+    COALESCE(SUM(CASE WHEN     te.is_overtime THEN te.hours END), 0.00)                                                AS overtime_hours,
+    COALESCE(SUM(te.hours), 0.00)                                                                                      AS total_hours
+FROM public.timesheets ts
+JOIN  public.pay_periods pp ON pp.id = ts.pay_period_id
+LEFT JOIN public.timesheet_entries te ON te.timesheet_id = ts.id
+GROUP BY ts.id, ts.teacher_id, pp.period_start, pp.period_end,
+         pp.period_name, pp.calendar_year, ts.status, ts.exported_at, ts.export_format;
 
 COMMIT;

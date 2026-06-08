@@ -2,7 +2,7 @@
 
 PostgreSQL schema for a national, potentially AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.12`: its entities, relationships, business rules, and the
+describes the design of `v0.13`: its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -25,6 +25,7 @@ mapping to the AVETMISS NAT reporting files.
   - [7. Communications](#7-communications)
   - [8. Completions, compliance & audit](#8-completions-compliance--audit)
   - [9. Workplan](#9-workplan)
+  - [10. Timesheet](#10-timesheet)
 - [Table reference](#table-reference)
 - [Data dictionary](#data-dictionary)
 - [AVETMISS NAT file mapping](#avetmiss-nat-file-mapping)
@@ -52,6 +53,9 @@ The schema covers the full SMS lifecycle:
 - **Compliance** — AVETMISS NAT export sources, program completions, and an audit trail.
 - **Workplan** — annual teacher workplan per VTSA 2024 clause 32.4: Teaching Delivery,
   CAPPS, and Education-Related Duties allocations with an approval workflow.
+- **Timesheet** — fortnightly (or other pay-period) hour records auto-populated from
+  sessions; submitted for external payroll processing (hours only, no banking or super
+  data).
 
 ---
 
@@ -81,6 +85,7 @@ graph TD
     M[Communications<br/>templates · campaigns · deliveries]
     A[Compliance & Audit<br/>completions · avetmiss_submissions · audit_log]
     W[Workplan<br/>workplans · workplan_approvals · workplan_entries]
+    S[Timesheet<br/>pay_periods · timesheets · timesheet_entries]
 
     P --> E
     C --> E
@@ -95,6 +100,9 @@ graph TD
     I --> A
     P --> W
     T --> W
+    P --> S
+    T --> S
+    W --> S
 ```
 
 ---
@@ -349,7 +357,7 @@ erDiagram
     SUBJECTS ||--o{ WORKPLAN_ENTRIES : "unit context (nullable)"
     PROGRAMS ||--o{ WORKPLAN_ENTRIES : "course context (nullable)"
     ACADEMIC_PERIODS ||--o{ WORKPLAN_ENTRIES : "semester (nullable)"
-    CLASS_SESSIONS ||--o{ WORKPLAN_ENTRIES : "CELCAT link (nullable)"
+    CLASS_SESSIONS ||--o{ WORKPLAN_ENTRIES : "session link (nullable)"
 
     WORKPLANS {
         bigserial id PK
@@ -368,7 +376,7 @@ erDiagram
         varchar entry_type "Teaching Delivery | CAPPS | Education Related Duties"
         varchar activity_name
         numeric total_hours
-        date activity_start_date "nullable — CELCAT session date"
+        date activity_start_date "nullable — populated for session-linked rows"
         bigint class_session_id FK "nullable"
     }
     WORKPLAN_APPROVALS {
@@ -377,6 +385,46 @@ erDiagram
         bigint approver_id FK
         varchar approval_role "Teacher | LineManager"
         timestamptz approved_at
+    }
+```
+
+### 10. Timesheet
+
+```mermaid
+erDiagram
+    PAY_PERIODS ||--o{ TIMESHEETS : "period for"
+    TEACHERS ||--o{ TIMESHEETS : "submitted by teacher"
+    APP_USERS ||--o{ TIMESHEETS : "submitted / approved by"
+    TIMESHEETS ||--o{ TIMESHEET_ENTRIES : "hour lines"
+    CLASS_SESSIONS ||--o{ TIMESHEET_ENTRIES : "source session (nullable)"
+    WORKPLAN_ENTRIES ||--o{ TIMESHEET_ENTRIES : "plan reconciliation (nullable)"
+
+    PAY_PERIODS {
+        bigserial id PK
+        date period_start
+        date period_end
+        varchar period_name "e.g. FN01 2026"
+        smallint calendar_year
+    }
+    TIMESHEETS {
+        bigserial id PK
+        bigint teacher_id FK
+        bigint pay_period_id FK
+        varchar status "Draft | Submitted | Approved | Exported"
+        timestamptz submitted_at
+        timestamptz approved_at
+        timestamptz exported_at
+        varchar export_format "PDF | XLSX (nullable)"
+    }
+    TIMESHEET_ENTRIES {
+        bigserial id PK
+        bigint timesheet_id FK
+        date entry_date
+        varchar entry_type "Teaching Delivery | CAPPS | Education Related Duties | Other"
+        numeric hours
+        boolean is_overtime
+        bigint class_session_id FK "nullable — auto-populated"
+        bigint workplan_entry_id FK "nullable — reconciliation"
     }
 ```
 
@@ -478,12 +526,15 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | `workplans` | Annual VTSA 2024 cl. 32.4 workplan per teacher per year. | → `teachers`, `app_users` |
 | `workplan_approvals` | Teacher/LineManager approval steps for a workplan. | → `workplans`, `app_users` |
 | `workplan_entries` | Teaching Delivery / CAPPS / ERD line items on a workplan. | → `workplans`, `subjects`, `programs`, `academic_periods`, `class_sessions` |
+| `pay_periods` | Administrator-defined pay periods (fortnightly by default). | — |
+| `timesheets` | One per teacher per pay period; hours only for external payroll. | → `teachers`, `pay_periods`, `app_users` |
+| `timesheet_entries` | Hour lines per date; auto-populated for sessions, manual for ERD/Other. | → `timesheets`, `class_sessions`, `workplan_entries` |
 
 ---
 
 ## Data dictionary
 
-Every table and column, generated from `v0.12`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
+Every table and column, generated from `v0.13`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
 
 ### Identity & reference
 
@@ -1774,6 +1825,76 @@ Every table and column, generated from `v0.12`. **Null** = whether the column ac
 - `CONSTRAINT chk_we_hours CHECK (total_hours > 0)`
 - `CONSTRAINT chk_we_dates CHECK (activity_end_date IS NULL OR activity_end_date >= activity_start_date)`
 
+#### `pay_periods`
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `period_start` | `date` | no |  |  |
+| `period_end` | `date` | no |  |  |
+| `period_name` | `varchar(50)` | no |  |  |
+| `calendar_year` | `smallint` | no |  |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT uq_pay_period_start UNIQUE (period_start)`
+- `CONSTRAINT uq_pay_period_name UNIQUE (calendar_year, period_name)`
+- `CONSTRAINT chk_pp_dates CHECK (period_end > period_start)`
+
+#### `timesheets`
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `teacher_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teachers |
+| `pay_period_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;pay_periods |
+| `status` | `varchar(20)` | no | `'Draft'` |  |
+| `submitted_by` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;app_users |
+| `submitted_at` | `timestamp with time zone` | yes |  |  |
+| `approved_by` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;app_users |
+| `approved_at` | `timestamp with time zone` | yes |  |  |
+| `exported_at` | `timestamp with time zone` | yes |  |  |
+| `export_format` | `varchar(10)` | yes |  |  |
+| `notes` | `text` | yes |  |  |
+| `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+| `updated_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT uq_timesheet UNIQUE (teacher_id, pay_period_id)`
+- `CONSTRAINT fk_ts_teacher FOREIGN KEY (teacher_id) REFERENCES public.teachers(id) ON DELETE RESTRICT`
+- `CONSTRAINT fk_ts_pay_period FOREIGN KEY (pay_period_id) REFERENCES public.pay_periods(id) ON DELETE RESTRICT`
+- `CONSTRAINT fk_ts_submitted_by FOREIGN KEY (submitted_by) REFERENCES public.app_users(id) ON DELETE SET NULL`
+- `CONSTRAINT fk_ts_approved_by FOREIGN KEY (approved_by) REFERENCES public.app_users(id) ON DELETE SET NULL`
+- `CONSTRAINT chk_ts_status CHECK (status IN ('Draft', 'Submitted', 'Approved', 'Exported'))`
+- `CONSTRAINT chk_ts_export CHECK (exported_at IS NULL OR export_format IS NOT NULL)`
+
+#### `timesheet_entries`
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `timesheet_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;timesheets |
+| `entry_date` | `date` | no |  |  |
+| `entry_type` | `varchar(30)` | no |  |  |
+| `description` | `varchar(200)` | yes |  |  |
+| `hours` | `numeric(5,2)` | no |  |  |
+| `is_overtime` | `boolean` | no | `false` |  |
+| `class_session_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;class_sessions |
+| `workplan_entry_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;workplan_entries |
+| `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_te_timesheet FOREIGN KEY (timesheet_id) REFERENCES public.timesheets(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_te_session FOREIGN KEY (class_session_id) REFERENCES public.class_sessions(id) ON DELETE SET NULL`
+- `CONSTRAINT fk_te_workplan_entry FOREIGN KEY (workplan_entry_id) REFERENCES public.workplan_entries(id) ON DELETE SET NULL`
+- `CONSTRAINT chk_te_type CHECK (entry_type IN ('Teaching Delivery', 'CAPPS', 'Education Related Duties', 'Other'))`
+- `CONSTRAINT chk_te_hours CHECK (hours > 0)`
+
 ---
 
 ## AVETMISS NAT file mapping
@@ -1839,7 +1960,7 @@ Each teacher produces one workplan per calendar year (versioned; `uq_workplan` e
 
 | `entry_type` | Source | Cap |
 |---|---|---|
-| `Teaching Delivery` | CELCAT sessions (`class_session_id`) or manual | 800 h/year max (standard VET) |
+| `Teaching Delivery` | Session-linked (`class_session_id`) or manually entered | 800 h/year max (standard VET) |
 | `CAPPS` | Derived from teaching hours | min `capps_ratio × actual_teaching_hours` |
 | `Education Related Duties` | Manual or imported | No fixed cap |
 
@@ -1862,9 +1983,9 @@ min_capps_required = actual_teaching_hours × capps_ratio
 
 `status` progresses `Draft → Submitted → Approved`. Each step is recorded in `workplan_approvals` with `approval_role IN ('Teacher', 'LineManager')`. The unique constraint on `(workplan_id, approval_role)` prevents duplicate steps. `workplans.submitted_by` / `submitted_at` record who submitted the workplan to the line manager.
 
-**CELCAT integration:**
+**Session-linked entries:**
 
-`workplan_entries` rows with `entry_type = 'Teaching Delivery'` and a non-null `class_session_id` are CELCAT-sourced. Rows without a session link are manually entered (e.g. aggregated ERD blocks). `activity_start_date` / `activity_end_date` are populated for session-level rows; NULL for aggregated entries.
+`workplan_entries` rows with `entry_type = 'Teaching Delivery'` and a non-null `class_session_id` are linked to a timetabled session. Rows without a session link are manually entered (e.g. aggregated ERD blocks). `activity_start_date` / `activity_end_date` are populated for session-linked rows; NULL for aggregated entries.
 
 ### Double-booking prevention
 
@@ -1904,6 +2025,27 @@ the authoritative check is verification against the OSIR registry.
 `message_deliveries` enforces `num_nonnulls(student_id, guardian_id, staff_id) = 1`, so
 exactly one recipient relation is set per row.
 
+### Timesheet
+
+Timesheets bridge session-derived actual hours to fortnightly payroll. The record carries **hours only** — no banking, super, pay rates, or employee identifiers beyond `teacher_id`. The expectation is export (PDF/XLSX) and upload to a separate, isolated payroll system.
+
+**Pay periods** are seeded by an administrator before timesheet generation. `uq_pay_period_start` prevents overlapping definitions; `uq_pay_period_name` gives each period a human-readable label (`FN01 2026`, `FN02 2026`, …).
+
+**Auto-population.** For each `class_sessions` row within the pay period where the teacher appears in `session_teachers`, the application creates a `timesheet_entries` row with `entry_type = 'Teaching Delivery'` and `class_session_id` set. CAPPS entries are derived by the application (teaching hours × `workplans.capps_ratio`). ERD and Other entries are manually added.
+
+**Status workflow:**
+
+| Status | Meaning |
+|---|---|
+| `Draft` | Being assembled; entries may still change. |
+| `Submitted` | Teacher has submitted for manager approval; set `submitted_by` and `submitted_at`. |
+| `Approved` | Line manager approved; set `approved_by` and `approved_at`. |
+| `Exported` | Sent to payroll system; set `exported_at` and `export_format`. |
+
+`chk_ts_export` ensures `export_format` is never null once an export timestamp is recorded.
+
+**Reconciliation with workplan.** `timesheet_entries.workplan_entry_id` is an optional FK to `workplan_entries`. Populating it allows the application to show planned vs actual hours per activity without any additional schema. It is never required — timesheets are independent of workplans.
+
 ---
 
 ## Functions & triggers
@@ -1931,6 +2073,7 @@ exactly one recipient relation is set per row.
 - `vw_teacher_academic_workloads` — per-teacher booked vs allocated hours, remaining annual capacity, % utilisation, and sector.
 - `vw_teacher_period_workloads` — per-period breakdown for teachers with `max_hours_per_period` set (HE/DUAL); includes `sequence_number` for ordered reporting. VET-only teachers with no period allocation do not appear.
 - `vw_workplan_summary` — per-workplan totals for each entry type (planned_teaching_hours, planned_capps_hours, planned_erd_hours, planned_total_hours), plus actual_teaching_hours from `teacher_yearly_balances` and min_capps_required (= `booked_hours × capps_ratio`).
+- `vw_timesheet_summary` — per-timesheet ordinary and overtime hours broken down by entry type (teaching, CAPPS, ERD, other), plus total_hours. Joins `pay_periods` for period dates and name.
 
 ---
 
@@ -1955,7 +2098,10 @@ exactly one recipient relation is set per row.
 - **`timestamptz` everywhere** for clean `pgx` round-tripping.
 - **Workplan submission.** When a teacher submits their workplan, set `status = 'Submitted'`, `submitted_by = <app_users.id>`, and `submitted_at = NOW()` in a single UPDATE. Insert a `workplan_approvals` row with `approval_role = 'Teacher'` once the teacher self-certifies.
 - **Query workplan vs actuals via the view.** `SELECT * FROM vw_workplan_summary WHERE teacher_id = $1 AND calendar_year = $2` gives planned totals, actual teaching hours, and the minimum CAPPS entitlement in one row. Do not recompute CAPPS in application code.
-- **CELCAT import.** For session-sourced Teaching Delivery entries, populate `class_session_id`, `activity_start_date`, and `activity_end_date` from the CELCAT record. Leave these NULL for manually entered ERD or aggregated blocks.
+- **Session-linked Teaching Delivery entries.** When creating a workplan entry from a timetabled session, populate `class_session_id`, `activity_start_date`, and `activity_end_date` from the `class_sessions` record. Leave these NULL for manually entered ERD or aggregated blocks.
+- **Generating a timesheet.** Query `class_sessions` joined to `session_teachers` for the teacher within `pay_periods.period_start .. period_end`, then INSERT one `timesheet_entries` row per session with `entry_type = 'Teaching Delivery'` and `class_session_id` set. Then insert CAPPS entries derived from total teaching hours × `workplans.capps_ratio` for the relevant year.
+- **Exporting a timesheet.** After producing the PDF/XLSX at the application layer, UPDATE `timesheets SET exported_at = NOW(), export_format = 'PDF', status = 'Exported'` in a single statement. The `chk_ts_export` constraint will reject an `exported_at` without a matching `export_format`.
+- **Query timesheet totals.** `SELECT * FROM vw_timesheet_summary WHERE teacher_id = $1 AND pay_period_id = $2` returns a single row with ordinary/overtime subtotals by category. Use this rather than aggregating `timesheet_entries` directly.
 
 ---
 
@@ -1977,4 +2123,4 @@ exactly one recipient relation is set per row.
 
 ---
 
-*Generated from `v0.12` (2026-06-08).*
+*Generated from `v0.13` (2026-06-08).*
