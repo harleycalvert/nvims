@@ -1,6 +1,6 @@
 # AVETMISS Student Management System — Database Design
 
-PostgreSQL schema for a national, AVETMISS-compliant Student Management System (SMS)
+PostgreSQL schema for a national, potentially AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
 describes the design of `v0.11`: its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
