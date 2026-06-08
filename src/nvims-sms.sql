@@ -1,26 +1,42 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  v9
+-- AVETMISS-compliant SMS schema  --  version 0.11, 2026-06-08
 -- =========================================================================
--- Changes from v8 (high-priority fixes):
---   1.  Shared-PK identity: people holds the PK; students/teachers/staff/
---       app_users carry that same id as PK *and* FK to people.
---   2.  Teaching-hours model reworked to derive from class_sessions +
---       session_teachers (the real occurrences), not the weekly class_slots
---       template. Fixes the per-week undercount and counts team teaching.
---   3.  Exclusion constraints on class_slots scoped by academic_period_id so
---       the same weekday/time in different terms is no longer a false clash.
---       Added session-level teacher double-booking protection.
---   4.  Missing FKs added (faculty links, all *_by columns -> app_users).
---   5.  app_users (auth/actor) + generic audit_log added.
---   6.  num_nonnulls() guard on message_deliveries; partial unique on
---       class_support_staff for class-wide rows.
---   7.  australian_states.avetmiss_state_id (numeric NAT code) added.
---   8.  students.highest_school_level_id / year added (NAT00080).
---   9.  client_subject_enrolments.student_course_enrollment_id now NULLABLE
---       to support standalone unit enrolments (NAT00120 blank program).
---  10.  Soft-delete columns + RESTRICT on the enrolment cascade chain so
---       reportable history can't be silently deleted.
---  11.  fn_generate_sessions(class_id) added (explodes slots -> sessions).
+-- Changes from v10:
+--   1.  teacher_sector ENUM ('VET', 'HE', 'DUAL') added. teachers.sector
+--       defaults to 'VET' for backwards compatibility with existing records.
+--   2.  academic_periods.period_type extended: BLOCK (6-8 week intensive
+--       blocks) and ROLLING (monthly rolling intakes for RTOs/private
+--       colleges) added alongside existing TERM, SEMESTER, TRIMESTER, YEAR.
+--   3.  academic_periods.sequence_number (smallint, nullable) added so
+--       periods can be ordered within a year (e.g. Semester 1 = 1, 2 = 2;
+--       Trimester 1 = 1, 2 = 2, 3 = 3; Block 4 = 4, etc.).
+--   4.  teachers.max_hours_per_period (nullable) added. When set, enables
+--       per-period workload tracking via teacher_period_allocations. Intended
+--       for HE/DUAL teachers on semester/trimester contracts.
+--   5.  teacher_period_allocations table added: per-academic-period hour cap
+--       and running total for teachers with max_hours_per_period configured.
+--       Auto-created via UPSERT the first time a session is booked.
+--   6.  programs.he_flag, programs.credit_points, and programs.aqf_level added
+--       to distinguish and characterise HE qualifications alongside VET programs.
+--       aqf_level (1–10) is nullable and applies to both VET and HE programs.
+--   7.  subjects.credit_points added for HE unit credit point values.
+--   8.  he_enrolment_details gains academic_period_id (the semester/trimester
+--       this enrolment applies to) and credit_points_enrolled.
+--   9.  Hard-coded 800.00 fallback removed from fn_adjust_teacher_balance and
+--       fn_recompute_teacher_balance. teachers.default_max_hours_per_year
+--       (NOT NULL) is the sole source for the yearly cap; change it per
+--       teacher to whatever their contract specifies.
+--  10.  fn_adjust_teacher_period_balance() added: single-point-of-control for
+--       per-period hour adjustments, enforcing the per-period cap.
+--  11.  fn_recompute_teacher_period_balance() added: full rebuild of a
+--       teacher/period balance from sessions (for backfills/repairs).
+--  12.  fn_session_teacher_hours() updated to also drive period allocations
+--       for teachers whose max_hours_per_period is set.
+--  13.  fn_session_change_hours() updated equivalently.
+--  14.  fn_generate_sessions() comment updated (removed "800h" reference).
+--  15.  New indexes on teacher_period_allocations and he_enrolment_details.
+--  16.  vw_teacher_academic_workloads updated to surface teacher sector.
+--  17.  vw_teacher_period_workloads view added for HE per-period reporting.
 -- =========================================================================
 
 BEGIN;
@@ -44,6 +60,10 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'timerange') THEN
         CREATE TYPE public.timerange AS RANGE (subtype = time);
     END IF;
+    -- NEW v11: distinguishes VET-only, HE-only, and dual-sector teachers.
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'teacher_sector') THEN
+        CREATE TYPE public.teacher_sector AS ENUM ('VET', 'HE', 'DUAL');
+    END IF;
 END$$;
 
 CREATE TABLE IF NOT EXISTS public.australian_states (
@@ -66,6 +86,9 @@ INSERT INTO public.australian_states (state_code, state_name, state_training_aut
 ('ACT', 'Australian Capital Territory', 'Skills Canberra', '08')
 ON CONFLICT (state_code) DO NOTHING;
 
+-- NEW v11: BLOCK and ROLLING added to support 6-8 week intensive blocks and
+-- rolling monthly intakes used by some RTOs and private HE colleges.
+-- sequence_number orders periods within a year (Semester 1 = 1, Block 3 = 3, etc.).
 CREATE TABLE IF NOT EXISTS public.academic_periods (
     id bigserial NOT NULL,
     period_code varchar(20) NOT NULL,
@@ -74,12 +97,14 @@ CREATE TABLE IF NOT EXISTS public.academic_periods (
     start_date date NOT NULL,
     end_date date NOT NULL,
     period_type varchar(10) NOT NULL,
+    sequence_number smallint NULL,            -- ordinal within the year; NULL = unordered/rolling
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     CONSTRAINT uq_academic_period_code UNIQUE (period_code),
-    CONSTRAINT chk_period_type CHECK (period_type IN ('TERM', 'SEMESTER', 'TRIMESTER', 'YEAR')),
-    CONSTRAINT chk_period_dates CHECK (end_date >= start_date)
+    CONSTRAINT chk_period_type CHECK (period_type IN ('TERM', 'SEMESTER', 'TRIMESTER', 'YEAR', 'BLOCK', 'ROLLING')),
+    CONSTRAINT chk_period_dates CHECK (end_date >= start_date),
+    CONSTRAINT chk_sequence_number CHECK (sequence_number IS NULL OR sequence_number > 0)
 );
 
 CREATE TABLE IF NOT EXISTS public.disability_types (
@@ -94,7 +119,7 @@ CREATE TABLE IF NOT EXISTS public.prior_educational_achievements (
     PRIMARY KEY (achievement_id)
 );
 
--- NEW: small fixed lookup for NAT00080 "highest school level completed"
+-- small fixed lookup for NAT00080 "highest school level completed"
 CREATE TABLE IF NOT EXISTS public.highest_school_levels (
     level_id varchar(2) NOT NULL,
     level_name varchar(100) NOT NULL,
@@ -145,7 +170,6 @@ CREATE TABLE IF NOT EXISTS public.people (
     phone_home varchar(15) NULL,
     phone_work varchar(15) NULL,
     phone_mobile varchar(15) NULL,
-    -- v8 'phone' legacy fall-through column removed (redundant with the three above)
     emergency_contact_name varchar(100) NULL,
     emergency_contact_phone varchar(15) NULL,
     emergency_contact_relationship varchar(30) NULL,
@@ -159,7 +183,7 @@ CREATE TABLE IF NOT EXISTS public.people (
     CONSTRAINT chk_postcode_format CHECK (postcode ~ '^[0-9]{4}$')
 );
 
--- NEW: authentication / system-actor accounts. Every *_by column FKs here.
+-- authentication / system-actor accounts. Every *_by column FKs here.
 CREATE TABLE IF NOT EXISTS public.app_users (
     id bigserial NOT NULL,
     person_id bigint NULL,                       -- NULL allowed for service accounts
@@ -191,21 +215,21 @@ CREATE TABLE IF NOT EXISTS public.students (
     language_id varchar(4) NOT NULL DEFAULT '1201',
     english_proficiency_id varchar(1) NULL,
     labour_force_status_id varchar(2) NULL,
-    highest_school_level_id varchar(2) NULL,            -- NEW (NAT00080)
-    year_highest_school_completed smallint NULL,        -- NEW (NAT00080)
+    highest_school_level_id varchar(2) NULL,
+    year_highest_school_completed smallint NULL,
     disability_flag varchar(1) NOT NULL DEFAULT 'N',
     prior_educational_achievement_flag varchar(1) NOT NULL DEFAULT 'N',
     secondary_school_id bigint NULL,
     state_allocated_student_number varchar(20) NULL,
     state_identity_issuing_body_code varchar(3) NULL,
     at_school_flag varchar(1) NOT NULL DEFAULT 'N',
-    photo_url varchar(2048) NULL,                       -- external object storage (signed URL/CDN), not base64
+    photo_url varchar(2048) NULL,
     photo_uploaded_at timestamp with time zone NULL,
     id_expiry_date date NULL,
     id_document_type varchar(50) NULL,
     id_document_number varchar(50) NULL,
-    deleted_at timestamp with time zone NULL,           -- NEW soft-delete
-    deleted_by bigint NULL,                             -- NEW
+    deleted_at timestamp with time zone NULL,
+    deleted_by bigint NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -214,10 +238,9 @@ CREATE TABLE IF NOT EXISTS public.students (
     CONSTRAINT fk_student_school FOREIGN KEY (secondary_school_id) REFERENCES public.secondary_schools(id) ON DELETE SET NULL,
     CONSTRAINT fk_student_school_level FOREIGN KEY (highest_school_level_id) REFERENCES public.highest_school_levels(level_id),
     CONSTRAINT fk_student_deleted_by FOREIGN KEY (deleted_by) REFERENCES public.app_users(id) ON DELETE SET NULL,
-    CONSTRAINT uq_students_number UNIQUE (student_number),
-    CONSTRAINT uq_students_email UNIQUE (student_email),
     CONSTRAINT uq_students_usi UNIQUE (usi),
     CONSTRAINT chk_usi_length CHECK (usi IS NULL OR length(usi) = 10),
+    CONSTRAINT chk_usi_pattern CHECK (usi IS NULL OR usi ~* '^[2-9A-HJ-NP-Z]{10}$'),
     CONSTRAINT chk_state_student_num_len CHECK (state_allocated_student_number IS NULL OR length(state_allocated_student_number) BETWEEN 5 AND 20),
     CONSTRAINT chk_avetmiss_indigenous CHECK (indigenous_status_id IN ('1', '2', '3', '4', '9', '@')),
     CONSTRAINT chk_disability_flag CHECK (disability_flag IN ('Y', 'N')),
@@ -226,6 +249,12 @@ CREATE TABLE IF NOT EXISTS public.students (
     CONSTRAINT chk_at_school_flag CHECK (at_school_flag IN ('Y', 'N'))
 );
 
+-- NEW v11: sector tracks whether this teacher delivers VET, HE, or both.
+-- default_max_hours_per_year is fully configurable per teacher; the 800.00 default
+-- is the standard VET industry contract figure — change it for HE, part-time, or
+-- other employment arrangements.
+-- max_hours_per_period: when set, activates per-period (semester/trimester/block)
+-- hour tracking via teacher_period_allocations in addition to the annual balance.
 CREATE TABLE IF NOT EXISTS public.teachers (
     id bigint NOT NULL,                          -- shared PK: this IS people.id
     faculty_id bigint NULL,
@@ -233,7 +262,9 @@ CREATE TABLE IF NOT EXISTS public.teachers (
     teacher_email varchar(100) NOT NULL,
     teacher_phone varchar(15) NULL,
     employment_status public.employment_type NOT NULL DEFAULT 'Casual',
+    sector public.teacher_sector NOT NULL DEFAULT 'VET',
     default_max_hours_per_year numeric(6,2) NOT NULL DEFAULT 800.00,
+    max_hours_per_period numeric(6,2) NULL,       -- NULL = use annual cap only; set for semester/block contracts
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -241,10 +272,13 @@ CREATE TABLE IF NOT EXISTS public.teachers (
     CONSTRAINT fk_teachers_faculty FOREIGN KEY (faculty_id) REFERENCES public.faculties(id) ON DELETE SET NULL,
     CONSTRAINT uq_teachers_number UNIQUE (teacher_number),
     CONSTRAINT uq_teachers_email UNIQUE (teacher_email),
-    CONSTRAINT chk_teacher_max_hours CHECK (default_max_hours_per_year > 0)
+    CONSTRAINT chk_teacher_max_hours CHECK (default_max_hours_per_year > 0),
+    CONSTRAINT chk_teacher_period_hours CHECK (max_hours_per_period IS NULL OR max_hours_per_period > 0)
 );
 
--- Reworked: a maintained per-year cache of teaching hours, sourced from sessions.
+-- Maintained per-year cache of teaching hours, sourced from sessions.
+-- allocated_max_hours is seeded from teachers.default_max_hours_per_year at row
+-- creation and can be overridden per-year without touching the teacher record.
 CREATE TABLE IF NOT EXISTS public.teacher_yearly_balances (
     id bigserial NOT NULL,
     teacher_id bigint NOT NULL,
@@ -256,7 +290,27 @@ CREATE TABLE IF NOT EXISTS public.teacher_yearly_balances (
     CONSTRAINT fk_balances_teacher FOREIGN KEY (teacher_id) REFERENCES public.teachers (id) ON DELETE CASCADE,
     CONSTRAINT uq_teacher_year UNIQUE (teacher_id, calendar_year),
     CONSTRAINT chk_balance_nonneg CHECK (booked_hours >= 0),
-    CONSTRAINT chk_balance_cap CHECK (booked_hours <= allocated_max_hours)  -- hard 800h backstop
+    CONSTRAINT chk_balance_cap CHECK (booked_hours <= allocated_max_hours)  -- hard cap backstop
+);
+
+-- NEW v11: per-period (semester/trimester/block) hour allocations for HE and
+-- DUAL-sector teachers. Auto-created on first session booking when the teacher has
+-- max_hours_per_period set; also supports explicit pre-allocation by admins.
+CREATE TABLE IF NOT EXISTS public.teacher_period_allocations (
+    id bigserial NOT NULL,
+    teacher_id bigint NOT NULL,
+    academic_period_id bigint NOT NULL,
+    allocated_hours numeric(6,2) NOT NULL,
+    booked_hours numeric(7,2) NOT NULL DEFAULT 0.00,
+    notes text NULL,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT uq_teacher_period UNIQUE (teacher_id, academic_period_id),
+    CONSTRAINT fk_tpa_teacher FOREIGN KEY (teacher_id) REFERENCES public.teachers(id) ON DELETE CASCADE,
+    CONSTRAINT fk_tpa_period FOREIGN KEY (academic_period_id) REFERENCES public.academic_periods(id) ON DELETE RESTRICT,
+    CONSTRAINT chk_tpa_allocated CHECK (allocated_hours > 0),
+    CONSTRAINT chk_tpa_nonneg CHECK (booked_hours >= 0),
+    CONSTRAINT chk_tpa_cap CHECK (booked_hours <= allocated_hours)  -- hard per-period backstop
 );
 
 CREATE TABLE IF NOT EXISTS public.staff (
@@ -301,14 +355,18 @@ CREATE TABLE IF NOT EXISTS public.student_prior_achievements (
     student_id bigint NOT NULL,
     achievement_id varchar(3) NOT NULL,
     PRIMARY KEY (student_id, achievement_id),
-    CONSTRAINT fk_stud_ach_student FOREIGN KEY (student_id) REFERENCES public.students (id) ON DELETE CASCADE,
-    CONSTRAINT fk_stud_ach_type FOREIGN KEY (achievement_id) REFERENCES public.prior_educational_achievements (achievement_id) ON DELETE RESTRICT
+    CONSTRAINT fk_spa_student FOREIGN KEY (student_id) REFERENCES public.students (id) ON DELETE CASCADE,
+    CONSTRAINT fk_spa_achievement FOREIGN KEY (achievement_id) REFERENCES public.prior_educational_achievements (achievement_id) ON DELETE RESTRICT
 );
 
 -- =========================================================================
--- 3. ACADEMIC CURRICULUM
+-- 3. CURRICULUM
 -- =========================================================================
 
+-- NEW v11: he_flag distinguishes HE qualifications from VET programs.
+-- credit_points holds the total credit point value of the qualification
+-- (e.g. 192 cp for a Bachelor, 48 cp for a Graduate Certificate).
+-- A program can have both vet_flag and he_flag true for dual-sector offerings.
 CREATE TABLE IF NOT EXISTS public.programs (
     id bigserial NOT NULL,
     faculty_id bigint NOT NULL,
@@ -321,11 +379,19 @@ CREATE TABLE IF NOT EXISTS public.programs (
     anzsic_code varchar(4) NULL,
     nominal_hours integer NOT NULL CHECK (nominal_hours >= 0),
     vet_flag boolean NOT NULL DEFAULT true,
+    he_flag boolean NOT NULL DEFAULT false,
+    credit_points integer NULL,                   -- total qualification credit points (HE use)
+    aqf_level smallint NULL,                      -- AQF level 1–10 (1=Cert I … 10=Doctoral)
     PRIMARY KEY (id),
     CONSTRAINT fk_programs_faculty FOREIGN KEY (faculty_id) REFERENCES public.faculties(id) ON DELETE RESTRICT,
-    CONSTRAINT uq_programs_code UNIQUE (program_code)
+    CONSTRAINT uq_programs_code UNIQUE (program_code),
+    CONSTRAINT chk_program_credit_points CHECK (credit_points IS NULL OR credit_points > 0),
+    CONSTRAINT chk_program_aqf_level CHECK (aqf_level IS NULL OR aqf_level BETWEEN 1 AND 10),
+    CONSTRAINT chk_program_sector CHECK (vet_flag = true OR he_flag = true)  -- must belong to at least one sector
 );
 
+-- NEW v11: credit_points is the HE credit point value of one unit/subject
+-- (e.g. 6 cp, 12 cp, 24 cp). NULL for VET-only units.
 CREATE TABLE IF NOT EXISTS public.subjects (
     id bigserial NOT NULL,
     subject_code varchar(30) NOT NULL,
@@ -334,9 +400,11 @@ CREATE TABLE IF NOT EXISTS public.subjects (
     field_of_education varchar(6) NOT NULL,
     nominal_hours integer CHECK (nominal_hours > 0),
     vet_flag boolean NOT NULL DEFAULT true,
+    credit_points integer NULL,                   -- HE credit point value of this unit
     PRIMARY KEY (id),
     CONSTRAINT uq_subjects_code UNIQUE (subject_code),
-    CONSTRAINT chk_module_flag CHECK (module_flag IN ('Y', 'N'))
+    CONSTRAINT chk_module_flag CHECK (module_flag IN ('Y', 'N')),
+    CONSTRAINT chk_subject_credit_points CHECK (credit_points IS NULL OR credit_points > 0)
 );
 
 CREATE TABLE IF NOT EXISTS public.subject_programs (
@@ -461,8 +529,8 @@ CREATE TABLE IF NOT EXISTS public.student_course_enrollments (
     funding_state_code varchar(3) NOT NULL DEFAULT 'VIC',
     training_contract_id varchar(20) NULL,
     client_apprenticeship_id varchar(20) NULL,
-    deleted_at timestamp with time zone NULL,           -- NEW soft-delete
-    deleted_by bigint NULL,                             -- NEW
+    deleted_at timestamp with time zone NULL,
+    deleted_by bigint NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -478,12 +546,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_uq_active_course_enrollment
 ON public.student_course_enrollments(student_id, program_id)
 WHERE (enrollment_status IN ('Active', 'Deferred', 'Suspended'));
 
--- NEW: state-specific funding attributes split off the national enrolment table
+-- state-specific funding attributes split off the national enrolment table
 CREATE TABLE IF NOT EXISTS public.state_funding_details (
     id bigserial NOT NULL,
     student_course_enrollment_id bigint NOT NULL,
     state_code varchar(3) NOT NULL,
-    attributes jsonb NOT NULL DEFAULT '{}'::jsonb,   -- e.g. {"vic_skills_first_eligible": true, "nsw_commitment_id": "..."}
+    attributes jsonb NOT NULL DEFAULT '{}'::jsonb,
     PRIMARY KEY (id),
     CONSTRAINT fk_sfd_enrollment FOREIGN KEY (student_course_enrollment_id) REFERENCES public.student_course_enrollments(id) ON DELETE CASCADE,
     CONSTRAINT fk_sfd_state FOREIGN KEY (state_code) REFERENCES public.australian_states(state_code),
@@ -636,15 +704,20 @@ CREATE TABLE IF NOT EXISTS public.vet_student_loans (
     re_credit_date date NULL,
     re_credit_reason text NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),                                   -- now 1-to-many (multiple census dates)
+    PRIMARY KEY (id),
     CONSTRAINT fk_vsl_enrollment FOREIGN KEY (student_course_enrollment_id) REFERENCES public.student_course_enrollments(id) ON DELETE CASCADE,
     CONSTRAINT uq_vsl_enrol_census UNIQUE (student_course_enrollment_id, census_date),
     CONSTRAINT chk_vsl_type CHECK (loan_type IN ('VSL', 'VET-FEE-HELP')),
     CONSTRAINT chk_vsl_amount CHECK (loan_amount >= 0)
 );
 
+-- NEW v11: academic_period_id links this HE enrolment to the specific
+-- semester/trimester/block it applies to (e.g. "Semester 1 2026").
+-- credit_points_enrolled is the load for this period (may be less than full load
+-- for part-time students, leave of absence, etc.).
 CREATE TABLE IF NOT EXISTS public.he_enrolment_details (
     student_course_enrollment_id bigint NOT NULL,
+    academic_period_id bigint NULL,
     eftsl numeric(5,4) NOT NULL,
     census_date date NOT NULL,
     hecs_help_eligible boolean NOT NULL DEFAULT false,
@@ -652,12 +725,15 @@ CREATE TABLE IF NOT EXISTS public.he_enrolment_details (
     study_load_category varchar(20) NULL,
     mode_of_attendance varchar(30) NULL,
     basis_for_admission varchar(10) NULL,
+    credit_points_enrolled smallint NULL,         -- credit point load for this enrolment period
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (student_course_enrollment_id),
     CONSTRAINT fk_he_enrollment FOREIGN KEY (student_course_enrollment_id) REFERENCES public.student_course_enrollments(id) ON DELETE CASCADE,
+    CONSTRAINT fk_he_period FOREIGN KEY (academic_period_id) REFERENCES public.academic_periods(id) ON DELETE SET NULL,
     CONSTRAINT chk_he_fee_type CHECK (fee_type IN ('HECS-HELP', 'FEE-HELP', 'DOMESTIC-FULL', 'INTERNATIONAL', 'EXEMPT')),
     CONSTRAINT chk_he_load CHECK (study_load_category IN ('Full-Time', 'Part-Time', 'Less Than Half-Time')),
-    CONSTRAINT chk_he_mode CHECK (mode_of_attendance IN ('Internal', 'External', 'Multi-Modal'))
+    CONSTRAINT chk_he_mode CHECK (mode_of_attendance IN ('Internal', 'External', 'Multi-Modal')),
+    CONSTRAINT chk_he_credit_points CHECK (credit_points_enrolled IS NULL OR credit_points_enrolled > 0)
 );
 
 CREATE TABLE IF NOT EXISTS public.enrollment_credit_claims (
@@ -694,7 +770,7 @@ CREATE TABLE IF NOT EXISTS public.classes (
     CONSTRAINT chk_class_cap CHECK (enrolment_cap > 0)
 );
 
--- The set of subjects/units a class delivers. (v8 called this 'clusters'.)
+-- The set of subjects/units a class delivers.
 CREATE TABLE IF NOT EXISTS public.class_subjects (
     class_id bigint NOT NULL,
     subject_id bigint NOT NULL,
@@ -714,7 +790,7 @@ CREATE TABLE IF NOT EXISTS public.class_enrollments (
 CREATE TABLE IF NOT EXISTS public.class_slots (
     id bigserial NOT NULL,
     class_id bigint NOT NULL,
-    academic_period_id bigint NOT NULL,             -- NEW: denormalised from class, auto-set by trigger
+    academic_period_id bigint NOT NULL,             -- denormalised from class, auto-set by trigger
     room_id bigint NULL,
     teacher_id bigint NOT NULL,
     day_of_week smallint NOT NULL,
@@ -804,7 +880,7 @@ CREATE TABLE IF NOT EXISTS public.class_support_staff (
     CONSTRAINT uq_support_scope UNIQUE (class_id, staff_id, student_id),
     CONSTRAINT chk_support_role CHECK (role IN ('Interpreter', 'Aide', 'Note-Taker', 'Counsellor', 'Support', 'Other'))
 );
--- Dedupe class-wide (student_id IS NULL) support rows, which the unique above can't.
+-- Dedupe class-wide (student_id IS NULL) support rows.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_uq_support_classwide
 ON public.class_support_staff(class_id, staff_id)
 WHERE (student_id IS NULL);
@@ -861,13 +937,12 @@ CREATE TABLE IF NOT EXISTS public.holiday_observances (
     rule_id bigint NULL REFERENCES public.holiday_rules(id) ON DELETE CASCADE,
     is_substitute boolean NOT NULL DEFAULT false
 );
--- COALESCE sentinel makes the uniqueness work for national (NULL state) rows too,
--- and gives ON CONFLICT a concrete target.
+-- COALESCE sentinel makes the uniqueness work for national (NULL state) rows too.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_observance
     ON public.holiday_observances (holiday_date, COALESCE(state_code, '*'), holiday_name);
 CREATE INDEX IF NOT EXISTS idx_observance_date ON public.holiday_observances (holiday_date);
 
--- Seed the clearly-national, predictable holidays. State-specific ones
+-- Seed clearly-national, predictable holidays. State-specific ones
 -- (Labour Day, King's Birthday variants, Melbourne Cup, etc.) get their own
 -- rules with state_code set.
 INSERT INTO public.holiday_rules (holiday_name, state_code, recurrence, month, day, easter_offset, observe_substitute) VALUES
@@ -888,7 +963,7 @@ CREATE TABLE IF NOT EXISTS public.program_completions (
     id bigserial NOT NULL,
     student_id bigint NOT NULL,
     program_id bigint NOT NULL,
-    training_org_id bigint NULL,                        -- NEW (NAT00130 carries TOID)
+    training_org_id bigint NULL,
     completion_date date NOT NULL,
     issued_flag varchar(1) NOT NULL DEFAULT 'N',
     parchment_number varchar(30) NULL,
@@ -904,7 +979,7 @@ CREATE TABLE IF NOT EXISTS public.student_progress_reports (
     enrollment_id bigint NULL,
     report_period varchar(50) NULL,
     report_date date NOT NULL,
-    document_url varchar(2048) NOT NULL,                -- external object storage, not inline blobs
+    document_url varchar(2048) NOT NULL,
     uploaded_by bigint NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -993,7 +1068,7 @@ CREATE TABLE IF NOT EXISTS public.message_deliveries (
     CONSTRAINT chk_delivery_recipient CHECK (recipient_type IN ('Student', 'Guardian', 'Staff')),
     CONSTRAINT chk_delivery_channel CHECK (channel IN ('Email', 'SMS')),
     CONSTRAINT chk_delivery_status CHECK (status IN ('Pending', 'Sent', 'Delivered', 'Failed', 'Bounced', 'OptedOut')),
-    -- NEW: exactly one recipient relation is set, so Go can switch on it safely.
+    -- exactly one recipient relation is set, so Go can switch on it safely.
     CONSTRAINT chk_delivery_one_recipient CHECK (num_nonnulls(student_id, guardian_id, staff_id) = 1)
 );
 
@@ -1015,7 +1090,7 @@ CREATE TABLE IF NOT EXISTS public.avetmiss_submissions (
     CONSTRAINT chk_sub_status CHECK (status IN ('Draft', 'Submitted', 'Accepted', 'Rejected', 'Resubmitted'))
 );
 
--- NEW: generic append-only audit trail
+-- generic append-only audit trail
 CREATE TABLE IF NOT EXISTS public.audit_log (
     id bigserial NOT NULL,
     table_name text NOT NULL,
@@ -1066,8 +1141,11 @@ ALTER TABLE IF EXISTS public.learning_access_plans    ADD CONSTRAINT fk_lap_asse
 CREATE INDEX IF NOT EXISTS idx_class_enrollments_cse ON public.class_enrollments(client_subject_enrolment_id);
 CREATE INDEX IF NOT EXISTS idx_slots_period_teacher  ON public.class_slots(academic_period_id, teacher_id);
 CREATE INDEX IF NOT EXISTS idx_students_usi          ON public.students(usi) WHERE (usi IS NOT NULL);
-CREATE INDEX IF NOT EXISTS idx_students_number       ON public.students(student_number);
+-- student_number / student_email are unique among ACTIVE (non-deleted) rows only.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_student_number_active ON public.students(student_number) WHERE (deleted_at IS NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_student_email_active  ON public.students(student_email)  WHERE (deleted_at IS NULL);
 CREATE INDEX IF NOT EXISTS idx_cse_student           ON public.client_subject_enrolments(student_id);
+CREATE INDEX IF NOT EXISTS idx_cse_course_enrolment  ON public.client_subject_enrolments(student_course_enrollment_id);
 CREATE INDEX IF NOT EXISTS idx_cse_subject           ON public.client_subject_enrolments(subject_id);
 CREATE INDEX IF NOT EXISTS idx_cse_outcome           ON public.client_subject_enrolments(outcome_id_national);
 CREATE INDEX IF NOT EXISTS idx_cse_delivery_loc      ON public.client_subject_enrolments(delivery_location_id);
@@ -1081,10 +1159,37 @@ CREATE INDEX IF NOT EXISTS idx_attendance_session    ON public.session_attendanc
 CREATE INDEX IF NOT EXISTS idx_attendance_student    ON public.session_attendance(student_id);
 CREATE INDEX IF NOT EXISTS idx_student_notes_student ON public.student_notes(student_id);
 CREATE INDEX IF NOT EXISTS idx_notes_type            ON public.student_notes(note_type);
+-- NEW v11: support efficient lookups on the period allocation tables.
+CREATE INDEX IF NOT EXISTS idx_tpa_teacher           ON public.teacher_period_allocations(teacher_id);
+CREATE INDEX IF NOT EXISTS idx_tpa_period            ON public.teacher_period_allocations(academic_period_id);
+CREATE INDEX IF NOT EXISTS idx_he_enrol_period       ON public.he_enrolment_details(academic_period_id) WHERE (academic_period_id IS NOT NULL);
 
 -- =========================================================================
 -- 11. COMPLIANCE & TEACHING-HOURS ENGINE (sessions are the source of truth)
 -- =========================================================================
+
+-- Postgres does NOT auto-touch updated_at; this trigger does, on every UPDATE.
+CREATE OR REPLACE FUNCTION public.fn_set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER trg_touch_academic_periods           BEFORE UPDATE ON public.academic_periods           FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+CREATE OR REPLACE TRIGGER trg_touch_people                     BEFORE UPDATE ON public.people                     FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+CREATE OR REPLACE TRIGGER trg_touch_app_users                  BEFORE UPDATE ON public.app_users                  FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+CREATE OR REPLACE TRIGGER trg_touch_students                   BEFORE UPDATE ON public.students                   FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+CREATE OR REPLACE TRIGGER trg_touch_teachers                   BEFORE UPDATE ON public.teachers                   FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+CREATE OR REPLACE TRIGGER trg_touch_course_enrollments         BEFORE UPDATE ON public.student_course_enrollments  FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+CREATE OR REPLACE TRIGGER trg_touch_subject_enrolments         BEFORE UPDATE ON public.client_subject_enrolments   FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+CREATE OR REPLACE TRIGGER trg_touch_training_plans             BEFORE UPDATE ON public.training_plans             FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+CREATE OR REPLACE TRIGGER trg_touch_learning_access_plans      BEFORE UPDATE ON public.learning_access_plans      FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+CREATE OR REPLACE TRIGGER trg_touch_classes                    BEFORE UPDATE ON public.classes                    FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+CREATE OR REPLACE TRIGGER trg_touch_student_notes              BEFORE UPDATE ON public.student_notes              FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+CREATE OR REPLACE TRIGGER trg_touch_message_templates          BEFORE UPDATE ON public.message_templates          FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+-- (teacher_yearly_balances.updated_at is set explicitly by the hours engine, so no trigger here.)
 
 -- Auto-populate class_slots.academic_period_id from its class so the exclusion
 -- constraint key stays correct without relying on the application.
@@ -1104,10 +1209,13 @@ CREATE OR REPLACE TRIGGER trg_set_slot_period
     BEFORE INSERT OR UPDATE OF class_id ON public.class_slots
     FOR EACH ROW EXECUTE FUNCTION public.fn_set_slot_period();
 
--- Single point of truth for adjusting a teacher's yearly balance, with the
--- 800h cap enforced here (friendly error) and by chk_balance_cap (hard backstop).
+-- Single point of truth for adjusting a teacher's yearly balance.
+-- Cap enforced here (friendly error) and by chk_balance_cap (hard backstop).
 -- FOR UPDATE serialises concurrent writers; the prior UPSERT guarantees the row
--- exists, closing the v8 race where the first slot of the year locked nothing.
+-- exists, closing the v8 race where the first session of the year locked nothing.
+-- NOTE (v11): the 800.00 literal has been removed. The cap is read exclusively
+-- from teachers.default_max_hours_per_year, which is NOT NULL and configurable
+-- per teacher. Change that column to match any employment contract.
 CREATE OR REPLACE FUNCTION public.fn_adjust_teacher_balance(p_teacher bigint, p_year smallint, p_delta numeric)
 RETURNS void AS $$
 DECLARE
@@ -1118,7 +1226,7 @@ BEGIN
 
     INSERT INTO public.teacher_yearly_balances (teacher_id, calendar_year, allocated_max_hours, booked_hours)
     VALUES (p_teacher, p_year,
-            COALESCE((SELECT default_max_hours_per_year FROM public.teachers WHERE id = p_teacher), 800.00),
+            (SELECT default_max_hours_per_year FROM public.teachers WHERE id = p_teacher),
             0.00)
     ON CONFLICT (teacher_id, calendar_year) DO NOTHING;
 
@@ -1128,7 +1236,7 @@ BEGIN
     FOR UPDATE;
 
     IF p_delta > 0 AND (v_current + p_delta) > v_max THEN
-        RAISE EXCEPTION 'Teacher % would reach %.2f teaching hours in %, exceeding the % cap by %.2f.',
+        RAISE EXCEPTION 'Teacher % would reach %.2f teaching hours in %, exceeding the %.2f annual cap by %.2f.',
             p_teacher, (v_current + p_delta), p_year, v_max, ((v_current + p_delta) - v_max);
     END IF;
 
@@ -1139,7 +1247,46 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- NEW v11: single point of truth for adjusting a teacher's per-period balance.
+-- Only acts when the teacher has max_hours_per_period set (NULL = no per-period
+-- tracking for that teacher). Auto-creates the allocation row on first call.
+-- FOR UPDATE serialises concurrent writers the same way as the yearly function.
+CREATE OR REPLACE FUNCTION public.fn_adjust_teacher_period_balance(p_teacher bigint, p_period bigint, p_delta numeric)
+RETURNS void AS $$
+DECLARE
+    v_current numeric(7,2);
+    v_max numeric(6,2);
+BEGIN
+    IF p_delta = 0 THEN RETURN; END IF;
+
+    SELECT max_hours_per_period INTO v_max
+    FROM public.teachers WHERE id = p_teacher;
+
+    IF v_max IS NULL THEN RETURN; END IF;  -- per-period tracking not enabled for this teacher
+
+    INSERT INTO public.teacher_period_allocations (teacher_id, academic_period_id, allocated_hours, booked_hours)
+    VALUES (p_teacher, p_period, v_max, 0.00)
+    ON CONFLICT (teacher_id, academic_period_id) DO NOTHING;
+
+    SELECT booked_hours, allocated_hours INTO v_current, v_max
+    FROM public.teacher_period_allocations
+    WHERE teacher_id = p_teacher AND academic_period_id = p_period
+    FOR UPDATE;
+
+    IF p_delta > 0 AND (v_current + p_delta) > v_max THEN
+        RAISE EXCEPTION 'Teacher % would reach %.2f hours in academic period %, exceeding the %.2f per-period cap by %.2f.',
+            p_teacher, (v_current + p_delta), p_period, v_max, ((v_current + p_delta) - v_max);
+    END IF;
+
+    UPDATE public.teacher_period_allocations
+    SET booked_hours = GREATEST(booked_hours + p_delta, 0.00),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE teacher_id = p_teacher AND academic_period_id = p_period;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Hours contribution of one (session, teacher) pair. Guest roles do not accrue.
+-- v11: also drives teacher_period_allocations for teachers with max_hours_per_period set.
 CREATE OR REPLACE FUNCTION public.fn_session_teacher_hours()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -1150,16 +1297,23 @@ DECLARE
     v_hours numeric(7,2);
     v_role varchar(30);
     v_teacher bigint;
+    v_period bigint;
     v_sign int;
 BEGIN
     IF TG_OP = 'INSERT' THEN
         v_role := NEW.role; v_teacher := NEW.teacher_id; v_sign := 1;
-        SELECT session_date, start_time, end_time, cancelled INTO v_date, v_start, v_end, v_cancelled
-        FROM public.class_sessions WHERE id = NEW.session_id;
+        SELECT cs.session_date, cs.start_time, cs.end_time, cs.cancelled, c.academic_period_id
+        INTO v_date, v_start, v_end, v_cancelled, v_period
+        FROM public.class_sessions cs
+        JOIN public.classes c ON c.id = cs.class_id
+        WHERE cs.id = NEW.session_id;
     ELSE
         v_role := OLD.role; v_teacher := OLD.teacher_id; v_sign := -1;
-        SELECT session_date, start_time, end_time, cancelled INTO v_date, v_start, v_end, v_cancelled
-        FROM public.class_sessions WHERE id = OLD.session_id;
+        SELECT cs.session_date, cs.start_time, cs.end_time, cs.cancelled, c.academic_period_id
+        INTO v_date, v_start, v_end, v_cancelled, v_period
+        FROM public.class_sessions cs
+        JOIN public.classes c ON c.id = cs.class_id
+        WHERE cs.id = OLD.session_id;
     END IF;
 
     IF v_role = 'Guest' OR COALESCE(v_cancelled, true) THEN
@@ -1168,6 +1322,7 @@ BEGIN
 
     v_hours := EXTRACT(EPOCH FROM (v_end - v_start)) / 3600.00;
     PERFORM public.fn_adjust_teacher_balance(v_teacher, EXTRACT(YEAR FROM v_date)::smallint, v_sign * v_hours);
+    PERFORM public.fn_adjust_teacher_period_balance(v_teacher, v_period, v_sign * v_hours);
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
@@ -1177,12 +1332,13 @@ CREATE OR REPLACE TRIGGER trg_session_teacher_hours
     FOR EACH ROW EXECUTE FUNCTION public.fn_session_teacher_hours();
 
 -- When a session is cancelled/uncancelled or its time/date is edited, re-apply
--- the delta for every (non-guest) teacher on it. Keeps the balance correct
--- regardless of which field changed.
+-- the delta for every (non-guest) teacher on it. Keeps both yearly and period
+-- balances correct regardless of which field changed.
 CREATE OR REPLACE FUNCTION public.fn_session_change_hours()
 RETURNS TRIGGER AS $$
 DECLARE
     r RECORD;
+    v_period bigint;
     v_old_hours numeric(7,2) := EXTRACT(EPOCH FROM (OLD.end_time - OLD.start_time)) / 3600.00;
     v_new_hours numeric(7,2) := EXTRACT(EPOCH FROM (NEW.end_time - NEW.start_time)) / 3600.00;
 BEGIN
@@ -1193,12 +1349,17 @@ BEGIN
         RETURN NEW;  -- nothing hours-relevant changed
     END IF;
 
+    SELECT c.academic_period_id INTO v_period
+    FROM public.classes c WHERE c.id = NEW.class_id;
+
     FOR r IN SELECT teacher_id FROM public.session_teachers WHERE session_id = NEW.id AND role <> 'Guest' LOOP
         IF NOT OLD.cancelled THEN
             PERFORM public.fn_adjust_teacher_balance(r.teacher_id, EXTRACT(YEAR FROM OLD.session_date)::smallint, -v_old_hours);
+            PERFORM public.fn_adjust_teacher_period_balance(r.teacher_id, v_period, -v_old_hours);
         END IF;
         IF NOT NEW.cancelled THEN
             PERFORM public.fn_adjust_teacher_balance(r.teacher_id, EXTRACT(YEAR FROM NEW.session_date)::smallint,  v_new_hours);
+            PERFORM public.fn_adjust_teacher_period_balance(r.teacher_id, v_period,  v_new_hours);
         END IF;
     END LOOP;
     RETURN NEW;
@@ -1210,6 +1371,7 @@ CREATE OR REPLACE TRIGGER trg_session_change_hours
     FOR EACH ROW EXECUTE FUNCTION public.fn_session_change_hours();
 
 -- Safety net: fully recompute a teacher's year from scratch (for backfills/repairs).
+-- v11: no longer uses a hard-coded 800.00 fallback; reads from teachers.default_max_hours_per_year.
 CREATE OR REPLACE FUNCTION public.fn_recompute_teacher_balance(p_teacher bigint, p_year smallint)
 RETURNS void AS $$
 DECLARE
@@ -1226,9 +1388,39 @@ BEGIN
 
     INSERT INTO public.teacher_yearly_balances (teacher_id, calendar_year, allocated_max_hours, booked_hours)
     VALUES (p_teacher, p_year,
-            COALESCE((SELECT default_max_hours_per_year FROM public.teachers WHERE id = p_teacher), 800.00),
+            (SELECT default_max_hours_per_year FROM public.teachers WHERE id = p_teacher),
             v_total)
     ON CONFLICT (teacher_id, calendar_year)
+    DO UPDATE SET booked_hours = EXCLUDED.booked_hours, updated_at = CURRENT_TIMESTAMP;
+END;
+$$ LANGUAGE plpgsql;
+
+-- NEW v11: fully recompute a teacher's per-period balance from scratch.
+-- No-ops if the teacher has no max_hours_per_period configured.
+CREATE OR REPLACE FUNCTION public.fn_recompute_teacher_period_balance(p_teacher bigint, p_period bigint)
+RETURNS void AS $$
+DECLARE
+    v_total numeric(7,2);
+    v_max numeric(6,2);
+BEGIN
+    SELECT max_hours_per_period INTO v_max
+    FROM public.teachers WHERE id = p_teacher;
+
+    IF v_max IS NULL THEN RETURN; END IF;
+
+    SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (cs.end_time - cs.start_time)) / 3600.00), 0.00)
+    INTO v_total
+    FROM public.session_teachers st
+    JOIN public.class_sessions cs ON cs.id = st.session_id
+    JOIN public.classes c ON c.id = cs.class_id
+    WHERE st.teacher_id = p_teacher
+      AND st.role <> 'Guest'
+      AND cs.cancelled = false
+      AND c.academic_period_id = p_period;
+
+    INSERT INTO public.teacher_period_allocations (teacher_id, academic_period_id, allocated_hours, booked_hours)
+    VALUES (p_teacher, p_period, v_max, v_total)
+    ON CONFLICT (teacher_id, academic_period_id)
     DO UPDATE SET booked_hours = EXCLUDED.booked_hours, updated_at = CURRENT_TIMESTAMP;
 END;
 $$ LANGUAGE plpgsql;
@@ -1424,12 +1616,12 @@ CREATE OR REPLACE TRIGGER trg_materialise_holidays
     FOR EACH ROW EXECUTE FUNCTION public.fn_materialise_holidays_for_period();
 
 -- =========================================================================
--- 13. SESSION GENERATION (explode slots -> concrete sessions)  [answers Q1]
+-- 13. SESSION GENERATION (explode slots -> concrete sessions)
 -- =========================================================================
 -- Set-based: one INSERT...SELECT over the period's calendar, honouring
 -- per-state public holidays and class-specific exceptions. Idempotent via the
 -- uq_session_natural key. Also seeds session_teachers from each slot's teacher,
--- which is what books the teaching hours (and triggers the 800h cap check).
+-- which triggers the configured hour cap check (annual and/or per-period).
 CREATE OR REPLACE FUNCTION public.fn_generate_sessions(p_class_id bigint)
 RETURNS integer AS $$
 DECLARE
@@ -1518,17 +1710,45 @@ CREATE OR REPLACE TRIGGER trg_audit_completions
     FOR EACH ROW EXECUTE FUNCTION public.fn_audit();
 
 -- =========================================================================
--- 15. REPORTING VIEW
+-- 15. REPORTING VIEWS
 -- =========================================================================
+
+-- Annual workload overview. v11: surfaces teacher sector alongside hours.
 CREATE OR REPLACE VIEW public.vw_teacher_academic_workloads AS
 SELECT
     b.id AS balance_record_id,
     b.teacher_id,
+    t.sector,
     b.calendar_year,
     b.booked_hours,
     b.allocated_max_hours,
     (b.allocated_max_hours - b.booked_hours) AS remaining_yearly_capacity,
     ROUND((b.booked_hours / NULLIF(b.allocated_max_hours, 0)) * 100, 1) AS pct_utilised
-FROM public.teacher_yearly_balances b;
+FROM public.teacher_yearly_balances b
+JOIN public.teachers t ON t.id = b.teacher_id;
+
+-- NEW v11: per-period workload for HE and DUAL-sector teachers.
+-- Only rows with explicit period allocations appear here; VET-only teachers
+-- who have no max_hours_per_period configured will not appear.
+CREATE OR REPLACE VIEW public.vw_teacher_period_workloads AS
+SELECT
+    tpa.id AS allocation_record_id,
+    tpa.teacher_id,
+    t.sector,
+    ap.period_code,
+    ap.period_name,
+    ap.period_type,
+    ap.year,
+    ap.sequence_number,
+    ap.start_date,
+    ap.end_date,
+    tpa.allocated_hours,
+    tpa.booked_hours,
+    (tpa.allocated_hours - tpa.booked_hours) AS remaining_period_capacity,
+    ROUND((tpa.booked_hours / NULLIF(tpa.allocated_hours, 0)) * 100, 1) AS pct_utilised,
+    tpa.notes
+FROM public.teacher_period_allocations tpa
+JOIN public.teachers t ON t.id = tpa.teacher_id
+JOIN public.academic_periods ap ON ap.id = tpa.academic_period_id;
 
 COMMIT;

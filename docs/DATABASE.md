@@ -2,7 +2,7 @@
 
 PostgreSQL schema for a national, AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v9.sql`: its entities, relationships, business rules, and the
+describes the design of `v0.11`: its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -44,7 +44,8 @@ The schema covers the full SMS lifecycle:
 - **Extensions** — apprenticeships, traineeships, training plans, Learning Access Plans
   (LAPs), VET Student Loans, Higher Education unit details, RPL/credit transfer.
 - **Timetabling** — recurring class templates, concrete sessions, attendance, room and
-  teacher double-booking prevention, and the 800-hour teaching cap.
+  teacher double-booking prevention, and configurable per-teacher teaching hour caps
+  (annual and optionally per-academic-period for HE/DUAL-sector teachers).
 - **Public holidays** — recurrence rules expanded into concrete observances.
 - **Communications** — email/SMS campaigns and per-recipient delivery logs.
 - **Compliance** — AVETMISS NAT export sources, program completions, and an audit trail.
@@ -57,7 +58,7 @@ The schema covers the full SMS lifecycle:
 |---|---|
 | **Surrogate keys everywhere** | Every operational table uses `BIGSERIAL` surrogate PKs; natural keys (USI, student number, AVETMISS codes) are enforced as `UNIQUE`. |
 | **Shared-primary-key subtyping** | `people` owns identity. `students`, `teachers`, `staff` each have `id` that is *both* their PK *and* a FK to `people(id)`. A row's identity **is** its person, and one person may hold multiple roles. |
-| **Sessions are the source of truth** | Teaching hours, attendance, and the 800h cap are all derived from concrete `class_sessions` + `session_teachers`, never from the recurring `class_slots` template. |
+| **Sessions are the source of truth** | Teaching hours, attendance, and the per-teacher cap enforcement are all derived from concrete `class_sessions` + `session_teachers`, never from the recurring `class_slots` template. |
 | **Definition vs occurrence** | Recurring concepts are stored once as rules and expanded into dated rows: `holiday_rules` → `holiday_observances`; `class_slots` → `class_sessions`. |
 | **Compliance data is never hard-deleted** | Core records use soft-delete (`deleted_at`/`deleted_by`) and the enrolment chain uses `ON DELETE RESTRICT` so reportable history can't be cascaded away. |
 | **Invariants enforced in the database** | Exclusion constraints, `CHECK`s, and `num_nonnulls()` keep the data correct regardless of which client wrote it, so the application layer can stay simple. |
@@ -114,6 +115,8 @@ erDiagram
     SECONDARY_SCHOOLS ||--o{ STUDENTS : "last attended"
     HIGHEST_SCHOOL_LEVELS ||--o{ STUDENTS : classifies
     TEACHERS ||--o{ TEACHER_YEARLY_BALANCES : "accrues hours"
+    TEACHERS ||--o{ TEACHER_PERIOD_ALLOCATIONS : "per-period cap"
+    ACADEMIC_PERIODS ||--o{ TEACHER_PERIOD_ALLOCATIONS : ""
 
     PEOPLE {
         bigserial id PK
@@ -133,7 +136,9 @@ erDiagram
     }
     TEACHERS {
         bigint id PK,FK
+        enum sector "VET | HE | DUAL"
         numeric default_max_hours_per_year
+        numeric max_hours_per_period "NULL = annual cap only"
     }
     APP_USERS {
         bigserial id PK
@@ -157,6 +162,9 @@ erDiagram
         varchar level_of_education
         varchar field_of_education
         boolean vet_flag
+        boolean he_flag
+        integer credit_points "total qualification cp (HE)"
+        smallint aqf_level "1–10, nullable"
     }
     SUBJECTS {
         bigserial id PK
@@ -164,6 +172,7 @@ erDiagram
         varchar field_of_education
         integer nominal_hours
         boolean vet_flag
+        integer credit_points "HE unit credit points, nullable"
     }
 ```
 
@@ -182,6 +191,7 @@ erDiagram
     STUDENT_COURSE_ENROLLMENTS ||--o| TRAINEESHIP_DETAILS : "extends"
     STUDENT_COURSE_ENROLLMENTS ||--o| TRAINING_PLANS : "extends"
     STUDENT_COURSE_ENROLLMENTS ||--o| HE_ENROLMENT_DETAILS : "extends"
+    ACADEMIC_PERIODS ||--o{ HE_ENROLMENT_DETAILS : "period (nullable)"
     STUDENT_COURSE_ENROLLMENTS ||--o{ STATE_FUNDING_DETAILS : "extends"
     STUDENT_COURSE_ENROLLMENTS ||--o{ VET_STUDENT_LOANS : "extends"
     STUDENT_COURSE_ENROLLMENTS ||--o{ ENROLLMENT_CREDIT_CLAIMS : "RPL/CT"
@@ -333,10 +343,11 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 |---|---|---|
 | `people` | Single identity spine — name, DOB, gender, address, contact. Owns the surrogate id. | → `australian_states` |
 | `students` | Student-specific data: student number, USI, AVETMISS demographics, photo, ID expiry. Shares PK with `people`. Soft-deletable. | PK = FK → `people`; → `secondary_schools`, `highest_school_levels` |
-| `teachers` | Teacher-specific data and the per-year hours cap default. Shares PK with `people`. | PK = FK → `people`; → `faculties` |
+| `teachers` | Teacher-specific data: sector (`VET`/`HE`/`DUAL`), annual hours cap, and optional per-period cap. Shares PK with `people`. | PK = FK → `people`; → `faculties` |
 | `staff` | Support/admin staff. Shares PK with `people`. | PK = FK → `people`; → `faculties` |
 | `app_users` | Login/system accounts and RBAC role. Source of every `*_by` audit actor. | → `people` (nullable, for service accounts) |
-| `teacher_yearly_balances` | Maintained cache of booked teaching hours per teacher per calendar year, with the 800h cap. | → `teachers` |
+| `teacher_yearly_balances` | Maintained cache of booked teaching hours per teacher per calendar year. Cap seeded from `teachers.default_max_hours_per_year`; overridable per-year. | → `teachers` |
+| `teacher_period_allocations` | Per-academic-period hour cap and running total for HE/DUAL teachers with `max_hours_per_period` set. Auto-created on first session booking. | → `teachers`, `academic_periods` |
 | `student_guardians` | Guardians/emergency contacts; comms targets for under-18s. | → `students` |
 | `student_disabilities` | Declared disabilities (NAT00090). | → `students`, `disability_types` |
 | `student_prior_achievements` | Prior educational achievement (NAT00100). | → `students`, `prior_educational_achievements` |
@@ -347,8 +358,8 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 
 | Table | Purpose | Key relationships |
 |---|---|---|
-| `programs` | Qualifications/courses (NAT00030). | → `faculties` |
-| `subjects` | Units/modules/subjects (NAT00060). | — |
+| `programs` | Qualifications/courses (NAT00030). `he_flag` distinguishes HE qualifications. `credit_points` is the total qualification credit point value; `aqf_level` (1–10) applies to both VET and HE. | → `faculties` |
+| `subjects` | Units/modules/subjects (NAT00060). `credit_points` holds the HE unit credit point value (NULL for VET-only units). | — |
 | `subject_programs` | Which subjects belong to which programs (many-to-many). | → `subjects`, `programs` |
 
 ### Enrolment & extensions
@@ -362,7 +373,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | `training_plans` | Training-plan signing/review dates (1:1). | → `student_course_enrollments` |
 | `learning_access_plans` | LAP: adjustments and resources for students with disabilities. | → `students`, `student_course_enrollments`, `staff` (assessor) |
 | `vet_student_loans` | VSL/VET-FEE-HELP per census date (1:many). | → `student_course_enrollments` |
-| `he_enrolment_details` | Higher-Ed EFTSL/census/HELP details (1:1). | → `student_course_enrollments` |
+| `he_enrolment_details` | Higher-Ed EFTSL/census/HELP details (1:1). `academic_period_id` links to the specific semester/trimester; `credit_points_enrolled` tracks partial/full load. | → `student_course_enrollments`, `academic_periods` |
 | `enrollment_credit_claims` | RPL and credit transfer grants. | → `student_course_enrollments`, `subjects` |
 | `state_funding_details` | State-specific funding attributes (Skills First, Smart & Skilled…) as `jsonb`, off the national table. | → `student_course_enrollments`, `australian_states` |
 
@@ -380,7 +391,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 
 | Table | Purpose | Key relationships |
 |---|---|---|
-| `academic_periods` | Terms/semesters/trimesters/years with date ranges. | — |
+| `academic_periods` | Terms/semesters/trimesters/years with date ranges. `period_type` supports `TERM`, `SEMESTER`, `TRIMESTER`, `YEAR`, `BLOCK` (6–8 week intensive), and `ROLLING` (monthly intake). `sequence_number` orders periods within a year. | — |
 | `classes` | A delivery instance within a period at a location. | → `academic_periods`, `delivery_locations` |
 | `class_subjects` | The units a class delivers. | → `classes`, `subjects` |
 | `class_enrollments` | Maps a student's subject enrolment to a class. | → `classes`, `client_subject_enrolments` |
@@ -420,7 +431,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 
 ## Data dictionary
 
-Every table and column, generated from `v9.sql`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
+Every table and column, generated from `v0.11`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
 
 ### Identity & reference
 
@@ -525,7 +536,9 @@ Every table and column, generated from `v9.sql`. **Null** = whether the column a
 | `teacher_email` | `varchar(100)` | no |  | UK |
 | `teacher_phone` | `varchar(15)` | yes |  |  |
 | `employment_status` | `public.employment_type` | no | `'Casual'` |  |
+| `sector` | `public.teacher_sector` | no | `'VET'` |  |
 | `default_max_hours_per_year` | `numeric(6,2)` | no | `800.00` |  |
+| `max_hours_per_period` | `numeric(6,2)` | yes |  |  |
 | `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 | `updated_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 
@@ -537,6 +550,7 @@ Every table and column, generated from `v9.sql`. **Null** = whether the column a
 - `CONSTRAINT uq_teachers_number UNIQUE (teacher_number)`
 - `CONSTRAINT uq_teachers_email UNIQUE (teacher_email)`
 - `CONSTRAINT chk_teacher_max_hours CHECK (default_max_hours_per_year > 0)`
+- `CONSTRAINT chk_teacher_period_hours CHECK (max_hours_per_period IS NULL OR max_hours_per_period > 0)`
 
 #### `staff`
 
@@ -594,6 +608,28 @@ Every table and column, generated from `v9.sql`. **Null** = whether the column a
 - `CONSTRAINT uq_teacher_year UNIQUE (teacher_id, calendar_year)`
 - `CONSTRAINT chk_balance_nonneg CHECK (booked_hours >= 0)`
 - `CONSTRAINT chk_balance_cap CHECK (booked_hours <= allocated_max_hours)`
+
+#### `teacher_period_allocations`
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `teacher_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teachers |
+| `academic_period_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;academic_periods |
+| `allocated_hours` | `numeric(6,2)` | no |  |  |
+| `booked_hours` | `numeric(7,2)` | no | `0.00` |  |
+| `notes` | `text` | yes |  |  |
+| `updated_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT uq_teacher_period UNIQUE (teacher_id, academic_period_id)`
+- `CONSTRAINT fk_tpa_teacher FOREIGN KEY (teacher_id) REFERENCES public.teachers(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_tpa_period FOREIGN KEY (academic_period_id) REFERENCES public.academic_periods(id) ON DELETE RESTRICT`
+- `CONSTRAINT chk_tpa_allocated CHECK (allocated_hours > 0)`
+- `CONSTRAINT chk_tpa_nonneg CHECK (booked_hours >= 0)`
+- `CONSTRAINT chk_tpa_cap CHECK (booked_hours <= allocated_hours)`
 
 #### `student_guardians`
 
@@ -732,12 +768,18 @@ Every table and column, generated from `v9.sql`. **Null** = whether the column a
 | `anzsic_code` | `varchar(4)` | yes |  |  |
 | `nominal_hours` | `integer` | no |  |  |
 | `vet_flag` | `boolean` | no | `true` |  |
+| `he_flag` | `boolean` | no | `false` |  |
+| `credit_points` | `integer` | yes |  |  |
+| `aqf_level` | `smallint` | yes |  |  |
 
 *Constraints:*
 
 - `PRIMARY KEY (id)`
 - `CONSTRAINT fk_programs_faculty FOREIGN KEY (faculty_id) REFERENCES public.faculties(id) ON DELETE RESTRICT`
 - `CONSTRAINT uq_programs_code UNIQUE (program_code)`
+- `CONSTRAINT chk_program_credit_points CHECK (credit_points IS NULL OR credit_points > 0)`
+- `CONSTRAINT chk_program_aqf_level CHECK (aqf_level IS NULL OR aqf_level BETWEEN 1 AND 10)`
+- `CONSTRAINT chk_program_sector CHECK (vet_flag = true OR he_flag = true)`
 
 #### `subjects`
 
@@ -750,12 +792,14 @@ Every table and column, generated from `v9.sql`. **Null** = whether the column a
 | `field_of_education` | `varchar(6)` | no |  |  |
 | `nominal_hours` | `integer` | yes |  |  |
 | `vet_flag` | `boolean` | no | `true` |  |
+| `credit_points` | `integer` | yes |  |  |
 
 *Constraints:*
 
 - `PRIMARY KEY (id)`
 - `CONSTRAINT uq_subjects_code UNIQUE (subject_code)`
 - `CONSTRAINT chk_module_flag CHECK (module_flag IN ('Y', 'N'))`
+- `CONSTRAINT chk_subject_credit_points CHECK (credit_points IS NULL OR credit_points > 0)`
 
 #### `subject_programs`
 
@@ -980,6 +1024,7 @@ Every table and column, generated from `v9.sql`. **Null** = whether the column a
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `student_course_enrollment_id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;student_course_enrollments |
+| `academic_period_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;academic_periods |
 | `eftsl` | `numeric(5,4)` | no |  |  |
 | `census_date` | `date` | no |  |  |
 | `hecs_help_eligible` | `boolean` | no | `false` |  |
@@ -987,15 +1032,18 @@ Every table and column, generated from `v9.sql`. **Null** = whether the column a
 | `study_load_category` | `varchar(20)` | yes |  |  |
 | `mode_of_attendance` | `varchar(30)` | yes |  |  |
 | `basis_for_admission` | `varchar(10)` | yes |  |  |
+| `credit_points_enrolled` | `smallint` | yes |  |  |
 | `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 
 *Constraints:*
 
 - `PRIMARY KEY (student_course_enrollment_id)`
 - `CONSTRAINT fk_he_enrollment FOREIGN KEY (student_course_enrollment_id) REFERENCES public.student_course_enrollments(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_he_period FOREIGN KEY (academic_period_id) REFERENCES public.academic_periods(id) ON DELETE SET NULL`
 - `CONSTRAINT chk_he_fee_type CHECK (fee_type IN ('HECS-HELP', 'FEE-HELP', 'DOMESTIC-FULL', 'INTERNATIONAL', 'EXEMPT'))`
 - `CONSTRAINT chk_he_load CHECK (study_load_category IN ('Full-Time', 'Part-Time', 'Less Than Half-Time'))`
 - `CONSTRAINT chk_he_mode CHECK (mode_of_attendance IN ('Internal', 'External', 'Multi-Modal'))`
+- `CONSTRAINT chk_he_credit_points CHECK (credit_points_enrolled IS NULL OR credit_points_enrolled > 0)`
 
 #### `enrollment_credit_claims`
 
@@ -1178,6 +1226,7 @@ Every table and column, generated from `v9.sql`. **Null** = whether the column a
 | `start_date` | `date` | no |  |  |
 | `end_date` | `date` | no |  |  |
 | `period_type` | `varchar(10)` | no |  |  |
+| `sequence_number` | `smallint` | yes |  |  |
 | `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 | `updated_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 
@@ -1185,8 +1234,9 @@ Every table and column, generated from `v9.sql`. **Null** = whether the column a
 
 - `PRIMARY KEY (id)`
 - `CONSTRAINT uq_academic_period_code UNIQUE (period_code)`
-- `CONSTRAINT chk_period_type CHECK (period_type IN ('TERM', 'SEMESTER', 'TRIMESTER', 'YEAR'))`
+- `CONSTRAINT chk_period_type CHECK (period_type IN ('TERM', 'SEMESTER', 'TRIMESTER', 'YEAR', 'BLOCK', 'ROLLING'))`
 - `CONSTRAINT chk_period_dates CHECK (end_date >= start_date)`
+- `CONSTRAINT chk_sequence_number CHECK (sequence_number IS NULL OR sequence_number > 0)`
 
 #### `classes`
 
@@ -1626,18 +1676,31 @@ periodically.
 
 ## Business rules & constraints
 
-### The 800-hour teaching cap
+### Teaching hour caps
 
-The rule "a teacher may not exceed 800 teaching hours in a calendar year" is enforced
-from **actual sessions**, not the weekly template:
+Teaching hour limits are enforced from **actual sessions**, not the weekly template.
 
+#### Annual cap
+
+- Every teacher has `default_max_hours_per_year` (NOT NULL, default 800.00 — the standard
+  VET industry contract figure; override per teacher for HE, part-time, or other
+  arrangements). This is the **sole** source for the annual cap; there is no hardcoded fallback.
 - `session_teachers` inserts/deletes and `class_sessions` cancel/time/date edits call
   `fn_adjust_teacher_balance`, which maintains `teacher_yearly_balances.booked_hours`.
 - The cap is enforced in two places: a friendly `RAISE EXCEPTION` inside the function,
   and a hard `CHECK (booked_hours <= allocated_max_hours)` as a backstop.
-- `Guest`-role assignments do not accrue hours; team teaching counts every non-guest
-  teacher.
-- `fn_recompute_teacher_balance(teacher, year)` rebuilds the cache from scratch.
+- `Guest`-role assignments do not accrue hours; team teaching counts every non-guest teacher.
+- `fn_recompute_teacher_balance(teacher, year)` rebuilds the yearly cache from scratch.
+
+#### Per-period cap (HE / DUAL teachers)
+
+- When `teachers.max_hours_per_period` is set, per-academic-period tracking is activated
+  via `teacher_period_allocations`. VET-only teachers with `max_hours_per_period IS NULL`
+  are unaffected.
+- The same session trigger calls `fn_adjust_teacher_period_balance`, which auto-creates the
+  `teacher_period_allocations` row on first use (UPSERT) and enforces the per-period cap.
+- `fn_recompute_teacher_period_balance(teacher, period)` rebuilds a per-period balance
+  from scratch (no-op if `max_hours_per_period` is NULL).
 
 ### Double-booking prevention
 
@@ -1685,21 +1748,24 @@ exactly one recipient relation is set per row.
 |---|---|---|
 | `fn_set_updated_at` | trigger fn | Touches `updated_at = NOW()` on UPDATE (attached to all `updated_at` tables). |
 | `fn_set_slot_period` | trigger fn | Auto-fills `class_slots.academic_period_id` from its class. |
-| `fn_adjust_teacher_balance` | helper | Single point for booking/un-booking teacher hours; enforces the 800h cap with `FOR UPDATE` concurrency. |
-| `fn_session_teacher_hours` | trigger fn | Books/un-books hours on `session_teachers` insert/delete. |
-| `fn_session_change_hours` | trigger fn | Re-applies hours when a session is cancelled or its date/time changes. |
-| `fn_recompute_teacher_balance` | utility | Rebuilds a teacher's yearly balance from sessions. |
+| `fn_adjust_teacher_balance` | helper | Single point for booking/un-booking yearly teacher hours. Cap read from `teachers.default_max_hours_per_year` (no hardcoded fallback). `FOR UPDATE` serialises concurrent writers. |
+| `fn_adjust_teacher_period_balance` | helper | Single point for per-period hour adjustments; no-ops when `max_hours_per_period IS NULL`. Auto-creates the `teacher_period_allocations` row on first call. |
+| `fn_session_teacher_hours` | trigger fn | Books/un-books hours on `session_teachers` insert/delete; drives both annual and per-period balances. |
+| `fn_session_change_hours` | trigger fn | Re-applies hours when a session is cancelled or its date/time changes; updates both annual and per-period balances. |
+| `fn_recompute_teacher_balance` | utility | Rebuilds a teacher's yearly balance from sessions (for backfills/repairs). Reads cap from `teachers.default_max_hours_per_year`. |
+| `fn_recompute_teacher_period_balance` | utility | Rebuilds a teacher's per-period balance from sessions. No-op if `max_hours_per_period IS NULL`. |
 | `fn_check_teacher_session_conflict` | trigger fn | Blocks overlapping session assignments for a teacher. |
 | `fn_easter_sunday` | utility | Computus (Meeus/Jones/Butcher) for Easter Sunday. |
 | `fn_nth_weekday` | utility | nth (or last) weekday of a month. |
 | `fn_materialise_holidays` | utility | Expands `holiday_rules` into `holiday_observances` for a year (idempotent). |
 | `fn_materialise_holidays_for_period` | trigger fn | Auto-materialises a year's holidays when an `academic_periods` row is inserted. |
-| `fn_generate_sessions` | utility | Explodes `class_slots` into `class_sessions` across the period, skipping holidays/exceptions; seeds `session_teachers`. |
+| `fn_generate_sessions` | utility | Explodes `class_slots` into `class_sessions` across the period, skipping holidays/exceptions; seeds `session_teachers`. Session booking triggers the annual and per-period cap checks. |
 | `fn_validate_training_plan_compliance`, `fn_validate_traineeship_constraints` | trigger fn | Apprenticeship/traineeship date guards. |
 | `fn_audit` | trigger fn | Writes to `audit_log`; reads the actor from `app.current_user_id`. |
 
-**View:** `vw_teacher_academic_workloads` — per-teacher booked vs allocated hours, remaining
-capacity, and % utilisation.
+**Views:**
+- `vw_teacher_academic_workloads` — per-teacher booked vs allocated hours, remaining annual capacity, % utilisation, and sector.
+- `vw_teacher_period_workloads` — per-period breakdown for teachers with `max_hours_per_period` set (HE/DUAL); includes `sequence_number` for ordered reporting. VET-only teachers with no period allocation do not appear.
 
 ---
 
@@ -1708,14 +1774,17 @@ capacity, and % utilisation.
 - **Set the audit actor per transaction.** Before writes, run
   `SET LOCAL app.current_user_id = '<app_users.id>';` so `fn_audit` records who acted.
 - **Generate sessions after slots are final.** Call `SELECT fn_generate_sessions(:class_id);`
-  once `class_slots` are set. It is idempotent (keyed on `class_id, session_date, start_time`)
-  and the 800h cap may abort the call if a teacher would be over-allocated — handle that error.
+  once `class_slots` are set. It is idempotent (keyed on `class_id, session_date, start_time`).
+  If a teacher would exceed their annual or per-period cap the call aborts — handle that error.
 - **Re-materialise holidays after editing rules.** The auto-trigger only fires on new
   `academic_periods`. After adding/editing a `holiday_rule`, call
   `SELECT fn_materialise_holidays(:year);`.
 - **Scan nullable recipient relations safely.** On `message_deliveries`, exactly one of
   `student_id`/`guardian_id`/`staff_id` is set — use `*int64` / `sql.NullInt64` and branch on
   the non-null one.
+- **Per-period caps are opt-in.** Set `teachers.max_hours_per_period` only for HE or DUAL
+  teachers on semester/trimester/block contracts. VET-only teachers with NULL are unaffected;
+  their `teacher_period_allocations` rows will not be created.
 - **Soft-delete, don't hard-delete.** Set `deleted_at`/`deleted_by`; the enrolment chain is
   `RESTRICT` by design.
 - **`timestamptz` everywhere** for clean `pgx` round-tripping.
@@ -1735,8 +1804,9 @@ capacity, and % utilisation.
 - **State holiday rules:** only the clearly-national holidays are seeded. State-specific
   holidays and weekend-in-lieu rules vary and should be verified against each state's gazette.
 - **Session time edits:** hour re-accrual covers cancel/date/time changes on a session;
-  bulk re-timing should be followed by `fn_recompute_teacher_balance` as a safety net.
+  bulk re-timing should be followed by `fn_recompute_teacher_balance` (annual) and, for HE
+  teachers, `fn_recompute_teacher_period_balance` (per-period) as safety nets.
 
 ---
 
-*Generated from `v9.sql`.*
+*Generated from `v0.11` (2026-06-08).*
