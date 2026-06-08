@@ -1,6 +1,11 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.14, 2026-06-08
+-- AVETMISS-compliant SMS schema  --  version 0.15, 2026-06-08
 -- =========================================================================
+-- Changes from v0.14:
+--   1.  fn_upper_family_name / trg_upper_family_name: BEFORE INSERT OR UPDATE
+--       OF family_name ON people normalises family_name to UPPER() at the
+--       database level so every insert path (seed, API, import) stores
+--       consistent uppercase surnames without caller discipline.
 -- Changes from v0.13:
 --   1.  messages table: teacher-composed individual messages. Separate from
 --       the campaign system. Status workflow Draft -> Sent -> Failed.
@@ -1397,6 +1402,18 @@ $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE TRIGGER trg_touch_academic_periods           BEFORE UPDATE ON public.academic_periods           FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
 CREATE OR REPLACE TRIGGER trg_touch_people                     BEFORE UPDATE ON public.people                     FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+
+CREATE OR REPLACE FUNCTION public.fn_upper_family_name()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    NEW.family_name = UPPER(NEW.family_name);
+    RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER trg_upper_family_name
+    BEFORE INSERT OR UPDATE OF family_name ON public.people
+    FOR EACH ROW EXECUTE FUNCTION public.fn_upper_family_name();
 CREATE OR REPLACE TRIGGER trg_touch_app_users                  BEFORE UPDATE ON public.app_users                  FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
 CREATE OR REPLACE TRIGGER trg_touch_students                   BEFORE UPDATE ON public.students                   FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
 CREATE OR REPLACE TRIGGER trg_touch_teachers                   BEFORE UPDATE ON public.teachers                   FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();

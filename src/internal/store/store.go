@@ -22,6 +22,12 @@ type Period struct {
 	Year       int
 }
 
+type Program struct {
+	ID          int64
+	ProgramCode string
+	ProgramName string
+}
+
 type Class struct {
 	ID        int64
 	ClassCode string
@@ -32,13 +38,16 @@ type Session struct {
 	ClassID     int64
 	ClassCode   string
 	SessionDate time.Time
+	StartTime   time.Time
+	EndTime     time.Time
 }
 
 type AttendanceRow struct {
-	StudentID  int64
-	FirstName  string
-	LastName   string
-	Attendance map[int64]string // session_id -> status ("" means not recorded)
+	StudentID     int64
+	StudentNumber string
+	FirstName     string
+	LastName      string
+	Attendance    map[int64]string // session_id -> status ("" means not recorded)
 }
 
 func (s *Store) Periods(ctx context.Context) ([]Period, error) {
@@ -63,13 +72,41 @@ func (s *Store) Periods(ctx context.Context) ([]Period, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) ClassesForPeriod(ctx context.Context, periodID int64) ([]Class, error) {
+func (s *Store) ProgramsForPeriod(ctx context.Context, periodID int64) ([]Program, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, class_code
-		FROM public.classes
-		WHERE academic_period_id = $1
-		ORDER BY class_code
+		SELECT DISTINCT p.id, p.program_code, p.program_name
+		FROM public.programs p
+		JOIN public.subject_programs sp ON sp.program_id = p.id
+		JOIN public.class_subjects cs ON cs.subject_id = sp.subject_id
+		JOIN public.classes c ON c.id = cs.class_id
+		WHERE c.academic_period_id = $1
+		ORDER BY p.program_name
 	`, periodID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Program
+	for rows.Next() {
+		var p Program
+		if err := rows.Scan(&p.ID, &p.ProgramCode, &p.ProgramName); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ClassesForProgram(ctx context.Context, periodID, programID int64) ([]Class, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT DISTINCT c.id, c.class_code
+		FROM public.classes c
+		JOIN public.class_subjects cs ON cs.class_id = c.id
+		JOIN public.subject_programs sp ON sp.subject_id = cs.subject_id
+		WHERE c.academic_period_id = $1 AND sp.program_id = $2
+		ORDER BY c.class_code
+	`, periodID, programID)
 	if err != nil {
 		return nil, err
 	}
@@ -90,11 +127,11 @@ func (s *Store) ClassesForPeriod(ctx context.Context, periodID int64) ([]Class, 
 func (s *Store) AttendanceGrid(ctx context.Context, classIDs []int64) ([]Session, []AttendanceRow, error) {
 	// Sessions ordered by date
 	sessRows, err := s.pool.Query(ctx, `
-		SELECT cs.id, cs.class_id, c.class_code, cs.session_date
+		SELECT cs.id, cs.class_id, c.class_code, cs.session_date, cs.start_time, cs.end_time
 		FROM public.class_sessions cs
 		JOIN public.classes c ON c.id = cs.class_id
 		WHERE cs.class_id = ANY($1) AND NOT cs.cancelled
-		ORDER BY cs.session_date, cs.class_id
+		ORDER BY cs.session_date, cs.start_time, cs.class_id
 	`, classIDs)
 	if err != nil {
 		return nil, nil, err
@@ -104,7 +141,7 @@ func (s *Store) AttendanceGrid(ctx context.Context, classIDs []int64) ([]Session
 	var sessions []Session
 	for sessRows.Next() {
 		var ss Session
-		if err := sessRows.Scan(&ss.ID, &ss.ClassID, &ss.ClassCode, &ss.SessionDate); err != nil {
+		if err := sessRows.Scan(&ss.ID, &ss.ClassID, &ss.ClassCode, &ss.SessionDate, &ss.StartTime, &ss.EndTime); err != nil {
 			return nil, nil, err
 		}
 		sessions = append(sessions, ss)
@@ -118,7 +155,7 @@ func (s *Store) AttendanceGrid(ctx context.Context, classIDs []int64) ([]Session
 
 	// Students enrolled in the selected classes
 	studentRows, err := s.pool.Query(ctx, `
-		SELECT DISTINCT s.id, p.first_given_name, p.family_name
+		SELECT DISTINCT s.id, s.student_number, p.first_given_name, p.family_name
 		FROM public.class_enrollments ce
 		JOIN public.client_subject_enrolments cse ON cse.id = ce.client_subject_enrolment_id
 		JOIN public.students s ON s.id = cse.student_id
@@ -135,7 +172,7 @@ func (s *Store) AttendanceGrid(ctx context.Context, classIDs []int64) ([]Session
 	studentIdx := map[int64]int{}
 	for studentRows.Next() {
 		var r AttendanceRow
-		if err := studentRows.Scan(&r.StudentID, &r.FirstName, &r.LastName); err != nil {
+		if err := studentRows.Scan(&r.StudentID, &r.StudentNumber, &r.FirstName, &r.LastName); err != nil {
 			return nil, nil, err
 		}
 		r.Attendance = make(map[int64]string)

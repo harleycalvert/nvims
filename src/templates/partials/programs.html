@@ -1,0 +1,24 @@
+{{define "programs"}}
+{{if not .Programs}}
+  <p class="hint">No programs found for this period.</p>
+{{else}}
+  <label for="program-select">Program</label>
+  <select id="program-select"
+    name="program_id"
+    hx-get="/classes"
+    hx-trigger="change"
+    hx-target="#classes-panel"
+    hx-include="#period-select, this">
+    <option value="">— select program —</option>
+    {{range .Programs}}
+    <option value="{{.ID}}">{{.ProgramCode}} — {{.ProgramName}}</option>
+    {{end}}
+  </select>
+{{end}}
+<div id="classes-panel" hx-swap-oob="true">
+  <p class="hint">Select a program to see its classes.</p>
+</div>
+<div id="attendance-panel" hx-swap-oob="true">
+  <p class="hint">Check one or more classes above to view attendance.</p>
+</div>
+{{end}}

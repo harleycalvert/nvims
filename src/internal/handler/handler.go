@@ -20,6 +20,7 @@ func New(st *store.Store) *Handler {
 	funcs := template.FuncMap{
 		"dateShort": func(t time.Time) string { return t.Format("2 Jan") },
 		"dateFull":  func(t time.Time) string { return t.Format("Mon 2 Jan 2006") },
+		"timeShort": func(t time.Time) string { return t.Format("15:04") },
 		"statusAbbr": func(s string) string {
 			switch s {
 			case "Present":
@@ -57,6 +58,7 @@ func New(st *store.Store) *Handler {
 	tmpl := template.Must(
 		template.New("").Funcs(funcs).ParseFiles(
 			"templates/index.html",
+			"templates/partials/programs.html",
 			"templates/partials/classes.html",
 			"templates/partials/attendance.html",
 		),
@@ -74,17 +76,40 @@ func (h *Handler) Index(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "index", map[string]any{"Periods": periods})
 }
 
+func (h *Handler) Programs(w http.ResponseWriter, r *http.Request) {
+	periodID, err := strconv.ParseInt(r.URL.Query().Get("period_id"), 10, 64)
+	if err != nil || periodID == 0 {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(`<p class="hint">Select a period to see its programs.</p>`))
+		return
+	}
+
+	programs, err := h.store.ProgramsForPeriod(r.Context(), periodID)
+	if err != nil {
+		log.Printf("ProgramsForPeriod(%d): %v", periodID, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	h.render(w, "programs", map[string]any{"Programs": programs})
+}
+
 func (h *Handler) Classes(w http.ResponseWriter, r *http.Request) {
 	periodID, err := strconv.ParseInt(r.URL.Query().Get("period_id"), 10, 64)
 	if err != nil || periodID == 0 {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(`<p class="hint">Select a period to see its classes.</p>`))
+		_, _ = w.Write([]byte(`<p class="hint">Select a program to see its classes.</p>`))
+		return
+	}
+	programID, err := strconv.ParseInt(r.URL.Query().Get("program_id"), 10, 64)
+	if err != nil || programID == 0 {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(`<p class="hint">Select a program to see its classes.</p>`))
 		return
 	}
 
-	classes, err := h.store.ClassesForPeriod(r.Context(), periodID)
+	classes, err := h.store.ClassesForProgram(r.Context(), periodID, programID)
 	if err != nil {
-		log.Printf("ClassesForPeriod(%d): %v", periodID, err)
+		log.Printf("ClassesForProgram(%d,%d): %v", periodID, programID, err)
 		http.Error(w, "database error", http.StatusInternalServerError)
 		return
 	}

@@ -17,11 +17,11 @@
       <div class="control-group">
         <label for="period-select">Academic Period</label>
         <select id="period-select"
-          hx-get="/classes"
+          name="period_id"
+          hx-get="/programs"
           hx-trigger="change"
-          hx-target="#classes-panel"
-          hx-include="this"
-          name="period_id">
+          hx-target="#programs-panel"
+          hx-include="this">
           <option value="">— select period —</option>
           {{range .Periods}}
           <option value="{{.ID}}">{{.Year}} — {{.PeriodName}} ({{.PeriodCode}})</option>
@@ -29,8 +29,12 @@
         </select>
       </div>
 
-      <div id="classes-panel" class="class-list">
-        <p class="hint">Select a period to see its classes.</p>
+      <div id="programs-panel" class="control-group">
+        <p class="hint">Select a period first.</p>
+      </div>
+
+      <div id="classes-panel">
+        <p class="hint">Select a program to see its classes.</p>
       </div>
     </section>
 

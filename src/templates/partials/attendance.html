@@ -8,9 +8,10 @@
         <tr>
           <th class="col-name">Student</th>
           {{range .Sessions}}
-          <th class="col-date" title="{{dateFull .SessionDate}} — {{.ClassCode}}">
+          <th class="col-date" title="{{dateFull .SessionDate}} — {{.ClassCode}} {{timeShort .StartTime}}–{{timeShort .EndTime}}">
             {{dateShort .SessionDate}}<br>
-            <span class="class-tag">{{.ClassCode}}</span>
+            <span class="class-tag">{{.ClassCode}}</span><br>
+            <span class="time-tag">{{timeShort .StartTime}}–{{timeShort .EndTime}}</span>
           </th>
           {{end}}
         </tr>
@@ -19,7 +20,7 @@
         {{range .Rows}}
         {{$row := .}}
         <tr>
-          <td class="col-name">{{.LastName}}, {{.FirstName}}</td>
+          <td class="col-name">{{.LastName}}, {{.FirstName}} ({{.StudentNumber}})</td>
           {{range $.Sessions}}
           {{$status := index $row.Attendance .ID}}
           <td class="att-cell {{statusCSS $status}}" title="{{if $status}}{{$status}}{{else}}Not recorded{{end}}">{{statusAbbr $status}}</td>
