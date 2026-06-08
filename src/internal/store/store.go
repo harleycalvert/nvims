@@ -28,9 +28,15 @@ type Program struct {
 	ProgramName string
 }
 
+type Group struct {
+	GroupCode string
+}
+
 type Class struct {
-	ID        int64
-	ClassCode string
+	ID          int64
+	ClassCode   string
+	SubjectCode string
+	SubjectName string
 }
 
 type Session struct {
@@ -98,15 +104,42 @@ func (s *Store) ProgramsForPeriod(ctx context.Context, periodID int64) ([]Progra
 	return out, rows.Err()
 }
 
-func (s *Store) ClassesForProgram(ctx context.Context, periodID, programID int64) ([]Class, error) {
+func (s *Store) GroupsForProgram(ctx context.Context, periodID, programID int64) ([]Group, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT DISTINCT c.id, c.class_code
+		SELECT DISTINCT c.group_code
 		FROM public.classes c
 		JOIN public.class_subjects cs ON cs.class_id = c.id
 		JOIN public.subject_programs sp ON sp.subject_id = cs.subject_id
 		WHERE c.academic_period_id = $1 AND sp.program_id = $2
-		ORDER BY c.class_code
+		  AND c.group_code IS NOT NULL
+		ORDER BY c.group_code
 	`, periodID, programID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Group
+	for rows.Next() {
+		var g Group
+		if err := rows.Scan(&g.GroupCode); err != nil {
+			return nil, err
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ClassesForGroup(ctx context.Context, periodID, programID int64, groupCode string) ([]Class, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT c.id, c.class_code, s.subject_code, s.subject_name
+		FROM public.classes c
+		JOIN public.class_subjects cs ON cs.class_id = c.id
+		JOIN public.subjects s ON s.id = cs.subject_id
+		JOIN public.subject_programs sp ON sp.subject_id = cs.subject_id
+		WHERE c.academic_period_id = $1 AND sp.program_id = $2 AND c.group_code = $3
+		ORDER BY s.subject_name
+	`, periodID, programID, groupCode)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +148,7 @@ func (s *Store) ClassesForProgram(ctx context.Context, periodID, programID int64
 	var out []Class
 	for rows.Next() {
 		var c Class
-		if err := rows.Scan(&c.ID, &c.ClassCode); err != nil {
+		if err := rows.Scan(&c.ID, &c.ClassCode, &c.SubjectCode, &c.SubjectName); err != nil {
 			return nil, err
 		}
 		out = append(out, c)

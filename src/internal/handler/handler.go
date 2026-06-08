@@ -59,6 +59,7 @@ func New(st *store.Store) *Handler {
 		template.New("").Funcs(funcs).ParseFiles(
 			"templates/index.html",
 			"templates/partials/programs.html",
+			"templates/partials/groups.html",
 			"templates/partials/classes.html",
 			"templates/partials/attendance.html",
 		),
@@ -93,23 +94,42 @@ func (h *Handler) Programs(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "programs", map[string]any{"Programs": programs})
 }
 
-func (h *Handler) Classes(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Groups(w http.ResponseWriter, r *http.Request) {
 	periodID, err := strconv.ParseInt(r.URL.Query().Get("period_id"), 10, 64)
 	if err != nil || periodID == 0 {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(`<p class="hint">Select a program to see its classes.</p>`))
+		_, _ = w.Write([]byte(`<p class="hint">Select a program to see its groups.</p>`))
 		return
 	}
 	programID, err := strconv.ParseInt(r.URL.Query().Get("program_id"), 10, 64)
 	if err != nil || programID == 0 {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(`<p class="hint">Select a program to see its classes.</p>`))
+		_, _ = w.Write([]byte(`<p class="hint">Select a program to see its groups.</p>`))
 		return
 	}
 
-	classes, err := h.store.ClassesForProgram(r.Context(), periodID, programID)
+	groups, err := h.store.GroupsForProgram(r.Context(), periodID, programID)
 	if err != nil {
-		log.Printf("ClassesForProgram(%d,%d): %v", periodID, programID, err)
+		log.Printf("GroupsForProgram(%d,%d): %v", periodID, programID, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	h.render(w, "groups", map[string]any{"Groups": groups})
+}
+
+func (h *Handler) Classes(w http.ResponseWriter, r *http.Request) {
+	periodID, err := strconv.ParseInt(r.URL.Query().Get("period_id"), 10, 64)
+	programID, err2 := strconv.ParseInt(r.URL.Query().Get("program_id"), 10, 64)
+	groupCode := r.URL.Query().Get("group_code")
+	if err != nil || err2 != nil || periodID == 0 || programID == 0 || groupCode == "" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(`<p class="hint">Select a group to see its classes.</p>`))
+		return
+	}
+
+	classes, err := h.store.ClassesForGroup(r.Context(), periodID, programID, groupCode)
+	if err != nil {
+		log.Printf("ClassesForGroup(%d,%d,%s): %v", periodID, programID, groupCode, err)
 		http.Error(w, "database error", http.StatusInternalServerError)
 		return
 	}

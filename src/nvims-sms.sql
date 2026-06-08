@@ -1,8 +1,12 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.15, 2026-06-08
+-- AVETMISS-compliant SMS schema  --  version 0.16, 2026-06-08
 -- =========================================================================
+-- Changes from v0.15:
+--   1.  classes.group_code varchar(20): optional cohort label (G1, G2 …).
+--       Groups multiple subject-level classes into one student cohort.
+--       Index idx_classes_group on (academic_period_id, group_code).
 -- Changes from v0.14:
---   1.  fn_upper_family_name / trg_upper_family_name: BEFORE INSERT OR UPDATE
+--   2.  fn_upper_family_name / trg_upper_family_name: BEFORE INSERT OR UPDATE
 --       OF family_name ON people normalises family_name to UPPER() at the
 --       database level so every insert path (seed, API, import) stores
 --       consistent uppercase surnames without caller discipline.
@@ -761,7 +765,8 @@ CREATE TABLE IF NOT EXISTS public.enrollment_credit_claims (
 
 CREATE TABLE IF NOT EXISTS public.classes (
     id bigserial NOT NULL,
-    class_code varchar(50) NOT NULL,
+    class_code varchar(80) NOT NULL,
+    group_code varchar(20) NULL,
     academic_period_id bigint NOT NULL,
     delivery_location_id bigint NOT NULL,
     enrolment_cap integer NULL,
@@ -1358,6 +1363,7 @@ CREATE INDEX IF NOT EXISTS idx_sce_status            ON public.student_course_en
 CREATE INDEX IF NOT EXISTS idx_pc_program            ON public.program_completions(program_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_date         ON public.class_sessions(session_date);
 CREATE INDEX IF NOT EXISTS idx_sessions_class        ON public.class_sessions(class_id);
+CREATE INDEX IF NOT EXISTS idx_classes_group         ON public.classes(academic_period_id, group_code) WHERE (group_code IS NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_session_teachers_teacher ON public.session_teachers(teacher_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_session    ON public.session_attendance(session_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_student    ON public.session_attendance(student_id);

@@ -5,9 +5,9 @@
   <label for="program-select">Program</label>
   <select id="program-select"
     name="program_id"
-    hx-get="/classes"
+    hx-get="/groups"
     hx-trigger="change"
-    hx-target="#classes-panel"
+    hx-target="#groups-panel"
     hx-include="#period-select, this">
     <option value="">— select program —</option>
     {{range .Programs}}
@@ -15,8 +15,11 @@
     {{end}}
   </select>
 {{end}}
+<div id="groups-panel" hx-swap-oob="true">
+  <p class="hint">Select a program first.</p>
+</div>
 <div id="classes-panel" hx-swap-oob="true">
-  <p class="hint">Select a program to see its classes.</p>
+  <p class="hint">Select a group to see its classes.</p>
 </div>
 <div id="attendance-panel" hx-swap-oob="true">
   <p class="hint">Check one or more classes above to view attendance.</p>

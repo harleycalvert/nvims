@@ -35,6 +35,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", h.Index)
 	mux.HandleFunc("GET /programs", h.Programs)
+	mux.HandleFunc("GET /groups", h.Groups)
 	mux.HandleFunc("GET /classes", h.Classes)
 	mux.HandleFunc("GET /attendance", h.Attendance)
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
