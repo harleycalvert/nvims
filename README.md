@@ -4,6 +4,10 @@ A National VET Information Management System (NVIMS), Student Management System 
 ## Development
 This is currently in an early development stage. It is not yet functional, not even for testing purposes.
 
-![Academic Period](docs/img/academic-period.png)
+![Academic Period](docs/img/login.png)
+
+![Academic Period](docs/img/attendance.png)
+
+![Academic Period](docs/img/results.png)
 
 See also [Database Schema Documentation](https://github.com/harleycalvert/nvims-sms/blob/main/docs/DATABASE.md)

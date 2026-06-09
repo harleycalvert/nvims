@@ -1,0 +1,103 @@
+{{define "results"}}
+{{if not .Cols}}
+  <p class="hint">No subjects found for the selected classes.</p>
+{{else}}
+  <div class="table-wrap">
+    <table class="att-table res-table">
+      <thead>
+        <tr>
+          <th class="col-name">Student</th>
+          {{range .Cols}}
+          <th class="col-subject" title="{{.SubjectCode}}">
+            {{.SubjectLabel}}
+            <br>
+            <button class="publish-sc-btn"
+              hx-post="/result/publish-sc"
+              hx-vals='{"col_class_id":"{{.ClassID}}","col_subject_id":"{{.SubjectID}}"}'
+              hx-include="[name='class_id']:checked"
+              hx-target="#view-panel"
+              hx-swap="innerHTML"
+              title="Publish all SC results in this column">
+              Publish SCs
+            </button>
+          </th>
+          {{end}}
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Rows}}
+        {{$row := .}}
+        <tr>
+          <td class="col-name">{{.LastName}}, {{.FirstName}} ({{.StudentNumber}})</td>
+          {{range $i, $col := $.Cols}}
+          {{template "result-cell" (index $row.Cells $i)}}
+          {{end}}
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  <div class="res-legend">
+    <span class="res-cell res-sc-pub">SC</span> Competent (published)
+    <span class="res-cell res-sc-unpub">SC</span> Competent (unpublished)
+    <span class="res-cell res-ns-pub">NS</span> Not satisfactory (published)
+    <span class="res-cell res-ns-unpub">NS</span> Not satisfactory (unpublished)
+    <span class="res-cell res-none">–</span> Not yet assessed
+  </div>
+{{end}}
+
+<dialog id="result-dialog" class="result-dialog">
+  <div id="result-dialog-content"></div>
+</dialog>
+{{end}}
+
+{{define "result-cell"}}
+{{if .CSEID}}
+<td id="cell-{{.CSEID}}"
+    class="res-cell {{resultCSS .Result .IsPublished}}"
+    hx-get="/result/popup?cse_id={{.CSEID}}"
+    hx-target="#result-dialog-content"
+    hx-trigger="click"
+    hx-on::after-request="document.getElementById('result-dialog').showModal()">
+  {{resultAbbr .Result}}
+</td>
+{{else}}
+<td class="res-cell res-none res-cell-empty">–</td>
+{{end}}
+{{end}}
+
+{{define "result-popup"}}
+<div class="popup-header">
+  <strong>{{.SubjectLabel}}</strong>
+  <span class="popup-student">{{.StudentName}}</span>
+</div>
+{{if .Result}}
+<p class="popup-current">
+  Current: <span class="res-cell {{resultCSS .Result .IsPublished}}">{{resultAbbr .Result}}</span>
+  {{if .IsPublished}}<em class="popup-pub-note">(published)</em>{{end}}
+</p>
+{{end}}
+<div class="popup-actions">
+  <form hx-post="/result"
+        hx-target="#cell-{{.CSEID}}"
+        hx-swap="outerHTML"
+        hx-on::after-request="document.getElementById('result-dialog').close()">
+    <input type="hidden" name="cse_id" value="{{.CSEID}}">
+    <button class="btn-sc" name="result" value="SC">Mark SC</button>
+    <button class="btn-ns" name="result" value="NS">Mark NS</button>
+    {{if .Result}}<button class="btn-clear" name="result" value="">Clear</button>{{end}}
+  </form>
+  {{if and .Result (not .IsPublished)}}
+  <form hx-post="/result/publish"
+        hx-target="#cell-{{.CSEID}}"
+        hx-swap="outerHTML"
+        hx-on::after-request="document.getElementById('result-dialog').close()">
+    <input type="hidden" name="cse_id" value="{{.CSEID}}">
+    <button class="btn-publish">Publish {{.Result}}</button>
+  </form>
+  {{end}}
+</div>
+<div class="popup-footer">
+  <button class="btn-close" onclick="this.closest('dialog').close()">Cancel</button>
+</div>
+{{end}}

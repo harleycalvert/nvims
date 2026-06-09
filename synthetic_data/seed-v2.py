@@ -16,12 +16,13 @@ Options:
 """
 
 import argparse
+import json
+import os
 import random
 import sys
 from collections import defaultdict
 from datetime import date, time, timedelta
 
-import bcrypt
 import psycopg2
 import psycopg2.extras
 from faker import Faker
@@ -111,32 +112,47 @@ def bulk(cur, table, cols, rows):
 
 
 # ---------------------------------------------------------------------------
+# TGA data helpers
+# ---------------------------------------------------------------------------
+
+def load_tga_data():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tga_data.json')
+    with open(path) as f:
+        return json.load(f)
+
+
+def _aqf_level(title: str) -> int:
+    t = title.lower()
+    if 'graduate diploma' in t: return 8
+    if 'advanced diploma' in t: return 6
+    if 'diploma'          in t: return 5
+    if 'certificate iv'   in t: return 4
+    if 'certificate iii'  in t: return 3
+    if 'certificate ii'   in t: return 2
+    if 'certificate i'    in t: return 1
+    return 4
+
+
+# AVETMISS level-of-education codes
+_LEVEL_OF_ED = {1: '527', 2: '524', 3: '521', 4: '514', 5: '411', 6: '410', 8: '420'}
+# Rough nominal hours by AQF level
+_NOMINAL_HRS = {1: 180, 2: 400, 3: 600, 4: 720, 5: 1000, 6: 1300, 8: 1500}
+# Field-of-education by 3-char code prefix
+_FOE_BY_PREFIX = {'ICT': '0200', 'ICP': '0200', 'BSB': '0800', 'MEM': '0300',
+                  'CUA': '0100', 'UEE': '0300'}
+
+
+def _foe(code: str) -> str:
+    return _FOE_BY_PREFIX.get(code[:3].upper(), '0800')
+
+
+# ---------------------------------------------------------------------------
 # Synthetic-data helpers
 # ---------------------------------------------------------------------------
 
-DEFAULT_PASSWORD    = "Wattle2025!"
-DEFAULT_PW_HASH     = bcrypt.hashpw(DEFAULT_PASSWORD.encode(), bcrypt.gensalt()).decode()
-
-USI_CHARS    = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
-_used_usis   = set()
+USI_CHARS   = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+_used_usis  = set()
 _used_emails = set()
-_used_usernames = set()
-
-
-def gen_username(first, last):
-    """Generate a unique first.last username, appending a suffix on collision."""
-    base = (
-        first.lower().replace(" ", "").replace("-", "").replace("'", "") + "." +
-        last.lower().replace(" ", "").replace("-", "").replace("'", "")
-    )
-    for suffix in ["", "2", "3", "4", "5"]:
-        u = f"{base}{suffix}"
-        if u not in _used_usernames:
-            _used_usernames.add(u)
-            return u
-    u = f"{base}.x{random.randint(10, 99)}"
-    _used_usernames.add(u)
-    return u
 
 
 def gen_usi():
@@ -286,83 +302,112 @@ def seed(cur):
                 ["building_id", "room_name", "capacity", "room_type"],
                 (bld_id, f"Room {i:02d}", random.randint(20, 35), rtype)))
 
+    # ── TGA data ──────────────────────────────────────────────────────────────
+    print("loading TGA data...")
+    tga = load_tga_data()
+    tga_quals      = {q['code']: q for q in tga['qualifications'] if q['type'] == 'Qualification'}
+    tga_unit_title = {u['code']: u['title'] for u in tga['units']}
+
     # ── Programs ──────────────────────────────────────────────────────────────
     print("programs, subjects...")
-    prog_defs = [
-        (fac_biz,   "BSB50120", "Diploma of Business",
-         "11","411","0800",1000,True,False,None,5),
-        (fac_biz,   "BSB40120", "Certificate IV in Business",
-         "11","521","0800", 720,True,False,None,4),
-        (fac_biz,   "BSB30120", "Certificate III in Business",
-         "11","514","0800", 400,True,False,None,3),
-        (fac_health,"CHC52021", "Diploma of Community Services",
-         "11","411","0900",1085,True,False,None,5),
-        (fac_health,"CHC43015", "Certificate IV in Ageing Support",
-         "11","521","0900", 720,True,False,None,4),
-        (fac_health,"CHC33015", "Certificate III in Individual Support",
-         "11","514","0900", 993,True,False,None,3),
-        (fac_trades,"MEM30319", "Certificate III in Engineering",
-         "11","514","0300", 740,True,False,None,3),
-        (fac_trades,"ICT50220", "Diploma of Information Technology",
-         "11","411","0200", 960,True,False,None,5),
+
+    # Real ICT and BSB qualifications from TGA
+    tga_prog_rows = []
+    for code in sorted(tga_quals):
+        q   = tga_quals[code]
+        aqf = _aqf_level(q['title'])
+        tga_prog_rows.append((
+            fac_biz, code, q['title'],
+            '11',                           # National Training Package
+            _LEVEL_OF_ED.get(aqf, '514'),
+            _foe(code),
+            _NOMINAL_HRS.get(aqf, 600),
+            True, False, None, aqf,
+        ))
+
+    # Synthetic programs for health and trades (not in TGA pull)
+    synth_prog_rows = [
+        (fac_health, "CHC52021", "Diploma of Community Services",
+         "11", "411", "0900", 1085, True, False, None, 5),
+        (fac_health, "CHC43015", "Certificate IV in Ageing Support",
+         "11", "514", "0900",  720, True, False, None, 4),
+        (fac_health, "CHC33015", "Certificate III in Individual Support",
+         "11", "521", "0900",  993, True, False, None, 3),
+        (fac_trades, "MEM30319", "Certificate III in Engineering",
+         "11", "521", "0300",  740, True, False, None, 3),
     ]
+
+    all_prog_rows = tga_prog_rows + synth_prog_rows
     prog_ids = many(cur, "programs",
         ["faculty_id","program_code","program_name","program_recognition_id",
          "level_of_education","field_of_education","nominal_hours",
          "vet_flag","he_flag","credit_points","aqf_level"],
-        [tuple(p) for p in prog_defs])
-    prog_by_code = {p[1]: pid for p, pid in zip(prog_defs, prog_ids)}
+        all_prog_rows)
+    prog_by_code = {p[1]: pid for p, pid in zip(all_prog_rows, prog_ids)}
 
     # ── Subjects ──────────────────────────────────────────────────────────────
-    subj_defs = [
-        ("BSBOPS501","Manage business resources",                          "N","0800",60,True),
-        ("BSBOPS502","Manage business operational plans",                  "N","0800",60,True),
-        ("BSBCRT511","Develop critical thinking in others",                "N","0800",60,True),
-        ("BSBPEF501","Manage personal and professional development",       "N","0800",60,True),
-        ("BSBLDR523","Lead and manage effective workplace relationships",   "N","0800",60,True),
-        ("BSBXCM401","Apply communication strategies in the workplace",    "N","0800",60,True),
-        ("BSBFIN401","Report on financial activity",                       "N","0800",60,True),
-        ("BSBOPS201","Work effectively in business environments",          "N","0800",40,True),
-        ("CHCCCS040","Support independence and wellbeing",                 "N","0900",60,True),
-        ("CHCCCS041","Recognise healthy body systems",                     "N","0900",60,True),
-        ("CHCCCS042","Support community participation and inclusion",      "N","0900",60,True),
-        ("CHCCOM005","Communicate and work in health or community services","N","0900",80,True),
-        ("CHCLEG001","Work legally and ethically",                         "N","0900",40,True),
-        ("HLTWHS002","Follow safe work practices for direct client care",  "N","0900",20,True),
-        ("CHCDIV001","Work with diverse people",                           "N","0900",40,True),
-        ("CHCMHS011","Assess and promote social, emotional and physical wellbeing",
-                                                                           "N","0900",100,True),
-        ("MEM18001B","Use hand tools",                                     "N","0300",40,True),
-        ("MEM18002B","Use power tools and hand-held operations",           "N","0300",40,True),
-        ("MEM12023A","Perform engineering measurements",                   "N","0300",40,True),
-        ("MEM13003B","Work safely",                                        "N","0300",20,True),
-        ("MEM14004A","Plan a complete activity",                           "N","0300",40,True),
-        ("ICTICT517","Match ICT needs with the strategic direction of the organisation",
-                                                                           "N","0200",60,True),
-        ("ICTSAS524","Develop, implement and evaluate an incident response plan",
-                                                                           "N","0200",60,True),
-        ("BSBPJT521","Manage projects",                                    "N","0200",80,True),
+
+    # All TGA units of competency (real codes and titles)
+    tga_subj_rows = [
+        (code, tga_unit_title[code], 'N', _foe(code), 50, True)
+        for code in sorted(tga_unit_title)
     ]
+
+    # Synthetic units for health and trades programs only
+    synth_subj_rows = [
+        ("CHCCCS040", "Support independence and wellbeing",                  "N", "0900",  60, True),
+        ("CHCCCS041", "Recognise healthy body systems",                      "N", "0900",  60, True),
+        ("CHCCCS042", "Support community participation and inclusion",       "N", "0900",  60, True),
+        ("CHCCOM005", "Communicate and work in health or community services","N", "0900",  80, True),
+        ("CHCLEG001", "Work legally and ethically",                          "N", "0900",  40, True),
+        ("HLTWHS002", "Follow safe work practices for direct client care",   "N", "0900",  20, True),
+        ("CHCDIV001", "Work with diverse people",                            "N", "0900",  40, True),
+        ("CHCMHS011", "Assess and promote social, emotional and physical wellbeing",
+                                                                             "N", "0900", 100, True),
+        ("MEM18001B", "Use hand tools",                                      "N", "0300",  40, True),
+        ("MEM18002B", "Use power tools and hand-held operations",            "N", "0300",  40, True),
+        ("MEM12023A", "Perform engineering measurements",                    "N", "0300",  40, True),
+        ("MEM13003B", "Work safely",                                         "N", "0300",  20, True),
+        ("MEM14004A", "Plan a complete activity",                            "N", "0300",  40, True),
+    ]
+
+    all_subj_rows = tga_subj_rows + synth_subj_rows
     subj_ids = many(cur, "subjects",
         ["subject_code","subject_name","module_flag",
          "field_of_education","nominal_hours","vet_flag"],
-        [tuple(s) for s in subj_defs])
-    subj_by_code = {s[0]: sid for s, sid in zip(subj_defs, subj_ids)}
-    subj_nom_hrs = {s[0]: s[4] for s in subj_defs}
+        all_subj_rows)
+    subj_by_code = {s[0]: sid for s, sid in zip(all_subj_rows, subj_ids)}
+    subj_nom_hrs = {s[0]: s[4] for s in all_subj_rows}
 
-    PROG_SUBJS = {
-        "BSB50120": ["BSBOPS501","BSBOPS502","BSBCRT511","BSBPEF501","BSBLDR523"],
-        "BSB40120": ["BSBOPS502","BSBCRT511","BSBXCM401","BSBFIN401","BSBPEF501"],
-        "BSB30120": ["BSBXCM401","BSBFIN401","BSBOPS201"],
+    # ── Subject-program links ─────────────────────────────────────────────────
+
+    # Full TGA unit → qualification mappings from tga_data.json
+    tga_sp_pairs = [
+        (subj_by_code[uc], prog_by_code[qc])
+        for qc, q in tga_quals.items() if qc in prog_by_code
+        for uc in q['units']            if uc in subj_by_code
+    ]
+
+    # Synthetic links for health/trades programs
+    SYNTH_PROG_SUBJS = {
         "CHC52021": ["CHCCCS040","CHCCCS041","CHCCOM005","CHCLEG001","CHCDIV001","CHCMHS011"],
         "CHC43015": ["CHCCCS040","CHCCCS041","CHCCCS042","CHCCOM005","HLTWHS002","CHCDIV001"],
         "CHC33015": ["CHCCCS040","CHCCOM005","HLTWHS002","CHCDIV001","CHCLEG001"],
         "MEM30319": ["MEM18001B","MEM18002B","MEM12023A","MEM13003B","MEM14004A"],
-        "ICT50220": ["ICTICT517","ICTSAS524","BSBPJT521"],
     }
-    sp_pairs = list({(subj_by_code[sc], prog_by_code[pc])
-                     for pc, scs in PROG_SUBJS.items() for sc in scs})
-    bulk(cur, "subject_programs", ["subject_id","program_id"], sp_pairs)
+    synth_sp_pairs = [
+        (subj_by_code[sc], prog_by_code[pc])
+        for pc, scs in SYNTH_PROG_SUBJS.items()
+        for sc in scs
+    ]
+
+    bulk(cur, "subject_programs", ["subject_id","program_id"],
+         list(set(tga_sp_pairs + synth_sp_pairs)))
+
+    # PROG_SUBJS drives class scheduling: full TGA unit list per qual,
+    # fixed synthetic list for health/trades. The class loop slices to N_SUBJS.
+    PROG_SUBJS = {qc: q['units'] for qc, q in tga_quals.items()}
+    PROG_SUBJS.update(SYNTH_PROG_SUBJS)
 
     # ── Academic periods ──────────────────────────────────────────────────────
     print("academic_periods...")
@@ -403,24 +448,15 @@ def seed(cur):
     student_pids = all_person_ids[N_TEACHERS + N_STAFF:]
 
     # ── App users ─────────────────────────────────────────────────────────────
-    # All seeded users get DEFAULT_PASSWORD ("Wattle2025!") as their initial password.
-    STAFF_ROLES = ["Compliance", "Reception", "Staff"]
-    admin_uid = one(cur, "app_users",
-        ["person_id","username","password_hash","role"],
-        (None, "admin", DEFAULT_PW_HASH, "Admin"))
-
-    trainer_uids = many(cur, "app_users",
-        ["person_id","username","password_hash","role"],
-        [(pid, gen_username(p["first"], p["last"]), DEFAULT_PW_HASH, "Trainer")
-         for pid, p in zip(teacher_pids, teacher_persons)])
-
-    staff_uids = many(cur, "app_users",
-        ["person_id","username","password_hash","role"],
-        [(pid, gen_username(p["first"], p["last"]), DEFAULT_PW_HASH, STAFF_ROLES[i])
-         for i, (pid, p) in enumerate(zip(staff_pids, staff_persons))])
-
-    # pid → app_user_id for all teachers
-    teacher_uid_map = {pid: uid for pid, uid in zip(teacher_pids, trainer_uids)}
+    admin_uid    = one(cur, "app_users", ["person_id","username","role"],
+                       (None, "sysadmin", "Admin"))
+    trainer_uids = many(cur, "app_users", ["person_id","username","role"],
+        [(pid, f"t.trainer{i+1}", "Trainer") for i, pid in enumerate(teacher_pids[:6])])
+    many(cur, "app_users", ["person_id","username","role"],
+        [(staff_pids[0], "compliance1", "Compliance"),
+         (staff_pids[1], "reception1",  "Reception")])
+    # pid → app_user_id for teachers who have logins
+    teacher_uid_map = {pid: uid for pid, uid in zip(teacher_pids[:6], trainer_uids)}
 
     # ── Teachers (shared PK = people.id) ─────────────────────────────────────
     FAC_CYCLE = [fac_biz]*4 + [fac_health]*4 + [fac_trades]*4
@@ -518,7 +554,7 @@ def seed(cur):
     classes = []
     for pc, prog_code, grp, loc_id, cap in GROUP_CFG:
         p = periods[pc]
-        subj_codes = PROG_SUBJS[prog_code][:N_SUBJS]
+        subj_codes = [sc for sc in PROG_SUBJS[prog_code] if sc in subj_by_code][:N_SUBJS]
         for si, sc in enumerate(subj_codes):
             cid = one(cur, "classes",
                 ["class_code","group_code","academic_period_id",

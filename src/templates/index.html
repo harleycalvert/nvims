@@ -3,13 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>NVIMS-SMS — Attendance</title>
+  <title>NVIMS-SMS — Class View</title>
   <link rel="stylesheet" href="/static/style.css">
   <script src="https://unpkg.com/htmx.org@1.9.12" crossorigin="anonymous"></script>
 </head>
 <body>
   <header>
-    <h1>Attendance Register</h1>
+    <div class="header-top">
+      <h1>Attendance Register</h1>
+      <form method="POST" action="/logout">
+        <button class="btn-signout">Sign Out</button>
+      </form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
   </header>
 
   <main>
@@ -40,11 +49,30 @@
       <div id="classes-panel">
         <p class="hint">Select a group to see its classes.</p>
       </div>
+
+      <div class="view-toggle">
+        <label class="view-toggle-label">
+          <input type="radio" name="view_mode" value="attendance" checked
+            hx-get="/attendance"
+            hx-target="#view-panel"
+            hx-include="[name='class_id']:checked"
+            hx-trigger="change">
+          Attendance
+        </label>
+        <label class="view-toggle-label">
+          <input type="radio" name="view_mode" value="results"
+            hx-get="/results"
+            hx-target="#view-panel"
+            hx-include="[name='class_id']:checked"
+            hx-trigger="change">
+          Results
+        </label>
+      </div>
     </section>
 
-    <section id="attendance-panel">
+    <div id="view-panel">
       <p class="hint">Check one or more classes above to view attendance.</p>
-    </section>
+    </div>
   </main>
 </body>
 </html>{{end}}

@@ -1,0 +1,31 @@
+{{define "login"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS-SMS — Sign In</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="login-page">
+  <div class="login-box">
+    <div class="login-header">
+      <h1>NVIMS-SMS</h1>
+      <p>Wattle Valley Institute of TAFE</p>
+    </div>
+    <form method="POST" action="/login" class="login-form">
+      {{if .Error}}<p class="login-error">{{.Error}}</p>{{end}}
+      <div class="login-field">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text"
+               autocomplete="username" autofocus value="{{.Username}}">
+      </div>
+      <div class="login-field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password"
+               autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn-login">Sign In</button>
+    </form>
+  </div>
+</body>
+</html>{{end}}

@@ -8,15 +8,19 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
+	"nvims-sms/internal/auth"
 	"nvims-sms/internal/store"
 )
 
 type Handler struct {
-	store *store.Store
-	tmpl  *template.Template
+	store    *store.Store
+	sessions *auth.Sessions
+	tmpl     *template.Template
 }
 
-func New(st *store.Store) *Handler {
+func New(st *store.Store, sessions *auth.Sessions) *Handler {
 	funcs := template.FuncMap{
 		"dateShort": func(t time.Time) string { return t.Format("2 Jan") },
 		"dateFull":  func(t time.Time) string { return t.Format("Mon 2 Jan 2006") },
@@ -55,16 +59,40 @@ func New(st *store.Store) *Handler {
 		},
 	}
 
+	funcs["resultCSS"] = func(result string, published bool) string {
+		switch result {
+		case "SC":
+			if published {
+				return "res-sc-pub"
+			}
+			return "res-sc-unpub"
+		case "NS":
+			if published {
+				return "res-ns-pub"
+			}
+			return "res-ns-unpub"
+		}
+		return "res-none"
+	}
+	funcs["resultAbbr"] = func(result string) string {
+		if result == "" {
+			return "–"
+		}
+		return result
+	}
+
 	tmpl := template.Must(
 		template.New("").Funcs(funcs).ParseFiles(
 			"templates/index.html",
+			"templates/login.html",
 			"templates/partials/programs.html",
 			"templates/partials/groups.html",
 			"templates/partials/classes.html",
 			"templates/partials/attendance.html",
+			"templates/partials/results.html",
 		),
 	)
-	return &Handler{store: st, tmpl: tmpl}
+	return &Handler{store: st, sessions: sessions, tmpl: tmpl}
 }
 
 func (h *Handler) Index(w http.ResponseWriter, r *http.Request) {
@@ -74,7 +102,39 @@ func (h *Handler) Index(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "database error", http.StatusInternalServerError)
 		return
 	}
-	h.render(w, "index", map[string]any{"Periods": periods})
+	user, _ := auth.Current(r)
+	h.render(w, "index", map[string]any{"Periods": periods, "User": user})
+}
+
+func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
+	h.render(w, "login", map[string]any{"Error": "", "Username": ""})
+}
+
+func (h *Handler) LoginPost(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	username := strings.TrimSpace(r.FormValue("username"))
+	password := r.FormValue("password")
+
+	u, err := h.store.GetUserByUsername(r.Context(), username)
+	if err != nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
+		h.render(w, "login", map[string]any{
+			"Error":    "Invalid username or password.",
+			"Username": username,
+		})
+		return
+	}
+
+	h.store.UpdateLastLogin(r.Context(), u.ID)
+	h.sessions.Create(w, auth.User{ID: u.ID, Username: u.Username, FullName: u.FullName, Role: u.Role})
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	h.sessions.Delete(w, r)
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
 func (h *Handler) Programs(w http.ResponseWriter, r *http.Request) {
@@ -154,6 +214,105 @@ func (h *Handler) Attendance(w http.ResponseWriter, r *http.Request) {
 		"Sessions": sessions,
 		"Rows":     rows,
 	})
+}
+
+func (h *Handler) Results(w http.ResponseWriter, r *http.Request) {
+	classIDs := parseIDs(r.URL.Query()["class_id"])
+	if len(classIDs) == 0 {
+		h.render(w, "results", map[string]any{"Cols": nil, "Rows": nil})
+		return
+	}
+	cols, rows, err := h.store.ResultsGrid(r.Context(), classIDs)
+	if err != nil {
+		log.Printf("ResultsGrid: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	h.render(w, "results", map[string]any{"Cols": cols, "Rows": rows})
+}
+
+func (h *Handler) ResultPopup(w http.ResponseWriter, r *http.Request) {
+	cseID, err := strconv.ParseInt(r.URL.Query().Get("cse_id"), 10, 64)
+	if err != nil || cseID == 0 {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	data, err := h.store.GetResultPopupData(r.Context(), cseID)
+	if err != nil {
+		log.Printf("GetResultPopupData(%d): %v", cseID, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	h.render(w, "result-popup", data)
+}
+
+func (h *Handler) SetResult(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	cseID, err := strconv.ParseInt(r.FormValue("cse_id"), 10, 64)
+	if err != nil || cseID == 0 {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	result := r.FormValue("result") // "SC", "NS", or ""
+	if result != "SC" && result != "NS" && result != "" {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	cell, err := h.store.SetResult(r.Context(), cseID, result)
+	if err != nil {
+		log.Printf("SetResult(%d,%q): %v", cseID, result, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	h.render(w, "result-cell", cell)
+}
+
+func (h *Handler) PublishResult(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	cseID, err := strconv.ParseInt(r.FormValue("cse_id"), 10, 64)
+	if err != nil || cseID == 0 {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	cell, err := h.store.PublishResult(r.Context(), cseID)
+	if err != nil {
+		log.Printf("PublishResult(%d): %v", cseID, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	h.render(w, "result-cell", cell)
+}
+
+func (h *Handler) PublishSCColumn(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	colClassID, _ := strconv.ParseInt(r.FormValue("col_class_id"), 10, 64)
+	colSubjectID, _ := strconv.ParseInt(r.FormValue("col_subject_id"), 10, 64)
+	if colClassID > 0 && colSubjectID > 0 {
+		if err := h.store.PublishSCColumn(r.Context(), colClassID, colSubjectID); err != nil {
+			log.Printf("PublishSCColumn(%d,%d): %v", colClassID, colSubjectID, err)
+		}
+	}
+	classIDs := parseIDs(r.Form["class_id"])
+	if len(classIDs) == 0 {
+		h.render(w, "results", map[string]any{"Cols": nil, "Rows": nil})
+		return
+	}
+	cols, rows, err := h.store.ResultsGrid(r.Context(), classIDs)
+	if err != nil {
+		log.Printf("ResultsGrid after publish-sc: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	h.render(w, "results", map[string]any{"Cols": cols, "Rows": rows})
 }
 
 func (h *Handler) render(w http.ResponseWriter, name string, data any) {

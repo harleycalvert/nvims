@@ -2,8 +2,8 @@
 {{if not .Classes}}
   <p class="hint">No classes found for this group.</p>
 {{else}}
-  <fieldset class="class-fieldset">
-    <legend>Classes</legend>
+  <div class="classes-inline">
+    <span class="classes-label">Classes</span>
     {{range .Classes}}
     <label class="class-label">
       <input type="checkbox"
@@ -11,14 +11,14 @@
         value="{{.ID}}"
         hx-get="/attendance"
         hx-trigger="change"
-        hx-target="#attendance-panel"
+        hx-target="#view-panel"
         hx-include="[name='class_id']:checked">
       {{.SubjectName}}
     </label>
     {{end}}
-  </fieldset>
+  </div>
 {{end}}
-<div id="attendance-panel" hx-swap-oob="true">
+<div id="view-panel" hx-swap-oob="true">
   <p class="hint">Check one or more classes above to view attendance.</p>
 </div>
 {{end}}

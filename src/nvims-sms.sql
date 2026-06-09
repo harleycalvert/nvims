@@ -238,6 +238,7 @@ CREATE TABLE IF NOT EXISTS public.app_users (
     id bigserial NOT NULL,
     person_id bigint NULL,                       -- NULL allowed for service accounts
     username varchar(100) NOT NULL,
+    password_hash varchar(255) NOT NULL DEFAULT '',
     role varchar(30) NOT NULL DEFAULT 'Staff',
     is_active boolean NOT NULL DEFAULT true,
     last_login_at timestamp with time zone NULL,
@@ -642,6 +643,8 @@ CREATE TABLE IF NOT EXISTS public.client_subject_enrolments (
     associated_course_id varchar(10) NULL,
     grade varchar(20) NULL,
     mark numeric(5,2) NULL,
+    result varchar(3) NULL,                                    -- teacher assessment: SC | NS
+    result_is_published boolean NOT NULL DEFAULT false,        -- true once pushed to the official record
     finalised_date date NULL,
     result_status varchar(20) NOT NULL DEFAULT 'In Progress',
     result_finalised_by bigint NULL,
