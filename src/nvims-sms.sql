@@ -1,6 +1,47 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.16, 2026-06-08
+-- AVETMISS-compliant SMS schema  --  version 0.17, 2026-06-09
 -- =========================================================================
+-- Changes from v0.16:
+--   1.  preferred_contact_method varchar(20) added to people.
+--   2.  is_emergency_contact boolean added to student_guardians: marks a
+--       guardian row as also being the primary emergency contact, superseding
+--       the inline emergency_contact_* fields on people for multi-contact use.
+--   3.  session_attendance extended: units_nominated smallint, arrived_at /
+--       departed_at time (partial-attendance support), break_minutes smallint,
+--       absence_reason varchar(100), absence_is_acceptable boolean,
+--       has_childcare boolean, is_note_private boolean. chk_attendance_status
+--       extended with 'Not-Applicable'.
+--   4.  keywords text[] added to student_progress_reports.
+--   5.  subject_programs gains is_core boolean, group_code varchar(20), and
+--       group_title varchar(100) to record Core/Elective classification and
+--       the TGA component group (e.g. "Specialisation — Cloud Technology").
+--   6.  student_notes.chk_note_type extended to include 'Communication'.
+--   7.  student_employment_services: Centrelink CRN, job seeker ID,
+--       participation hours/type/comment — one row per student.
+--   8.  student_employment_registrations: provider registration rows, child
+--       of student_employment_services.
+--   9.  programs gains program_type varchar(20): distinguishes Qualification,
+--       Skill Set, Course in a Package, Statement of Attainment. Skill sets
+--       and other enrolable products are rows in programs, differentiated by
+--       this column. Specialisations are captured by group_code / group_title
+--       on subject_programs (added in item 5).
+--  10.  teacher_vcms: Vocational Competency Map document, versioned per year,
+--       with approval workflow (Draft → Submitted → Approved).
+--  11.  teacher_vcm_professional_qualifications: teacher's own credentials
+--       (TAE, degrees, industry certs) recorded against a VCM version.
+--  12.  teacher_vcm_courses: courses covered in a VCM (may link to programs).
+--  13.  teacher_vcm_units: units the teacher has currency for, with competency
+--       method and justification text. Multiple rows per unit allowed (one per
+--       method). Standalone or grouped under a VCM course.
+--  14.  teacher_documents: per-teacher document library (testamurs,
+--       transcripts, credentials, and other supporting evidence).
+--  15.  teacher_document_connections: M2M linking documents to exactly one VCM
+--       entity — professional qualification, unit, or currency activity.
+--  16.  teacher_currency_activities: vocational and professional currency
+--       point records with activity detail and approval tracking.
+--  17.  teacher_currency_unit_links: units related to a currency activity.
+--  18.  teacher_vcm_profiling: spider-chart dimension scores (self, supervisor,
+--       business ideal) stored per VCM version.
 -- Changes from v0.15:
 --   1.  classes.group_code varchar(20): optional cohort label (G1, G2 …).
 --       Groups multiple subject-level classes into one student cohort.
@@ -181,6 +222,7 @@ CREATE TABLE IF NOT EXISTS public.people (
     emergency_contact_name varchar(100) NULL,
     emergency_contact_phone varchar(15) NULL,
     emergency_contact_relationship varchar(30) NULL,
+    preferred_contact_method varchar(20) NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -346,6 +388,7 @@ CREATE TABLE IF NOT EXISTS public.student_guardians (
     phone_home varchar(15) NULL,
     email varchar(100) NULL,
     receive_comms boolean NOT NULL DEFAULT true,
+    is_emergency_contact boolean NOT NULL DEFAULT false,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     CONSTRAINT fk_guardian_student FOREIGN KEY (student_id) REFERENCES public.students(id) ON DELETE CASCADE
@@ -390,12 +433,16 @@ CREATE TABLE IF NOT EXISTS public.programs (
     he_flag boolean NOT NULL DEFAULT false,
     credit_points integer NULL,                   -- total qualification credit points (HE use)
     aqf_level smallint NULL,                      -- AQF level 1–10 (1=Cert I … 10=Doctoral)
+    program_type varchar(20) NULL,
     PRIMARY KEY (id),
     CONSTRAINT fk_programs_faculty FOREIGN KEY (faculty_id) REFERENCES public.faculties(id) ON DELETE RESTRICT,
     CONSTRAINT uq_programs_code UNIQUE (program_code),
     CONSTRAINT chk_program_credit_points CHECK (credit_points IS NULL OR credit_points > 0),
     CONSTRAINT chk_program_aqf_level CHECK (aqf_level IS NULL OR aqf_level BETWEEN 1 AND 10),
-    CONSTRAINT chk_program_sector CHECK (vet_flag = true OR he_flag = true)  -- must belong to at least one sector
+    CONSTRAINT chk_program_sector CHECK (vet_flag = true OR he_flag = true),
+    CONSTRAINT chk_program_type CHECK (program_type IS NULL OR program_type IN (
+        'Qualification','Skill Set','Course in a Package','Statement of Attainment','Accredited Course'
+    ))
 );
 
 -- NEW v11: credit_points is the HE credit point value of one unit/subject
@@ -416,8 +463,11 @@ CREATE TABLE IF NOT EXISTS public.subjects (
 );
 
 CREATE TABLE IF NOT EXISTS public.subject_programs (
-    subject_id bigint NOT NULL,
-    program_id bigint NOT NULL,
+    subject_id  bigint       NOT NULL,
+    program_id  bigint       NOT NULL,
+    is_core     boolean      NOT NULL DEFAULT false,
+    group_code  varchar(20)  NULL,
+    group_title varchar(100) NULL,
     PRIMARY KEY (subject_id, program_id),
     CONSTRAINT fk_sp_subject FOREIGN KEY (subject_id) REFERENCES public.subjects(id) ON DELETE CASCADE,
     CONSTRAINT fk_sp_program FOREIGN KEY (program_id) REFERENCES public.programs(id) ON DELETE CASCADE
@@ -865,6 +915,14 @@ CREATE TABLE IF NOT EXISTS public.session_attendance (
     status varchar(20) NOT NULL DEFAULT 'Present',
     minutes_attended integer NULL,
     notes text NULL,
+    units_nominated       smallint               NOT NULL DEFAULT 0,
+    arrived_at            time WITHOUT TIME ZONE NULL,
+    departed_at           time WITHOUT TIME ZONE NULL,
+    break_minutes         smallint               NOT NULL DEFAULT 0,
+    absence_reason        varchar(100)           NULL,
+    absence_is_acceptable boolean                NOT NULL DEFAULT false,
+    has_childcare         boolean                NOT NULL DEFAULT false,
+    is_note_private       boolean                NOT NULL DEFAULT false,
     recorded_by bigint NULL,
     recorded_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -872,8 +930,10 @@ CREATE TABLE IF NOT EXISTS public.session_attendance (
     CONSTRAINT fk_attendance_student FOREIGN KEY (student_id) REFERENCES public.students(id) ON DELETE CASCADE,
     CONSTRAINT fk_attendance_recorder FOREIGN KEY (recorded_by) REFERENCES public.app_users(id) ON DELETE SET NULL,
     CONSTRAINT uq_attendance_student_per_session UNIQUE (session_id, student_id),
-    CONSTRAINT chk_attendance_status CHECK (status IN ('Present', 'Absent-Notified', 'Absent-Unnotified', 'Online', 'Excused')),
-    CONSTRAINT chk_minutes_attended CHECK (minutes_attended >= 0)
+    CONSTRAINT chk_attendance_status CHECK (status IN ('Present','Absent-Notified','Absent-Unnotified','Online','Excused','Not-Applicable')),
+    CONSTRAINT chk_minutes_attended CHECK (minutes_attended >= 0),
+    CONSTRAINT chk_units_nominated CHECK (units_nominated >= 0),
+    CONSTRAINT chk_break_minutes CHECK (break_minutes >= 0)
 );
 
 CREATE TABLE IF NOT EXISTS public.class_support_staff (
@@ -990,6 +1050,7 @@ CREATE TABLE IF NOT EXISTS public.student_progress_reports (
     report_date date NOT NULL,
     document_url varchar(2048) NOT NULL,
     uploaded_by bigint NULL,
+    keywords    text[] NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     CONSTRAINT fk_report_student FOREIGN KEY (student_id) REFERENCES public.students(id) ON DELETE CASCADE,
@@ -1010,7 +1071,7 @@ CREATE TABLE IF NOT EXISTS public.student_notes (
     PRIMARY KEY (id),
     CONSTRAINT fk_note_student FOREIGN KEY (student_id) REFERENCES public.students(id) ON DELETE CASCADE,
     CONSTRAINT fk_note_creator FOREIGN KEY (created_by) REFERENCES public.app_users(id) ON DELETE RESTRICT,
-    CONSTRAINT chk_note_type CHECK (note_type IN ('General', 'Pastoral', 'Academic', 'Financial', 'Compliance', 'LAP', 'Incident'))
+    CONSTRAINT chk_note_type CHECK (note_type IN ('General','Pastoral','Academic','Financial','Compliance','LAP','Incident','Communication'))
 );
 
 CREATE TABLE IF NOT EXISTS public.message_templates (
@@ -2101,5 +2162,316 @@ JOIN  public.pay_periods pp ON pp.id = ts.pay_period_id
 LEFT JOIN public.timesheet_entries te ON te.timesheet_id = ts.id
 GROUP BY ts.id, ts.teacher_id, pp.period_start, pp.period_end,
          pp.period_name, pp.calendar_year, ts.status, ts.exported_at, ts.export_format;
+
+COMMIT;
+
+-- =========================================================================
+-- v0.17 migration
+-- =========================================================================
+BEGIN;
+
+-- =========================================================================
+-- NEW TABLES — Employment Services
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.student_employment_services (
+    student_id             bigint       NOT NULL,
+    centrelink_crn         varchar(20)  NULL,
+    job_seeker_id          varchar(30)  NULL,
+    participation_hours    numeric(5,2) NOT NULL DEFAULT 0,
+    participation_type     varchar(10)  NULL,
+    participation_comment  text         NULL,
+    created_at             timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at             timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (student_id),
+    CONSTRAINT fk_ses_student  FOREIGN KEY (student_id) REFERENCES public.students(id) ON DELETE CASCADE,
+    CONSTRAINT chk_ses_type    CHECK (participation_type IN ('Full-Time','Part-Time')),
+    CONSTRAINT chk_ses_hours   CHECK (participation_hours >= 0)
+);
+
+CREATE OR REPLACE TRIGGER trg_touch_employment_services
+    BEFORE UPDATE ON public.student_employment_services
+    FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+
+CREATE TABLE IF NOT EXISTS public.student_employment_registrations (
+    id                  bigserial    NOT NULL,
+    student_id          bigint       NOT NULL,
+    provider_name       varchar(100) NOT NULL,
+    registration_number varchar(50)  NULL,
+    start_date          date         NULL,
+    end_date            date         NULL,
+    status              varchar(20)  NOT NULL DEFAULT 'Active',
+    notes               text         NULL,
+    created_at          timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_ser_student FOREIGN KEY (student_id)
+        REFERENCES public.student_employment_services(student_id) ON DELETE CASCADE,
+    CONSTRAINT chk_ser_status CHECK (status IN ('Active','Inactive','Suspended')),
+    CONSTRAINT chk_ser_dates  CHECK (end_date IS NULL OR end_date >= start_date)
+);
+
+-- =========================================================================
+-- NEW TABLES — Vocational Competency Map (VCM)
+-- =========================================================================
+
+-- Top-level VCM document: one per teacher per year per version.
+CREATE TABLE IF NOT EXISTS public.teacher_vcms (
+    id              bigserial    NOT NULL,
+    teacher_id      bigint       NOT NULL,
+    calendar_year   smallint     NOT NULL,
+    version         smallint     NOT NULL DEFAULT 1,
+    version_label   varchar(20)  NULL,           -- e.g. '2026_V1'
+    status          varchar(20)  NOT NULL DEFAULT 'Draft',
+    supervisor_id   bigint       NULL,            -- line manager / VCM supervisor
+    approved_by_id  bigint       NULL,
+    approved_at     timestamp with time zone NULL,
+    notes           text         NULL,
+    created_at      timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at      timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT uq_teacher_vcm_version  UNIQUE (teacher_id, calendar_year, version),
+    CONSTRAINT fk_vcm_teacher          FOREIGN KEY (teacher_id)     REFERENCES public.teachers(id)   ON DELETE RESTRICT,
+    CONSTRAINT fk_vcm_supervisor       FOREIGN KEY (supervisor_id)  REFERENCES public.app_users(id)  ON DELETE SET NULL,
+    CONSTRAINT fk_vcm_approved_by      FOREIGN KEY (approved_by_id) REFERENCES public.app_users(id)  ON DELETE SET NULL,
+    CONSTRAINT chk_vcm_status          CHECK (status IN ('Draft','Submitted','Approved','Rejected'))
+);
+
+CREATE OR REPLACE TRIGGER trg_touch_teacher_vcms
+    BEFORE UPDATE ON public.teacher_vcms
+    FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+
+-- Teacher's own professional credentials (TAE, degrees, industry certs).
+CREATE TABLE IF NOT EXISTS public.teacher_vcm_professional_qualifications (
+    id                   bigserial    NOT NULL,
+    vcm_id               bigint       NOT NULL,
+    qualification_code   varchar(30)  NOT NULL,
+    qualification_title  varchar(200) NOT NULL,
+    institution          varchar(200) NULL,
+    status               varchar(20)  NOT NULL DEFAULT 'Pending',
+    approved_at          date         NULL,
+    notes                text         NULL,
+    created_at           timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_vcm_pq_vcm     FOREIGN KEY (vcm_id) REFERENCES public.teacher_vcms(id) ON DELETE CASCADE,
+    CONSTRAINT chk_vcm_pq_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))
+);
+
+-- Courses (qualifications) the teacher is mapped to deliver in this VCM.
+CREATE TABLE IF NOT EXISTS public.teacher_vcm_courses (
+    id           bigserial    NOT NULL,
+    vcm_id       bigint       NOT NULL,
+    program_id   bigint       NULL,          -- NULL for non-TGA courses (VIC codes etc.)
+    course_code  varchar(20)  NOT NULL,
+    course_title varchar(200) NOT NULL,
+    sort_order   smallint     NOT NULL DEFAULT 0,
+    created_at   timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_vcm_course_vcm     FOREIGN KEY (vcm_id)     REFERENCES public.teacher_vcms(id) ON DELETE CASCADE,
+    CONSTRAINT fk_vcm_course_program FOREIGN KEY (program_id) REFERENCES public.programs(id)     ON DELETE SET NULL
+);
+
+-- Units the teacher has currency for. Multiple rows per unit are allowed
+-- (one per competency method, matching TGA VCM practice).
+CREATE TABLE IF NOT EXISTS public.teacher_vcm_units (
+    id                    bigserial    NOT NULL,
+    vcm_id                bigint       NOT NULL,
+    vcm_course_id         bigint       NULL,          -- NULL = standalone "Single Unit"
+    subject_id            bigint       NULL,
+    unit_code             varchar(20)  NOT NULL,
+    unit_title            varchar(200) NOT NULL,
+    competency_method     varchar(60)  NOT NULL,
+    superseded_unit_code  varchar(20)  NULL,
+    superseded_unit_title varchar(200) NULL,
+    description           text         NULL,          -- study name or employer/dates (method-dependent)
+    justification         text         NULL,
+    status                varchar(20)  NOT NULL DEFAULT 'Pending',
+    approved_at           date         NULL,
+    sort_order            smallint     NOT NULL DEFAULT 0,
+    created_at            timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at            timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_vcm_unit_vcm     FOREIGN KEY (vcm_id)        REFERENCES public.teacher_vcms(id)                      ON DELETE CASCADE,
+    CONSTRAINT fk_vcm_unit_course  FOREIGN KEY (vcm_course_id) REFERENCES public.teacher_vcm_courses(id)               ON DELETE SET NULL,
+    CONSTRAINT fk_vcm_unit_subject FOREIGN KEY (subject_id)    REFERENCES public.subjects(id)                          ON DELETE SET NULL,
+    CONSTRAINT chk_vcm_unit_method CHECK (competency_method IN (
+        'I hold the current unit of competency',
+        'I hold a superseded and equivalent unit of competency',
+        'I hold a recognition of relevant study',
+        'I have vocational work experience',
+        'Other'
+    )),
+    CONSTRAINT chk_vcm_unit_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))
+);
+
+CREATE OR REPLACE TRIGGER trg_touch_teacher_vcm_units
+    BEFORE UPDATE ON public.teacher_vcm_units
+    FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+
+-- =========================================================================
+-- NEW TABLES — Teacher Document Library
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.teacher_documents (
+    id               bigserial     NOT NULL,
+    teacher_id       bigint        NOT NULL,
+    title            varchar(200)  NOT NULL,
+    file_category    varchar(30)   NOT NULL DEFAULT 'Other',
+    year_of_document smallint      NULL,
+    document_url     varchar(2048) NOT NULL,
+    file_name        varchar(255)  NOT NULL,
+    uploaded_at      timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    created_at       timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_td_teacher   FOREIGN KEY (teacher_id) REFERENCES public.teachers(id) ON DELETE CASCADE,
+    CONSTRAINT chk_td_category CHECK (file_category IN (
+        'Testamurs','Accreditations','Registrations','Statement of attainment',
+        'Transcripts','Credentials','Licenses','Job cards','Other'
+    ))
+);
+
+-- Links a document to exactly one VCM entity. vcm_currency_activity_id FK is
+-- added after teacher_currency_activities is created below.
+CREATE TABLE IF NOT EXISTS public.teacher_document_connections (
+    id                       bigserial NOT NULL,
+    document_id              bigint    NOT NULL,
+    vcm_professional_qual_id bigint    NULL,
+    vcm_unit_id              bigint    NULL,
+    vcm_currency_activity_id bigint    NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_tdc_document FOREIGN KEY (document_id)              REFERENCES public.teacher_documents(id)                      ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_pq       FOREIGN KEY (vcm_professional_qual_id) REFERENCES public.teacher_vcm_professional_qualifications(id) ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_unit     FOREIGN KEY (vcm_unit_id)              REFERENCES public.teacher_vcm_units(id)                      ON DELETE CASCADE,
+    CONSTRAINT chk_tdc_target  CHECK (num_nonnulls(vcm_professional_qual_id, vcm_unit_id, vcm_currency_activity_id) = 1)
+);
+
+-- =========================================================================
+-- NEW TABLES — Currency Activities
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.teacher_currency_activities (
+    id                       bigserial    NOT NULL,
+    teacher_id               bigint       NOT NULL,
+    currency_type            varchar(15)  NOT NULL,    -- 'Vocational' | 'Professional'
+    is_external              boolean      NOT NULL DEFAULT true,
+    activity_type            varchar(50)  NOT NULL DEFAULT 'Other',
+    activity_name            varchar(200) NOT NULL,
+    date_of_activity         date         NOT NULL,
+    date_approved            date         NULL,
+    points_awarded           smallint     NOT NULL DEFAULT 0,
+    duration_hours           numeric(5,2) NULL,
+    inform_teaching_practice text         NULL,
+    student_benefit          text         NULL,
+    approval_reason          text         NULL,
+    status                   varchar(20)  NOT NULL DEFAULT 'Pending',
+    -- Professional currency fields
+    domain_name              varchar(100) NULL,
+    program_type             varchar(50)  NULL,
+    program_name             varchar(200) NULL,
+    program_date             date         NULL,
+    workshop_count           smallint     NULL,
+    program_summary          text         NULL,
+    created_at               timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at               timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_tca_teacher        FOREIGN KEY (teacher_id) REFERENCES public.teachers(id) ON DELETE RESTRICT,
+    CONSTRAINT chk_tca_currency_type CHECK (currency_type IN ('Vocational','Professional')),
+    CONSTRAINT chk_tca_status        CHECK (status IN ('Draft','Pending','Approved','Rejected')),
+    CONSTRAINT chk_tca_points        CHECK (points_awarded >= 0)
+);
+
+-- Wire up the deferred FK now that teacher_currency_activities exists.
+ALTER TABLE public.teacher_document_connections
+    ADD CONSTRAINT fk_tdc_currency FOREIGN KEY (vcm_currency_activity_id)
+    REFERENCES public.teacher_currency_activities(id) ON DELETE CASCADE;
+
+CREATE OR REPLACE TRIGGER trg_touch_teacher_currency_activities
+    BEFORE UPDATE ON public.teacher_currency_activities
+    FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+
+-- Units referenced by a vocational currency activity ("Related Unit/s").
+CREATE TABLE IF NOT EXISTS public.teacher_currency_unit_links (
+    id                   bigserial    NOT NULL,
+    currency_activity_id bigint       NOT NULL,
+    subject_id           bigint       NULL,
+    unit_code            varchar(20)  NOT NULL,
+    unit_title           varchar(200) NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uq_currency_unit UNIQUE (currency_activity_id, unit_code),
+    CONSTRAINT fk_tcul_activity FOREIGN KEY (currency_activity_id) REFERENCES public.teacher_currency_activities(id) ON DELETE CASCADE,
+    CONSTRAINT fk_tcul_subject  FOREIGN KEY (subject_id)           REFERENCES public.subjects(id)                   ON DELETE SET NULL
+);
+
+-- =========================================================================
+-- NEW TABLES — VCM Profiling Tool
+-- =========================================================================
+
+-- Stores spider/radar chart scores per dimension per VCM version.
+CREATE TABLE IF NOT EXISTS public.teacher_vcm_profiling (
+    vcm_id               bigint       NOT NULL,
+    dimension            varchar(100) NOT NULL,
+    business_ideal_score smallint     NULL,
+    self_score           smallint     NULL,
+    supervisor_score     smallint     NULL,
+    PRIMARY KEY (vcm_id, dimension),
+    CONSTRAINT fk_vcm_profiling FOREIGN KEY (vcm_id) REFERENCES public.teacher_vcms(id) ON DELETE CASCADE
+);
+
+-- =========================================================================
+-- INDEXES — v0.17
+-- =========================================================================
+
+CREATE INDEX IF NOT EXISTS idx_guardian_emergency
+    ON public.student_guardians(student_id) WHERE (is_emergency_contact = true);
+
+CREATE INDEX IF NOT EXISTS idx_attendance_absence_reason
+    ON public.session_attendance(absence_reason) WHERE (absence_reason IS NOT NULL);
+
+CREATE INDEX IF NOT EXISTS idx_subject_programs_core
+    ON public.subject_programs(program_id, is_core);
+
+CREATE INDEX IF NOT EXISTS idx_ses_student
+    ON public.student_employment_services(student_id);
+
+CREATE INDEX IF NOT EXISTS idx_ser_student
+    ON public.student_employment_registrations(student_id);
+
+CREATE INDEX IF NOT EXISTS idx_programs_type
+    ON public.programs(program_type) WHERE (program_type IS NOT NULL);
+
+CREATE INDEX IF NOT EXISTS idx_teacher_vcms_teacher
+    ON public.teacher_vcms(teacher_id);
+
+CREATE INDEX IF NOT EXISTS idx_teacher_vcms_year
+    ON public.teacher_vcms(calendar_year);
+
+CREATE INDEX IF NOT EXISTS idx_vcm_pq_vcm
+    ON public.teacher_vcm_professional_qualifications(vcm_id);
+
+CREATE INDEX IF NOT EXISTS idx_vcm_courses_vcm
+    ON public.teacher_vcm_courses(vcm_id);
+
+CREATE INDEX IF NOT EXISTS idx_vcm_units_vcm
+    ON public.teacher_vcm_units(vcm_id);
+
+CREATE INDEX IF NOT EXISTS idx_vcm_units_course
+    ON public.teacher_vcm_units(vcm_course_id) WHERE (vcm_course_id IS NOT NULL);
+
+CREATE INDEX IF NOT EXISTS idx_vcm_units_subject
+    ON public.teacher_vcm_units(subject_id) WHERE (subject_id IS NOT NULL);
+
+CREATE INDEX IF NOT EXISTS idx_teacher_documents_teacher
+    ON public.teacher_documents(teacher_id);
+
+CREATE INDEX IF NOT EXISTS idx_tdc_document
+    ON public.teacher_document_connections(document_id);
+
+CREATE INDEX IF NOT EXISTS idx_teacher_currency_teacher
+    ON public.teacher_currency_activities(teacher_id);
+
+CREATE INDEX IF NOT EXISTS idx_teacher_currency_type_status
+    ON public.teacher_currency_activities(teacher_id, currency_type, status);
+
+CREATE INDEX IF NOT EXISTS idx_tcul_activity
+    ON public.teacher_currency_unit_links(currency_activity_id);
 
 COMMIT;

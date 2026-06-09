@@ -2,7 +2,7 @@
 
 PostgreSQL schema for a national, potentially AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.16`: its entities, relationships, business rules, and the
+describes the design of `v0.17`: its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -26,6 +26,8 @@ mapping to the AVETMISS NAT reporting files.
   - [8. Completions, compliance & audit](#8-completions-compliance--audit)
   - [9. Workplan](#9-workplan)
   - [10. Timesheet](#10-timesheet)
+  - [11. Employment services](#11-employment-services)
+  - [12. VCM](#12-vcm)
 - [Table reference](#table-reference)
 - [Data dictionary](#data-dictionary)
 - [AVETMISS NAT file mapping](#avetmiss-nat-file-mapping)
@@ -86,6 +88,8 @@ graph TD
     A[Compliance & Audit<br/>completions, avetmiss_submissions, audit_log]
     W[Workplan<br/>workplans, workplan_approvals, workplan_entries]
     S[Timesheet<br/>pay_periods, timesheets, timesheet_entries]
+    ES[Employment Services<br/>student_employment_services, registrations]
+    V[VCM<br/>teacher_vcms, qualifications, courses, units, currency, documents]
 
     P --> E
     C --> E
@@ -103,6 +107,8 @@ graph TD
     P --> S
     T --> S
     W --> S
+    P --> ES
+    P --> V
 ```
 
 ---
@@ -179,6 +185,7 @@ erDiagram
         boolean he_flag
         integer credit_points "total qualification cp (HE)"
         smallint aqf_level "1-10, nullable"
+        varchar program_type "nullable"
     }
     SUBJECTS {
         bigserial id PK
@@ -282,6 +289,22 @@ erDiagram
         time start_time
         time end_time
         boolean cancelled
+    }
+    SESSION_ATTENDANCE {
+        bigserial id PK
+        bigint session_id FK
+        bigint student_id FK
+        varchar status
+        integer minutes_attended
+        smallint units_nominated
+        time arrived_at
+        time departed_at
+        smallint break_minutes
+        varchar absence_reason
+        boolean absence_is_acceptable
+        boolean has_childcare
+        boolean is_note_private
+        text notes
     }
 ```
 
@@ -450,6 +473,30 @@ erDiagram
     }
 ```
 
+### 11. Employment services
+
+```mermaid
+erDiagram
+    STUDENTS ||--o| STUDENT_EMPLOYMENT_SERVICES : "has Centrelink data"
+    STUDENT_EMPLOYMENT_SERVICES ||--o{ STUDENT_EMPLOYMENT_REGISTRATIONS : "has provider registrations"
+```
+
+### 12. VCM
+
+```mermaid
+erDiagram
+    TEACHERS ||--o{ TEACHER_VCMS : "has VCM versions"
+    TEACHER_VCMS ||--o{ TEACHER_VCM_PROFESSIONAL_QUALIFICATIONS : "has credentials"
+    TEACHER_VCMS ||--o{ TEACHER_VCM_COURSES : "maps courses"
+    TEACHER_VCM_COURSES ||--o{ TEACHER_VCM_UNITS : "has units"
+    TEACHER_VCMS ||--o{ TEACHER_VCM_UNITS : "standalone units"
+    TEACHERS ||--o{ TEACHER_DOCUMENTS : "document library"
+    TEACHER_DOCUMENTS ||--o{ TEACHER_DOCUMENT_CONNECTIONS : "linked to"
+    TEACHERS ||--o{ TEACHER_CURRENCY_ACTIVITIES : "currency records"
+    TEACHER_CURRENCY_ACTIVITIES ||--o{ TEACHER_CURRENCY_UNIT_LINKS : "related units"
+    TEACHER_VCMS ||--o{ TEACHER_VCM_PROFILING : "dimension scores"
+```
+
 ---
 
 ## Table reference
@@ -460,14 +507,14 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 
 | Table | Purpose | Key relationships |
 |---|---|---|
-| `people` | Single identity spine — name, DOB, gender, address, contact. Owns the surrogate id. | → `australian_states` |
+| `people` | Single identity spine — name, DOB, gender, address, contact, `preferred_contact_method`. Owns the surrogate id. | → `australian_states` |
 | `students` | Student-specific data: student number, USI, AVETMISS demographics, photo, ID expiry. Shares PK with `people`. Soft-deletable. | PK = FK → `people`; → `secondary_schools`, `highest_school_levels` |
 | `teachers` | Teacher-specific data: sector (`VET`/`HE`/`DUAL`), annual hours cap, and optional per-period cap. Shares PK with `people`. | PK = FK → `people`; → `faculties` |
 | `staff` | Support/admin staff. Shares PK with `people`. | PK = FK → `people`; → `faculties` |
 | `app_users` | Login/system accounts and RBAC role. Source of every `*_by` audit actor. | → `people` (nullable, for service accounts) |
 | `teacher_yearly_balances` | Maintained cache of booked teaching hours per teacher per calendar year. Cap seeded from `teachers.default_max_hours_per_year`; overridable per-year. | → `teachers` |
 | `teacher_period_allocations` | Per-academic-period hour cap and running total for HE/DUAL teachers with `max_hours_per_period` set. Auto-created on first session booking. | → `teachers`, `academic_periods` |
-| `student_guardians` | Guardians/emergency contacts; comms targets for under-18s. | → `students` |
+| `student_guardians` | Guardians/emergency contacts (`is_emergency_contact`); comms targets for under-18s. | → `students` |
 | `student_disabilities` | Declared disabilities (NAT00090). | → `students`, `disability_types` |
 | `student_prior_achievements` | Prior educational achievement (NAT00100). | → `students`, `prior_educational_achievements` |
 | `australian_states` | State/territory reference, incl. the **numeric AVETMISS state id**. | — |
@@ -477,9 +524,9 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 
 | Table | Purpose | Key relationships |
 |---|---|---|
-| `programs` | Qualifications/courses (NAT00030). `he_flag` distinguishes HE qualifications. `credit_points` is the total qualification credit point value; `aqf_level` (1–10) applies to both VET and HE. | → `faculties` |
+| `programs` | Qualifications/courses (NAT00030). `he_flag` distinguishes HE qualifications. `credit_points` is the total qualification credit point value; `aqf_level` (1–10) applies to both VET and HE. `program_type` categorises the qualification type (e.g. `Qualification`, `Skill Set`). | → `faculties` |
 | `subjects` | Units/modules/subjects (NAT00060). `credit_points` holds the HE unit credit point value (NULL for VET-only units). | — |
-| `subject_programs` | Which subjects belong to which programs (many-to-many). | → `subjects`, `programs` |
+| `subject_programs` | Which subjects belong to which programs (many-to-many). `is_core` flags mandatory units; `group_code`/`group_title` support unit grouping within a qualification. | → `subjects`, `programs` |
 
 ### Enrolment & extensions
 
@@ -517,7 +564,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | `class_slots` | **Recurring weekly template** (weekday + time + teacher + room). Carries `academic_period_id` for exclusion scoping. | → `classes`, `academic_periods`, `teachers`, `rooms` |
 | `class_sessions` | **Concrete dated occurrences** — the source of truth for hours/attendance. | → `classes`, `rooms` |
 | `session_teachers` | Teachers on a session, with role (supports team teaching). Drives the hours cap. | → `class_sessions`, `teachers` |
-| `session_attendance` | Per-student attendance per session. | → `class_sessions`, `students`, `app_users` |
+| `session_attendance` | Per-student attendance per session. Extended attendance-dialog fields: `units_nominated`, `arrived_at`/`departed_at`, `break_minutes`, `absence_reason`, `absence_is_acceptable`, `has_childcare`, `is_note_private`. | → `class_sessions`, `students`, `app_users` |
 | `class_support_staff` | Support staff per class, optionally tied to one student. | → `classes`, `staff`, `students` |
 | `class_exceptions` | Per-class no-class dates, skipped during session generation. | → `classes` |
 
@@ -543,8 +590,8 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | Table | Purpose | Key relationships |
 |---|---|---|
 | `program_completions` | Qualifications completed/issued (NAT00130). | → `students`, `programs`, `training_orgs` |
-| `student_progress_reports` | References to externally-stored report documents. | → `students`, `student_course_enrollments`, `app_users` |
-| `student_notes` | Timestamped, authored notes per student (multiple per student). | → `students`, `app_users` |
+| `student_progress_reports` | References to externally-stored report documents. `keywords` (`text[]`) supports tag-based filtering. | → `students`, `student_course_enrollments`, `app_users` |
+| `student_notes` | Timestamped, authored notes per student (multiple per student). `note_type` includes `'Communication'`. | → `students`, `app_users` |
 | `avetmiss_submissions` | Record of each NAT submission to the STA/NCVER. | → `training_orgs`, `app_users` |
 | `audit_log` | Append-only change trail (old/new `jsonb`, actor, action). | → `app_users` |
 | `workplans` | Annual VTSA 2024 cl. 32.4 workplan per teacher per year. | → `teachers`, `app_users` |
@@ -554,11 +601,32 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | `timesheets` | One per teacher per pay period; hours only for external payroll. | → `teachers`, `pay_periods`, `app_users` |
 | `timesheet_entries` | Hour lines per date; auto-populated for sessions, manual for ERD/Other. | → `timesheets`, `class_sessions`, `workplan_entries` |
 
+### Employment services
+
+| Table | Purpose | Key relationships |
+|---|---|---|
+| `student_employment_services` | Centrelink CRN, job seeker ID, participation hours/type — one row per student. | PK = FK → `students` |
+| `student_employment_registrations` | Provider registration rows (e.g. jobactive, DES). Child of employment services. | → `student_employment_services` |
+
+### VCM
+
+| Table | Purpose | Key relationships |
+|---|---|---|
+| `teacher_vcms` | VCM document per teacher per year, versioned, with Draft→Submitted→Approved workflow. | → `teachers`, `app_users` (supervisor, approver) |
+| `teacher_vcm_professional_qualifications` | Teacher's own credentials (TAE, degrees, industry certs). | → `teacher_vcms` |
+| `teacher_vcm_courses` | Courses the teacher is mapped to deliver in a VCM; optionally linked to `programs`. | → `teacher_vcms`, `programs` |
+| `teacher_vcm_units` | Units teacher has currency for, with competency method and justification. Multiple rows per unit allowed. | → `teacher_vcms`, `teacher_vcm_courses`, `subjects` |
+| `teacher_documents` | Per-teacher document library (testamurs, transcripts, credentials, other evidence). | → `teachers` |
+| `teacher_document_connections` | Links a document to exactly one VCM entity (professional qual, unit, or currency activity). `num_nonnulls = 1` enforced. | → `teacher_documents`, `teacher_vcm_professional_qualifications`, `teacher_vcm_units`, `teacher_currency_activities` |
+| `teacher_currency_activities` | Vocational and professional currency point records with activity detail and approval tracking. Professional-specific fields (`domain_name`, `program_type`, etc.) are nullable columns on the same table. | → `teachers` |
+| `teacher_currency_unit_links` | "Related Unit/s" M2M between currency activities and subjects. | → `teacher_currency_activities`, `subjects` |
+| `teacher_vcm_profiling` | Spider/radar-chart dimension scores (self, supervisor, business ideal) per VCM version. PK is `(vcm_id, dimension)`. | → `teacher_vcms` |
+
 ---
 
 ## Data dictionary
 
-Every table and column, generated from `v0.16`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
+Every table and column, generated from `v0.17`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
 
 ### Identity & reference
 
@@ -590,6 +658,7 @@ Every table and column, generated from `v0.16`. **Null** = whether the column ac
 | `emergency_contact_name` | `varchar(100)` | yes |  |  |
 | `emergency_contact_phone` | `varchar(15)` | yes |  |  |
 | `emergency_contact_relationship` | `varchar(30)` | yes |  |  |
+| `preferred_contact_method` | `varchar(20)` | yes |  |  |
 | `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 | `updated_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 
@@ -773,6 +842,7 @@ Every table and column, generated from `v0.16`. **Null** = whether the column ac
 | `phone_home` | `varchar(15)` | yes |  |  |
 | `email` | `varchar(100)` | yes |  |  |
 | `receive_comms` | `boolean` | no | `true` |  |
+| `is_emergency_contact` | `boolean` | no | `false` |  |
 | `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 
 *Constraints:*
@@ -898,6 +968,7 @@ Every table and column, generated from `v0.16`. **Null** = whether the column ac
 | `he_flag` | `boolean` | no | `false` |  |
 | `credit_points` | `integer` | yes |  |  |
 | `aqf_level` | `smallint` | yes |  |  |
+| `program_type` | `varchar(20)` | yes |  |  |
 
 *Constraints:*
 
@@ -907,6 +978,7 @@ Every table and column, generated from `v0.16`. **Null** = whether the column ac
 - `CONSTRAINT chk_program_credit_points CHECK (credit_points IS NULL OR credit_points > 0)`
 - `CONSTRAINT chk_program_aqf_level CHECK (aqf_level IS NULL OR aqf_level BETWEEN 1 AND 10)`
 - `CONSTRAINT chk_program_sector CHECK (vet_flag = true OR he_flag = true)`
+- `CONSTRAINT chk_program_type CHECK (program_type IS NULL OR program_type IN ('Qualification','Skill Set','Course in a Package','Statement of Attainment','Accredited Course'))`
 
 #### `subjects`
 
@@ -934,6 +1006,9 @@ Every table and column, generated from `v0.16`. **Null** = whether the column ac
 |---|---|---|---|---|
 | `subject_id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;subjects |
 | `program_id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;programs |
+| `is_core` | `boolean` | no | `false` |  |
+| `group_code` | `varchar(20)` | yes |  |  |
+| `group_title` | `varchar(100)` | yes |  |  |
 
 *Constraints:*
 
@@ -1490,6 +1565,14 @@ Every table and column, generated from `v0.16`. **Null** = whether the column ac
 | `student_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;students |
 | `status` | `varchar(20)` | no | `'Present'` |  |
 | `minutes_attended` | `integer` | yes |  |  |
+| `units_nominated` | `smallint` | no | `0` |  |
+| `arrived_at` | `time WITHOUT TIME ZONE` | yes |  |  |
+| `departed_at` | `time WITHOUT TIME ZONE` | yes |  |  |
+| `break_minutes` | `smallint` | no | `0` |  |
+| `absence_reason` | `varchar(100)` | yes |  |  |
+| `absence_is_acceptable` | `boolean` | no | `false` |  |
+| `has_childcare` | `boolean` | no | `false` |  |
+| `is_note_private` | `boolean` | no | `false` |  |
 | `notes` | `text` | yes |  |  |
 | `recorded_by` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;app_users |
 | `recorded_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
@@ -1501,8 +1584,10 @@ Every table and column, generated from `v0.16`. **Null** = whether the column ac
 - `CONSTRAINT fk_attendance_student FOREIGN KEY (student_id) REFERENCES public.students(id) ON DELETE CASCADE`
 - `CONSTRAINT fk_attendance_recorder FOREIGN KEY (recorded_by) REFERENCES public.app_users(id) ON DELETE SET NULL`
 - `CONSTRAINT uq_attendance_student_per_session UNIQUE (session_id, student_id)`
-- `CONSTRAINT chk_attendance_status CHECK (status IN ('Present', 'Absent-Notified', 'Absent-Unnotified', 'Online', 'Excused'))`
+- `CONSTRAINT chk_attendance_status CHECK (status IN ('Present', 'Absent-Notified', 'Absent-Unnotified', 'Online', 'Excused', 'Not-Applicable'))`
 - `CONSTRAINT chk_minutes_attended CHECK (minutes_attended >= 0)`
+- `CONSTRAINT chk_units_nominated CHECK (units_nominated >= 0)`
+- `CONSTRAINT chk_break_minutes CHECK (break_minutes >= 0)`
 
 #### `class_support_staff`
 
@@ -1752,6 +1837,7 @@ Every table and column, generated from `v0.16`. **Null** = whether the column ac
 | `report_period` | `varchar(50)` | yes |  |  |
 | `report_date` | `date` | no |  |  |
 | `document_url` | `varchar(2048)` | no |  |  |
+| `keywords` | `text[]` | yes |  |  |
 | `uploaded_by` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;app_users |
 | `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 
@@ -1781,7 +1867,7 @@ Every table and column, generated from `v0.16`. **Null** = whether the column ac
 - `PRIMARY KEY (id)`
 - `CONSTRAINT fk_note_student FOREIGN KEY (student_id) REFERENCES public.students(id) ON DELETE CASCADE`
 - `CONSTRAINT fk_note_creator FOREIGN KEY (created_by) REFERENCES public.app_users(id) ON DELETE RESTRICT`
-- `CONSTRAINT chk_note_type CHECK (note_type IN ('General', 'Pastoral', 'Academic', 'Financial', 'Compliance', 'LAP', 'Incident'))`
+- `CONSTRAINT chk_note_type CHECK (note_type IN ('General', 'Pastoral', 'Academic', 'Financial', 'Compliance', 'LAP', 'Incident', 'Communication'))`
 
 #### `avetmiss_submissions`
 
@@ -1973,6 +2059,250 @@ Every table and column, generated from `v0.16`. **Null** = whether the column ac
 - `CONSTRAINT fk_te_workplan_entry FOREIGN KEY (workplan_entry_id) REFERENCES public.workplan_entries(id) ON DELETE SET NULL`
 - `CONSTRAINT chk_te_type CHECK (entry_type IN ('Teaching Delivery', 'CAPPS', 'Education Related Duties', 'Other'))`
 - `CONSTRAINT chk_te_hours CHECK (hours > 0)`
+
+### Employment services
+
+#### `student_employment_services`
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `student_id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;students |
+| `centrelink_crn` | `varchar(20)` | yes |  |  |
+| `job_seeker_id` | `varchar(30)` | yes |  |  |
+| `participation_hours` | `numeric(5,2)` | no | `0` |  |
+| `participation_type` | `varchar(10)` | yes |  |  |
+| `participation_comment` | `text` | yes |  |  |
+| `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+| `updated_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (student_id)`
+- `CONSTRAINT fk_ses_student FOREIGN KEY (student_id) REFERENCES public.students(id) ON DELETE CASCADE`
+- `CONSTRAINT chk_ses_participation_type CHECK (participation_type IS NULL OR participation_type IN ('Full-Time','Part-Time'))`
+
+#### `student_employment_registrations`
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `student_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;student_employment_services |
+| `provider_name` | `varchar(100)` | no |  |  |
+| `registration_number` | `varchar(50)` | yes |  |  |
+| `start_date` | `date` | yes |  |  |
+| `end_date` | `date` | yes |  |  |
+| `status` | `varchar(20)` | no | `'Active'` |  |
+| `notes` | `text` | yes |  |  |
+| `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_ser_student FOREIGN KEY (student_id) REFERENCES public.student_employment_services(student_id) ON DELETE CASCADE`
+- `CONSTRAINT chk_ser_status CHECK (status IN ('Active','Inactive','Suspended'))`
+- `CONSTRAINT chk_ser_dates CHECK (end_date IS NULL OR end_date >= start_date)`
+
+### VCM
+
+#### `teacher_vcms`
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `teacher_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teachers |
+| `calendar_year` | `smallint` | no |  |  |
+| `version` | `smallint` | no | `1` |  |
+| `version_label` | `varchar(20)` | yes |  |  |
+| `status` | `varchar(20)` | no | `'Draft'` |  |
+| `supervisor_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;app_users |
+| `approved_by_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;app_users |
+| `approved_at` | `timestamp with time zone` | yes |  |  |
+| `notes` | `text` | yes |  |  |
+| `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+| `updated_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT uq_teacher_vcm UNIQUE (teacher_id, calendar_year, version)`
+- `CONSTRAINT fk_vcm_teacher FOREIGN KEY (teacher_id) REFERENCES public.teachers(id) ON DELETE RESTRICT`
+- `CONSTRAINT fk_vcm_supervisor FOREIGN KEY (supervisor_id) REFERENCES public.app_users(id) ON DELETE SET NULL`
+- `CONSTRAINT fk_vcm_approved_by FOREIGN KEY (approved_by_id) REFERENCES public.app_users(id) ON DELETE SET NULL`
+- `CONSTRAINT chk_vcm_status CHECK (status IN ('Draft','Submitted','Approved','Rejected'))`
+
+#### `teacher_vcm_professional_qualifications`
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `vcm_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teacher_vcms |
+| `qualification_code` | `varchar(30)` | no |  |  |
+| `qualification_title` | `varchar(200)` | no |  |  |
+| `institution` | `varchar(200)` | yes |  |  |
+| `status` | `varchar(20)` | no | `'Pending'` |  |
+| `approved_at` | `date` | yes |  |  |
+| `notes` | `text` | yes |  |  |
+| `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_vcmpq_vcm FOREIGN KEY (vcm_id) REFERENCES public.teacher_vcms(id) ON DELETE CASCADE`
+- `CONSTRAINT chk_vcmpq_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))`
+
+#### `teacher_vcm_courses`
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `vcm_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teacher_vcms |
+| `program_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;programs |
+| `course_code` | `varchar(20)` | no |  |  |
+| `course_title` | `varchar(200)` | no |  |  |
+| `sort_order` | `smallint` | no | `0` |  |
+| `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_vcmc_vcm FOREIGN KEY (vcm_id) REFERENCES public.teacher_vcms(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_vcmc_program FOREIGN KEY (program_id) REFERENCES public.programs(id) ON DELETE SET NULL`
+
+#### `teacher_vcm_units`
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `vcm_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teacher_vcms |
+| `vcm_course_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_vcm_courses |
+| `subject_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;subjects |
+| `unit_code` | `varchar(20)` | no |  |  |
+| `unit_title` | `varchar(200)` | no |  |  |
+| `competency_method` | `varchar(60)` | no |  |  |
+| `superseded_unit_code` | `varchar(20)` | yes |  |  |
+| `superseded_unit_title` | `varchar(200)` | yes |  |  |
+| `description` | `text` | yes |  |  |
+| `justification` | `text` | yes |  |  |
+| `status` | `varchar(20)` | no | `'Pending'` |  |
+| `approved_at` | `date` | yes |  |  |
+| `sort_order` | `smallint` | no | `0` |  |
+| `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+| `updated_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_vcmu_vcm FOREIGN KEY (vcm_id) REFERENCES public.teacher_vcms(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_vcmu_course FOREIGN KEY (vcm_course_id) REFERENCES public.teacher_vcm_courses(id) ON DELETE SET NULL`
+- `CONSTRAINT fk_vcmu_subject FOREIGN KEY (subject_id) REFERENCES public.subjects(id) ON DELETE SET NULL`
+- `CONSTRAINT chk_vcmu_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))`
+- `CONSTRAINT chk_vcmu_competency_method CHECK (competency_method IN ('I hold the current unit of competency','I hold a superseded and equivalent unit of competency','I hold a recognition of relevant study','I have vocational work experience','Other'))`
+
+#### `teacher_documents`
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `teacher_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teachers |
+| `title` | `varchar(200)` | no |  |  |
+| `file_category` | `varchar(30)` | no | `'Other'` |  |
+| `year_of_document` | `smallint` | yes |  |  |
+| `document_url` | `varchar(2048)` | no |  |  |
+| `file_name` | `varchar(255)` | no |  |  |
+| `uploaded_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+| `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_tdoc_teacher FOREIGN KEY (teacher_id) REFERENCES public.teachers(id) ON DELETE CASCADE`
+- `CONSTRAINT chk_tdoc_category CHECK (file_category IN ('Testamurs','Accreditations','Registrations','Statement of attainment','Transcripts','Credentials','Licenses','Job cards','Other'))`
+
+#### `teacher_document_connections`
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `document_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teacher_documents |
+| `vcm_professional_qual_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_vcm_professional_qualifications |
+| `vcm_unit_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_vcm_units |
+| `vcm_currency_activity_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_currency_activities |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_tdc_document FOREIGN KEY (document_id) REFERENCES public.teacher_documents(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_tdc_pq FOREIGN KEY (vcm_professional_qual_id) REFERENCES public.teacher_vcm_professional_qualifications(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_tdc_unit FOREIGN KEY (vcm_unit_id) REFERENCES public.teacher_vcm_units(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_tdc_activity FOREIGN KEY (vcm_currency_activity_id) REFERENCES public.teacher_currency_activities(id) ON DELETE CASCADE`
+- `CONSTRAINT chk_tdc_target CHECK (num_nonnulls(vcm_professional_qual_id, vcm_unit_id, vcm_currency_activity_id) = 1)`
+
+#### `teacher_currency_activities`
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `teacher_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teachers |
+| `currency_type` | `varchar(15)` | no |  |  |
+| `is_external` | `boolean` | no | `true` |  |
+| `activity_type` | `varchar(50)` | no | `'Other'` |  |
+| `activity_name` | `varchar(200)` | no |  |  |
+| `date_of_activity` | `date` | no |  |  |
+| `date_approved` | `date` | yes |  |  |
+| `points_awarded` | `smallint` | no | `0` |  |
+| `duration_hours` | `numeric(5,2)` | yes |  |  |
+| `inform_teaching_practice` | `text` | yes |  |  |
+| `student_benefit` | `text` | yes |  |  |
+| `approval_reason` | `text` | yes |  |  |
+| `status` | `varchar(20)` | no | `'Pending'` |  |
+| `domain_name` | `varchar(100)` | yes |  |  |
+| `program_type` | `varchar(50)` | yes |  |  |
+| `program_name` | `varchar(200)` | yes |  |  |
+| `program_date` | `date` | yes |  |  |
+| `workshop_count` | `smallint` | yes |  |  |
+| `program_summary` | `text` | yes |  |  |
+| `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+| `updated_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_tca_teacher FOREIGN KEY (teacher_id) REFERENCES public.teachers(id) ON DELETE RESTRICT`
+- `CONSTRAINT chk_tca_currency_type CHECK (currency_type IN ('Vocational','Professional'))`
+- `CONSTRAINT chk_tca_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))`
+- `CONSTRAINT chk_tca_points CHECK (points_awarded >= 0)`
+
+#### `teacher_currency_unit_links`
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `currency_activity_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teacher_currency_activities |
+| `subject_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;subjects |
+| `unit_code` | `varchar(20)` | no |  |  |
+| `unit_title` | `varchar(200)` | yes |  |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT uq_tcul_activity_unit UNIQUE (currency_activity_id, unit_code)`
+- `CONSTRAINT fk_tcul_activity FOREIGN KEY (currency_activity_id) REFERENCES public.teacher_currency_activities(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_tcul_subject FOREIGN KEY (subject_id) REFERENCES public.subjects(id) ON DELETE SET NULL`
+
+#### `teacher_vcm_profiling`
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `vcm_id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;teacher_vcms |
+| `dimension` | `varchar(100)` | no |  | PK |
+| `business_ideal_score` | `smallint` | yes |  |  |
+| `self_score` | `smallint` | yes |  |  |
+| `supervisor_score` | `smallint` | yes |  |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (vcm_id, dimension)`
+- `CONSTRAINT fk_vcmp_vcm FOREIGN KEY (vcm_id) REFERENCES public.teacher_vcms(id) ON DELETE CASCADE`
 
 ---
 
@@ -2228,4 +2558,4 @@ Timesheets bridge session-derived actual hours to fortnightly payroll. The recor
 
 ---
 
-*Generated from `v0.16` (2026-06-08).*
+*Generated from `v0.17` (2026-06-09).*
