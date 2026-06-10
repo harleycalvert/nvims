@@ -2,7 +2,7 @@
 
 PostgreSQL schema for a national, potentially AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.17`: its entities, relationships, business rules, and the
+describes the design of `v0.18`: its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -30,9 +30,21 @@ mapping to the AVETMISS NAT reporting files.
   - [12. VCM](#12-vcm)
 - [Table reference](#table-reference)
 - [Data dictionary](#data-dictionary)
-- [AVETMISS NAT file mapping](#avetmiss-nat-file-mapping)
+  - Identity & reference: [`people`](#people) · [`students`](#students) · [`teachers`](#teachers) · [`staff`](#staff) · [`app_users`](#app_users) · [`teacher_yearly_balances`](#teacher_yearly_balances) · [`teacher_period_allocations`](#teacher_period_allocations) · [`student_guardians`](#student_guardians) · [`student_disabilities`](#student_disabilities) · [`student_prior_achievements`](#student_prior_achievements) · [`australian_states`](#australian_states) · [`disability_types`](#disability_types) · [`prior_educational_achievements`](#prior_educational_achievements) · [`highest_school_levels`](#highest_school_levels) · [`secondary_schools`](#secondary_schools) · [`faculties`](#faculties)
+  - Curriculum: [`programs`](#programs) · [`subjects`](#subjects) · [`subject_programs`](#subject_programs)
+  - Enrolment & extensions: [`student_course_enrollments`](#student_course_enrollments) · [`client_subject_enrolments`](#client_subject_enrolments) · [`apprenticeship_details`](#apprenticeship_details) · [`traineeship_details`](#traineeship_details) · [`training_plans`](#training_plans) · [`learning_access_plans`](#learning_access_plans) · [`vet_student_loans`](#vet_student_loans) · [`he_enrolment_details`](#he_enrolment_details) · [`enrollment_credit_claims`](#enrollment_credit_claims) · [`state_funding_details`](#state_funding_details)
+  - RTO infrastructure: [`training_orgs`](#training_orgs) · [`delivery_locations`](#delivery_locations) · [`buildings`](#buildings) · [`rooms`](#rooms) · [`employers`](#employers) · [`employer_workplaces`](#employer_workplaces) · [`aasn_providers`](#aasn_providers)
+  - Timetabling: [`academic_periods`](#academic_periods) · [`classes`](#classes) · [`class_subjects`](#class_subjects) · [`class_enrollments`](#class_enrollments) · [`class_slots`](#class_slots) · [`class_sessions`](#class_sessions) · [`session_teachers`](#session_teachers) · [`session_attendance`](#session_attendance) · [`class_support_staff`](#class_support_staff) · [`class_exceptions`](#class_exceptions)
+  - Holidays: [`holiday_rules`](#holiday_rules) · [`holiday_observances`](#holiday_observances)
+  - Communications: [`message_templates`](#message_templates) · [`message_campaigns`](#message_campaigns) · [`message_deliveries`](#message_deliveries) · [`messages`](#messages) · [`message_recipients`](#message_recipients)
+  - Compliance & audit: [`program_completions`](#program_completions) · [`student_progress_reports`](#student_progress_reports) · [`student_notes`](#student_notes) · [`avetmiss_submissions`](#avetmiss_submissions) · [`audit_log`](#audit_log)
+  - Workplan: [`workplans`](#workplans) · [`workplan_approvals`](#workplan_approvals) · [`workplan_entries`](#workplan_entries)
+  - Timesheet: [`pay_periods`](#pay_periods) · [`timesheets`](#timesheets) · [`timesheet_entries`](#timesheet_entries)
+  - Employment services: [`student_employment_services`](#student_employment_services) · [`student_employment_registrations`](#student_employment_registrations)
+  - VCM: [`teacher_vcms`](#teacher_vcms) · [`teacher_vcm_professional_qualifications`](#teacher_vcm_professional_qualifications) · [`teacher_vcm_courses`](#teacher_vcm_courses) · [`teacher_vcm_units`](#teacher_vcm_units) · [`teacher_documents`](#teacher_documents) · [`teacher_document_connections`](#teacher_document_connections) · [`teacher_currency_activities`](#teacher_currency_activities) · [`teacher_currency_unit_links`](#teacher_currency_unit_links) · [`teacher_vcm_profiling`](#teacher_vcm_profiling)
 - [Business rules & constraints](#business-rules--constraints)
 - [Functions & triggers](#functions--triggers)
+- [AVETMISS NAT file mapping](#avetmiss-nat-file-mapping)
 - [Notes for application developers](#notes-for-application-developers)
 - [Caveats & not-yet-modelled](#caveats--not-yet-modelled)
 
@@ -507,10 +519,10 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 
 | Table | Purpose | Key relationships |
 |---|---|---|
-| `people` | Single identity spine — name, DOB, gender, address, contact, `preferred_contact_method`. Owns the surrogate id. | → `australian_states` |
+| `people` | Single identity spine — name, DOB, gender, address, contact, `preferred_contact_method`, WWCC number and expiry. Owns the surrogate id. | → `australian_states` |
 | `students` | Student-specific data: student number, USI, AVETMISS demographics, photo, ID expiry. Shares PK with `people`. Soft-deletable. | PK = FK → `people`; → `secondary_schools`, `highest_school_levels` |
-| `teachers` | Teacher-specific data: sector (`VET`/`HE`/`DUAL`), annual hours cap, and optional per-period cap. Shares PK with `people`. | PK = FK → `people`; → `faculties` |
-| `staff` | Support/admin staff. Shares PK with `people`. | PK = FK → `people`; → `faculties` |
+| `teachers` | Teacher-specific data: sector (`VET`/`HE`/`DUAL`), annual hours cap, optional per-period cap, police check status and date. Shares PK with `people`. | PK = FK → `people`; → `faculties` |
+| `staff` | Support/admin staff. Police check status and date. Shares PK with `people`. | PK = FK → `people`; → `faculties` |
 | `app_users` | Login/system accounts and RBAC role. Source of every `*_by` audit actor. | → `people` (nullable, for service accounts) |
 | `teacher_yearly_balances` | Maintained cache of booked teaching hours per teacher per calendar year. Cap seeded from `teachers.default_max_hours_per_year`; overridable per-year. | → `teachers` |
 | `teacher_period_allocations` | Per-academic-period hour cap and running total for HE/DUAL teachers with `max_hours_per_period` set. Auto-created on first session booking. | → `teachers`, `academic_periods` |
@@ -594,9 +606,19 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | `student_notes` | Timestamped, authored notes per student (multiple per student). `note_type` includes `'Communication'`. | → `students`, `app_users` |
 | `avetmiss_submissions` | Record of each NAT submission to the STA/NCVER. | → `training_orgs`, `app_users` |
 | `audit_log` | Append-only change trail (old/new `jsonb`, actor, action). | → `app_users` |
+
+### Workplan
+
+| Table | Purpose | Key relationships |
+|---|---|---|
 | `workplans` | Annual VTSA 2024 cl. 32.4 workplan per teacher per year. | → `teachers`, `app_users` |
 | `workplan_approvals` | Teacher/LineManager approval steps for a workplan. | → `workplans`, `app_users` |
 | `workplan_entries` | Teaching Delivery / CAPPS / ERD line items on a workplan. | → `workplans`, `subjects`, `programs`, `academic_periods`, `class_sessions` |
+
+### Timesheet
+
+| Table | Purpose | Key relationships |
+|---|---|---|
 | `pay_periods` | Administrator-defined pay periods (fortnightly by default). | — |
 | `timesheets` | One per teacher per pay period; hours only for external payroll. | → `teachers`, `pay_periods`, `app_users` |
 | `timesheet_entries` | Hour lines per date; auto-populated for sessions, manual for ERD/Other. | → `timesheets`, `class_sessions`, `workplan_entries` |
@@ -626,7 +648,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 
 ## Data dictionary
 
-Every table and column, generated from `v0.17`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
+Every table and column, generated from `v0.18`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
 
 ### Identity & reference
 
@@ -659,6 +681,8 @@ Every table and column, generated from `v0.17`. **Null** = whether the column ac
 | `emergency_contact_phone` | `varchar(15)` | yes |  |  |
 | `emergency_contact_relationship` | `varchar(30)` | yes |  |  |
 | `preferred_contact_method` | `varchar(20)` | yes |  |  |
+| `wwcc_number` | `text` | yes |  |  |
+| `wwcc_expiry` | `date` | yes |  |  |
 | `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 | `updated_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 
@@ -735,6 +759,8 @@ Every table and column, generated from `v0.17`. **Null** = whether the column ac
 | `sector` | `public.teacher_sector` | no | `'VET'` |  |
 | `default_max_hours_per_year` | `numeric(6,2)` | no | `800.00` |  |
 | `max_hours_per_period` | `numeric(6,2)` | yes |  |  |
+| `police_check_status` | `text` | yes |  |  |
+| `police_check_date` | `date` | yes |  |  |
 | `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 | `updated_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 
@@ -757,6 +783,8 @@ Every table and column, generated from `v0.17`. **Null** = whether the column ac
 | `staff_number` | `varchar(20)` | no |  | UK |
 | `staff_email` | `varchar(100)` | no |  | UK |
 | `staff_phone` | `varchar(15)` | yes |  |  |
+| `police_check_status` | `text` | yes |  |  |
+| `police_check_date` | `date` | yes |  |  |
 
 *Constraints:*
 
@@ -1911,6 +1939,8 @@ Every table and column, generated from `v0.17`. **Null** = whether the column ac
 - `CONSTRAINT fk_audit_actor FOREIGN KEY (actor_id) REFERENCES public.app_users(id) ON DELETE SET NULL`
 - `CONSTRAINT chk_audit_action CHECK (action IN ('INSERT', 'UPDATE', 'DELETE'))`
 
+### Workplan
+
 #### `workplans`
 
 | Column | Type | Null | Default | Key |
@@ -1989,6 +2019,8 @@ Every table and column, generated from `v0.17`. **Null** = whether the column ac
 - `CONSTRAINT chk_we_type CHECK (entry_type IN ('Teaching Delivery', 'CAPPS', 'Education Related Duties'))`
 - `CONSTRAINT chk_we_hours CHECK (total_hours > 0)`
 - `CONSTRAINT chk_we_dates CHECK (activity_end_date IS NULL OR activity_end_date >= activity_start_date)`
+
+### Timesheet
 
 #### `pay_periods`
 
@@ -2306,35 +2338,6 @@ Every table and column, generated from `v0.17`. **Null** = whether the column ac
 
 ---
 
-## AVETMISS NAT file mapping
-
-The schema maps to the AVETMISS 8.0 NAT collection as follows. Validate field-level
-detail against the current *AVETMISS Data Element Definitions* edition, as it is revised
-periodically.
-
-| NAT file | Content | Primary source table(s) |
-|---|---|---|
-| **NAT00010** | Training Organisation | `training_orgs` |
-| **NAT00020** | Delivery Location | `delivery_locations` (+ `australian_states.avetmiss_state_id`) |
-| **NAT00030** | Program (qualification/course) | `programs` |
-| **NAT00060** | Subject (unit/module) | `subjects` |
-| **NAT00080** | Client (demographics) | `people` + `students` |
-| **NAT00085** | Client Postal Details | `people` (address columns) |
-| **NAT00090** | Disability | `student_disabilities` → `disability_types` |
-| **NAT00100** | Prior Educational Achievement | `student_prior_achievements` → `prior_educational_achievements` |
-| **NAT00120** | Enrolment / Training Activity | `client_subject_enrolments` (+ `student_course_enrollments`, `subjects`, `programs`, `delivery_locations`) |
-| **NAT00130** | Program Completed | `program_completions` |
-
-**Notes**
-
-- AVETMISS uses **numeric** state identifiers (e.g. `04` = SA), held in
-  `australian_states.avetmiss_state_id` and joined in at export time.
-- NAT00120 allows a **blank program identifier** for standalone units; this is why
-  `client_subject_enrolments.student_course_enrollment_id` is nullable.
-- Dates export as `ddmmyyyy`; the schema stores native `date` and formats on export.
-
----
-
 ## Business rules & constraints
 
 ### Teaching hour caps
@@ -2504,6 +2507,35 @@ Timesheets bridge session-derived actual hours to fortnightly payroll. The recor
 
 ---
 
+## AVETMISS NAT file mapping
+
+The schema maps to the AVETMISS 8.0 NAT collection as follows. Validate field-level
+detail against the current *AVETMISS Data Element Definitions* edition, as it is revised
+periodically.
+
+| NAT file | Content | Primary source table(s) |
+|---|---|---|
+| **NAT00010** | Training Organisation | `training_orgs` |
+| **NAT00020** | Delivery Location | `delivery_locations` (+ `australian_states.avetmiss_state_id`) |
+| **NAT00030** | Program (qualification/course) | `programs` |
+| **NAT00060** | Subject (unit/module) | `subjects` |
+| **NAT00080** | Client (demographics) | `people` + `students` |
+| **NAT00085** | Client Postal Details | `people` (address columns) |
+| **NAT00090** | Disability | `student_disabilities` → `disability_types` |
+| **NAT00100** | Prior Educational Achievement | `student_prior_achievements` → `prior_educational_achievements` |
+| **NAT00120** | Enrolment / Training Activity | `client_subject_enrolments` (+ `student_course_enrollments`, `subjects`, `programs`, `delivery_locations`) |
+| **NAT00130** | Program Completed | `program_completions` |
+
+**Notes**
+
+- AVETMISS uses **numeric** state identifiers (e.g. `04` = SA), held in
+  `australian_states.avetmiss_state_id` and joined in at export time.
+- NAT00120 allows a **blank program identifier** for standalone units; this is why
+  `client_subject_enrolments.student_course_enrollment_id` is nullable.
+- Dates export as `ddmmyyyy`; the schema stores native `date` and formats on export.
+
+---
+
 ## Notes for application developers
 
 - **Set the audit actor per transaction.** Before writes, run
@@ -2558,4 +2590,4 @@ Timesheets bridge session-derived actual hours to fortnightly payroll. The recor
 
 ---
 
-*Generated from `v0.17` (2026-06-09).*
+*Generated from `v0.18` (2026-06-10).*

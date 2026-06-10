@@ -1,6 +1,15 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.17, 2026-06-09
+-- AVETMISS-compliant SMS schema  --  version 0.18, 2026-06-10
 -- =========================================================================
+-- Changes from v0.17:
+--   1.  people gains wwcc_number text and wwcc_expiry date for Working with
+--       Children Check details. Any person (student, teacher, staff) may hold
+--       a WWCC card; storing it on people avoids duplication across role tables.
+--   2.  teachers gains police_check_status text and police_check_date date.
+--       Typical values: 'Pending', 'Clear', 'Not Required'. Both nullable so
+--       organisations that don't record police checks incur no schema noise.
+--   3.  staff gains the same police_check_status / police_check_date columns
+--       under the same semantics as teachers.
 -- Changes from v0.16:
 --   1.  preferred_contact_method varchar(20) added to people.
 --   2.  is_emergency_contact boolean added to student_guardians: marks a
@@ -223,6 +232,8 @@ CREATE TABLE IF NOT EXISTS public.people (
     emergency_contact_phone varchar(15) NULL,
     emergency_contact_relationship varchar(30) NULL,
     preferred_contact_method varchar(20) NULL,
+    wwcc_number text NULL,                           -- NEW v18: Working with Children Check
+    wwcc_expiry date NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -316,6 +327,8 @@ CREATE TABLE IF NOT EXISTS public.teachers (
     sector public.teacher_sector NOT NULL DEFAULT 'VET',
     default_max_hours_per_year numeric(6,2) NOT NULL DEFAULT 800.00,
     max_hours_per_period numeric(6,2) NULL,       -- NULL = use annual cap only; set for semester/block contracts
+    police_check_status text NULL,                -- NEW v18: 'Pending', 'Clear', 'Not Required', or NULL
+    police_check_date date NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -370,6 +383,8 @@ CREATE TABLE IF NOT EXISTS public.staff (
     staff_number varchar(20) NOT NULL,
     staff_email varchar(100) NOT NULL,
     staff_phone varchar(15) NULL,
+    police_check_status text NULL,               -- NEW v18: 'Pending', 'Clear', 'Not Required', or NULL
+    police_check_date date NULL,
     PRIMARY KEY (id),
     CONSTRAINT fk_staff_people FOREIGN KEY (id) REFERENCES public.people(id) ON DELETE CASCADE,
     CONSTRAINT fk_staff_faculty FOREIGN KEY (faculty_id) REFERENCES public.faculties(id) ON DELETE SET NULL,
