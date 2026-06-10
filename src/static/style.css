@@ -261,23 +261,23 @@ select:focus { outline: 2px solid #1a4480; outline-offset: 1px; }
 
 .table-wrap {
   overflow-x: auto;
-}
-
-.att-table {
-  border-collapse: collapse;
-  font-size: 13px;
   width: 100%;
 }
 
-.att-table th,
-.att-table td {
+table {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+table th,
+table td {
   border: 1px solid #e0e0e0;
   padding: 4px 6px;
   text-align: center;
   white-space: nowrap;
 }
 
-.att-table th {
+table th {
   background: #f0f4f9;
   font-weight: 600;
   font-size: 12px;
@@ -287,26 +287,27 @@ select:focus { outline: 2px solid #1a4480; outline-offset: 1px; }
 
 .col-name {
   text-align: left !important;
-  min-width: 160px;
+  white-space: nowrap;
+  width: 100%;
   position: sticky;
   left: 0;
   background: #f0f4f9;
   z-index: 1;
 }
 
-.att-table tbody .col-name {
+table tbody .col-name {
   background: #fff;
 }
 
-.att-table tbody tr:nth-child(even) .col-name {
+table tbody tr:nth-child(even) .col-name {
   background: #fafafa;
 }
 
-.att-table tbody tr:nth-child(even) td {
+table tbody tr:nth-child(even) td {
   background: #fafafa;
 }
 
-.att-table tbody tr:hover td {
+table tbody tr:hover td {
   background: #eef3fb !important;
 }
 
@@ -328,23 +329,6 @@ select:focus { outline: 2px solid #1a4480; outline-offset: 1px; }
 }
 
 /* ── Attendance status cells ──────────────────────────────── */
-.att-cell {
-  display: inline-block;
-  width: 28px;
-  height: 22px;
-  line-height: 22px;
-  text-align: center;
-  border-radius: 3px;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-td.att-cell {
-  width: auto;
-  height: auto;
-  display: table-cell;
-}
-
 .att-present  { background: #d4edda; color: #155724; }
 .att-online   { background: #cce5ff; color: #004085; }
 .att-notified { background: #fff3cd; color: #856404; }
@@ -382,33 +366,11 @@ td.att-cell {
   line-height: 1.3;
 }
 
-.att-table tbody td.res-cell:hover {
+table tbody td.res-cell:hover {
   filter: brightness(0.92);
 }
 
 /* ── Result cells ─────────────────────────────────────────── */
-.res-cell {
-  display: inline-block;
-  min-width: 32px;
-  height: 22px;
-  line-height: 22px;
-  text-align: center;
-  border-radius: 3px;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 0 4px;
-}
-
-td.res-cell {
-  display: table-cell;
-  width: auto;
-  height: auto;
-  line-height: normal;
-  border-radius: 0;
-  padding: 4px 6px;
-  cursor: pointer;
-}
-
 td.res-cell-empty {
   cursor: default;
 }
@@ -420,7 +382,7 @@ td.res-cell-empty {
 .res-ns-unpub { background: #f8d7da; color: #721c24; }
 .res-none     { background: #f5f5f5; color: #999; }
 
-/* td overrides must beat .att-table even-row striping (higher specificity) */
+/* td overrides must beat even-row striping (higher specificity via !important) */
 td.res-sc-pub   { background: #155724 !important; color: #fff; }
 td.res-sc-unpub { background: #d4edda !important; color: #155724; }
 td.res-ns-pub   { background: #721c24 !important; color: #fff; }

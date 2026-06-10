@@ -11,3 +11,5 @@ This is currently in an early development stage. It is not yet functional, not e
 ![Academic Period](docs/img/results.png)
 
 See also [Database Schema Documentation](https://github.com/harleycalvert/nvims-sms/blob/main/docs/DATABASE.md)
+
+[NVIMS Forum](https://nvims.boards.net/)
