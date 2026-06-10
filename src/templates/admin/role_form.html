@@ -72,6 +72,24 @@
           </div>
         </div>
         {{end}}
+
+        {{if or (eq .RoleType "teacher") (eq .RoleType "staff")}}
+        <div class="form-row">
+          <div class="form-group" style="max-width:220px">
+            <label>Police Check Status</label>
+            <select name="police_check_status">
+              <option value="">— not recorded —</option>
+              <option value="Pending">Pending</option>
+              <option value="Clear">Clear</option>
+              <option value="Not Required">Not Required</option>
+            </select>
+          </div>
+          <div class="form-group" style="max-width:180px">
+            <label>Police Check Date</label>
+            <input type="date" name="police_check_date">
+          </div>
+        </div>
+        {{end}}
       </div>
 
       <div class="form-actions">

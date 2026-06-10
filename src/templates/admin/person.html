@@ -103,6 +103,20 @@
         </div>
       </div>
 
+      <div class="form-section">
+        <h2 class="form-section-title">Working with Children Check</h2>
+        <div class="form-row">
+          <div class="form-group" style="max-width:220px">
+            <label>WWCC Number</label>
+            <input type="text" name="wwcc_number" value="{{.Form.WWCCNumber}}">
+          </div>
+          <div class="form-group" style="max-width:180px">
+            <label>Expiry Date</label>
+            <input type="date" name="wwcc_expiry" value="{{.Form.WWCCExpiryStr}}">
+          </div>
+        </div>
+      </div>
+
       <div class="form-actions">
         <button type="submit" class="btn-primary">
           {{if .IsNew}}Create Person{{else}}Save Changes{{end}}
@@ -136,6 +150,14 @@
           <div class="role-card-body">
             {{if .Person.IsTeacher}}
               <p class="role-number">{{.Person.TeacherNumber}}</p>
+              {{if .Person.TeacherPoliceCheckStatus}}
+              <p class="role-check-info">
+                Police check: <strong>{{.Person.TeacherPoliceCheckStatus}}</strong>
+                {{if .Person.TeacherPoliceCheckDateStr}}({{.Person.TeacherPoliceCheckDateStr}}){{end}}
+              </p>
+              {{else}}
+              <p class="role-check-none">No police check on record</p>
+              {{end}}
               <a class="btn-row-action" href="/admin/people/{{.Form.ID}}/role?type=teacher">Edit</a>
             {{else}}
               <p class="role-none">Not assigned</p>
@@ -149,6 +171,14 @@
           <div class="role-card-body">
             {{if .Person.IsStaff}}
               <p class="role-number">{{.Person.StaffNumber}}</p>
+              {{if .Person.StaffPoliceCheckStatus}}
+              <p class="role-check-info">
+                Police check: <strong>{{.Person.StaffPoliceCheckStatus}}</strong>
+                {{if .Person.StaffPoliceCheckDateStr}}({{.Person.StaffPoliceCheckDateStr}}){{end}}
+              </p>
+              {{else}}
+              <p class="role-check-none">No police check on record</p>
+              {{end}}
               <a class="btn-row-action" href="/admin/people/{{.Form.ID}}/role?type=staff">Edit</a>
             {{else}}
               <p class="role-none">Not assigned</p>

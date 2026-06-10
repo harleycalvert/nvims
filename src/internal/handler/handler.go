@@ -390,6 +390,8 @@ type personForm struct {
 	Suburb        string
 	StateCode     string
 	Postcode      string
+	WWCCNumber    string
+	WWCCExpiryStr string
 }
 
 func personFormFrom(d store.PersonDetail) personForm {
@@ -398,6 +400,7 @@ func personFormFrom(d store.PersonDetail) personForm {
 		PreferredName: d.PreferredName, DOBStr: d.DOB.Format("2006-01-02"),
 		Gender: d.Gender, Email: d.Email, PhoneMobile: d.PhoneMobile,
 		Suburb: d.Suburb, StateCode: d.StateCode, Postcode: d.Postcode,
+		WWCCNumber: d.WWCCNumber, WWCCExpiryStr: d.WWCCExpiryStr,
 	}
 }
 
@@ -413,6 +416,8 @@ func personFormFromPost(r *http.Request, id int64) personForm {
 		Suburb: strings.TrimSpace(r.FormValue("suburb")),
 		StateCode: r.FormValue("state_code"),
 		Postcode: strings.TrimSpace(r.FormValue("postcode")),
+		WWCCNumber:    strings.TrimSpace(r.FormValue("wwcc_number")),
+		WWCCExpiryStr: r.FormValue("wwcc_expiry"),
 	}
 }
 
@@ -457,7 +462,8 @@ func (h *Handler) AdminPersonCreate(w http.ResponseWriter, r *http.Request) {
 	id, err := h.store.CreatePerson(r.Context(),
 		f.Title, f.FirstName, f.FamilyName, f.PreferredName,
 		f.DOBStr, f.Gender, f.Email, f.PhoneMobile,
-		f.Suburb, f.StateCode, f.Postcode)
+		f.Suburb, f.StateCode, f.Postcode,
+		f.WWCCNumber, f.WWCCExpiryStr)
 	if err != nil {
 		log.Printf("CreatePerson: %v", err)
 		h.render(w, "admin-person", map[string]any{
@@ -514,7 +520,8 @@ func (h *Handler) AdminPersonUpdate(w http.ResponseWriter, r *http.Request) {
 	if err := h.store.UpdatePerson(r.Context(), id,
 		f.Title, f.FirstName, f.FamilyName, f.PreferredName,
 		f.DOBStr, f.Gender, f.Email, f.PhoneMobile,
-		f.Suburb, f.StateCode, f.Postcode); err != nil {
+		f.Suburb, f.StateCode, f.Postcode,
+		f.WWCCNumber, f.WWCCExpiryStr); err != nil {
 		log.Printf("UpdatePerson(%d): %v", id, err)
 		person, _ := h.store.GetPerson(r.Context(), id)
 		h.render(w, "admin-person", map[string]any{
@@ -565,9 +572,14 @@ func (h *Handler) AdminRoleAdd(w http.ResponseWriter, r *http.Request) {
 	case "student":
 		roleErr = h.store.AddStudentRole(r.Context(), id, number, email)
 	case "teacher":
-		roleErr = h.store.AddTeacherRole(r.Context(), id, number, email, r.FormValue("employment_status"))
+		roleErr = h.store.AddTeacherRole(r.Context(), id, number, email,
+			r.FormValue("employment_status"),
+			r.FormValue("police_check_status"),
+			r.FormValue("police_check_date"))
 	case "staff":
-		roleErr = h.store.AddStaffRole(r.Context(), id, number, email)
+		roleErr = h.store.AddStaffRole(r.Context(), id, number, email,
+			r.FormValue("police_check_status"),
+			r.FormValue("police_check_date"))
 	default:
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return

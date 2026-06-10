@@ -524,12 +524,18 @@ type PersonDetail struct {
 	Suburb        string
 	StateCode     string
 	Postcode      string
+	WWCCNumber    string
+	WWCCExpiryStr string
 	IsStudent     bool
 	IsTeacher     bool
 	IsStaff       bool
-	StudentNumber string
-	TeacherNumber string
-	StaffNumber   string
+	StudentNumber             string
+	TeacherNumber             string
+	TeacherPoliceCheckStatus  string
+	TeacherPoliceCheckDateStr string
+	StaffNumber               string
+	StaffPoliceCheckStatus    string
+	StaffPoliceCheckDateStr   string
 }
 
 func (s *Store) ListPeople(ctx context.Context, search string) ([]PersonListRow, error) {
@@ -575,61 +581,76 @@ func (s *Store) GetPerson(ctx context.Context, id int64) (PersonDetail, error) {
 		       COALESCE(p.preferred_name,''), p.dob, p.gender,
 		       p.primary_email, COALESCE(p.phone_mobile,''),
 		       p.suburb, p.state_code, p.postcode,
+		       COALESCE(p.wwcc_number,''),
+		       COALESCE(TO_CHAR(p.wwcc_expiry,'YYYY-MM-DD'),''),
 		       EXISTS(SELECT 1 FROM public.students st WHERE st.id = p.id AND st.deleted_at IS NULL),
 		       EXISTS(SELECT 1 FROM public.teachers t  WHERE t.id  = p.id),
 		       EXISTS(SELECT 1 FROM public.staff   sf WHERE sf.id  = p.id),
 		       COALESCE((SELECT student_number FROM public.students WHERE id = p.id),''),
 		       COALESCE((SELECT teacher_number FROM public.teachers WHERE id = p.id),''),
-		       COALESCE((SELECT staff_number   FROM public.staff    WHERE id = p.id),'')
+		       COALESCE((SELECT COALESCE(police_check_status,'') FROM public.teachers WHERE id = p.id),''),
+		       COALESCE((SELECT TO_CHAR(police_check_date,'YYYY-MM-DD') FROM public.teachers WHERE id = p.id),''),
+		       COALESCE((SELECT staff_number FROM public.staff WHERE id = p.id),''),
+		       COALESCE((SELECT COALESCE(police_check_status,'') FROM public.staff WHERE id = p.id),''),
+		       COALESCE((SELECT TO_CHAR(police_check_date,'YYYY-MM-DD') FROM public.staff WHERE id = p.id),'')
 		FROM public.people p WHERE p.id = $1
 	`, id).Scan(
 		&d.ID, &d.Title, &d.FirstName, &d.FamilyName, &d.PreferredName,
 		&d.DOB, &d.Gender, &d.Email, &d.PhoneMobile,
 		&d.Suburb, &d.StateCode, &d.Postcode,
+		&d.WWCCNumber, &d.WWCCExpiryStr,
 		&d.IsStudent, &d.IsTeacher, &d.IsStaff,
-		&d.StudentNumber, &d.TeacherNumber, &d.StaffNumber,
+		&d.StudentNumber,
+		&d.TeacherNumber, &d.TeacherPoliceCheckStatus, &d.TeacherPoliceCheckDateStr,
+		&d.StaffNumber, &d.StaffPoliceCheckStatus, &d.StaffPoliceCheckDateStr,
 	)
 	return d, err
 }
 
-func (s *Store) CreatePerson(ctx context.Context, title, firstName, familyName, preferredName, dob, gender, email, phoneMobile, suburb, stateCode, postcode string) (int64, error) {
+func (s *Store) CreatePerson(ctx context.Context, title, firstName, familyName, preferredName, dob, gender, email, phoneMobile, suburb, stateCode, postcode, wwccNumber, wwccExpiry string) (int64, error) {
 	var id int64
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO public.people
 		    (title, first_given_name, family_name, preferred_name,
 		     dob, gender, primary_email, phone_mobile,
-		     suburb, state_code, postcode)
+		     suburb, state_code, postcode,
+		     wwcc_number, wwcc_expiry)
 		VALUES
 		    (NULLIF($1,''), $2, $3, NULLIF($4,''),
 		     $5::date, $6, $7, NULLIF($8,''),
-		     $9, $10, $11)
+		     $9, $10, $11,
+		     NULLIF($12,''), NULLIF($13,'')::date)
 		RETURNING id
 	`, title, firstName, familyName, preferredName,
 		dob, gender, email, phoneMobile,
 		suburb, stateCode, postcode,
+		wwccNumber, wwccExpiry,
 	).Scan(&id)
 	return id, err
 }
 
-func (s *Store) UpdatePerson(ctx context.Context, id int64, title, firstName, familyName, preferredName, dob, gender, email, phoneMobile, suburb, stateCode, postcode string) error {
+func (s *Store) UpdatePerson(ctx context.Context, id int64, title, firstName, familyName, preferredName, dob, gender, email, phoneMobile, suburb, stateCode, postcode, wwccNumber, wwccExpiry string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE public.people SET
-		    title          = NULLIF($2,''),
+		    title            = NULLIF($2,''),
 		    first_given_name = $3,
-		    family_name    = $4,
-		    preferred_name = NULLIF($5,''),
-		    dob            = $6::date,
-		    gender         = $7,
-		    primary_email  = $8,
-		    phone_mobile   = NULLIF($9,''),
-		    suburb         = $10,
-		    state_code     = $11,
-		    postcode       = $12,
-		    updated_at     = NOW()
+		    family_name      = $4,
+		    preferred_name   = NULLIF($5,''),
+		    dob              = $6::date,
+		    gender           = $7,
+		    primary_email    = $8,
+		    phone_mobile     = NULLIF($9,''),
+		    suburb           = $10,
+		    state_code       = $11,
+		    postcode         = $12,
+		    wwcc_number      = NULLIF($13,''),
+		    wwcc_expiry      = NULLIF($14,'')::date,
+		    updated_at       = NOW()
 		WHERE id = $1
 	`, id, title, firstName, familyName, preferredName,
 		dob, gender, email, phoneMobile,
 		suburb, stateCode, postcode,
+		wwccNumber, wwccExpiry,
 	)
 	return err
 }
@@ -646,25 +667,29 @@ func (s *Store) AddStudentRole(ctx context.Context, personID int64, studentNumbe
 	return err
 }
 
-func (s *Store) AddTeacherRole(ctx context.Context, personID int64, teacherNumber, teacherEmail, employmentStatus string) error {
+func (s *Store) AddTeacherRole(ctx context.Context, personID int64, teacherNumber, teacherEmail, employmentStatus, policeCheckStatus, policeCheckDate string) error {
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO public.teachers (id, teacher_number, teacher_email, employment_status)
-		VALUES ($1, $2, $3, $4::public.employment_type)
+		INSERT INTO public.teachers (id, teacher_number, teacher_email, employment_status, police_check_status, police_check_date)
+		VALUES ($1, $2, $3, $4::public.employment_type, NULLIF($5,''), NULLIF($6,'')::date)
 		ON CONFLICT (id) DO UPDATE SET
-		    teacher_number    = EXCLUDED.teacher_number,
-		    teacher_email     = EXCLUDED.teacher_email,
-		    employment_status = EXCLUDED.employment_status
-	`, personID, teacherNumber, teacherEmail, employmentStatus)
+		    teacher_number      = EXCLUDED.teacher_number,
+		    teacher_email       = EXCLUDED.teacher_email,
+		    employment_status   = EXCLUDED.employment_status,
+		    police_check_status = EXCLUDED.police_check_status,
+		    police_check_date   = EXCLUDED.police_check_date
+	`, personID, teacherNumber, teacherEmail, employmentStatus, policeCheckStatus, policeCheckDate)
 	return err
 }
 
-func (s *Store) AddStaffRole(ctx context.Context, personID int64, staffNumber, staffEmail string) error {
+func (s *Store) AddStaffRole(ctx context.Context, personID int64, staffNumber, staffEmail, policeCheckStatus, policeCheckDate string) error {
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO public.staff (id, staff_number, staff_email)
-		VALUES ($1, $2, $3)
+		INSERT INTO public.staff (id, staff_number, staff_email, police_check_status, police_check_date)
+		VALUES ($1, $2, $3, NULLIF($4,''), NULLIF($5,'')::date)
 		ON CONFLICT (id) DO UPDATE SET
-		    staff_number = EXCLUDED.staff_number,
-		    staff_email  = EXCLUDED.staff_email
-	`, personID, staffNumber, staffEmail)
+		    staff_number         = EXCLUDED.staff_number,
+		    staff_email          = EXCLUDED.staff_email,
+		    police_check_status  = EXCLUDED.police_check_status,
+		    police_check_date    = EXCLUDED.police_check_date
+	`, personID, staffNumber, staffEmail, policeCheckStatus, policeCheckDate)
 	return err
 }

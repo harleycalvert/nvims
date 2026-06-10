@@ -892,6 +892,17 @@ td.res-none     { background: #f5f5f5 !important; color: #999; }
   font-style: italic;
 }
 
+.role-check-info {
+  font-size: 12px;
+  color: #444;
+}
+
+.role-check-none {
+  font-size: 12px;
+  color: #bbb;
+  font-style: italic;
+}
+
 .hint {
   font-size: 13px;
   color: #888;
