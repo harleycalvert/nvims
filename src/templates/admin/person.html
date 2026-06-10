@@ -1,0 +1,165 @@
+{{define "admin-person"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS-SMS — {{if .IsNew}}Add Person{{else}}{{.Form.FirstName}} {{.Form.FamilyName}}{{end}}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/admin/people">People</a>
+        <h1>{{if .IsNew}}Add Person{{else}}{{.Form.FamilyName}}, {{.Form.FirstName}}{{end}}</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+
+  <main>
+    {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
+    {{if .Success}}<p class="form-success">Changes saved.</p>{{end}}
+
+    <form class="admin-form" method="POST"
+          action="{{if .IsNew}}/admin/people/new{{else}}/admin/people/{{.Form.ID}}{{end}}">
+
+      <div class="form-section">
+        <h2 class="form-section-title">Personal Information</h2>
+        <div class="form-row">
+          <div class="form-group" style="max-width:120px">
+            <label>Title</label>
+            <input type="text" name="title" value="{{.Form.Title}}" placeholder="Mr / Ms / Dr">
+          </div>
+          <div class="form-group form-group-grow">
+            <label>First Given Name <span class="req">*</span></label>
+            <input type="text" name="first_name" value="{{.Form.FirstName}}" required>
+          </div>
+          <div class="form-group form-group-grow">
+            <label>Family Name <span class="req">*</span></label>
+            <input type="text" name="family_name" value="{{.Form.FamilyName}}" required>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group form-group-grow">
+            <label>Preferred Name</label>
+            <input type="text" name="preferred_name" value="{{.Form.PreferredName}}">
+          </div>
+          <div class="form-group" style="max-width:160px">
+            <label>Date of Birth <span class="req">*</span></label>
+            <input type="date" name="dob" value="{{.Form.DOBStr}}" required>
+          </div>
+          <div class="form-group" style="max-width:160px">
+            <label>Gender <span class="req">*</span></label>
+            <select name="gender" required>
+              <option value="">— select —</option>
+              <option value="M"{{if eq .Form.Gender "M"}} selected{{end}}>Male</option>
+              <option value="F"{{if eq .Form.Gender "F"}} selected{{end}}>Female</option>
+              <option value="X"{{if eq .Form.Gender "X"}} selected{{end}}>Non-binary / Other</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h2 class="form-section-title">Contact</h2>
+        <div class="form-row">
+          <div class="form-group form-group-grow">
+            <label>Primary Email <span class="req">*</span></label>
+            <input type="email" name="email" value="{{.Form.Email}}" required>
+          </div>
+          <div class="form-group" style="max-width:200px">
+            <label>Mobile Phone</label>
+            <input type="tel" name="phone_mobile" value="{{.Form.PhoneMobile}}">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h2 class="form-section-title">Address</h2>
+        <div class="form-row">
+          <div class="form-group form-group-grow">
+            <label>Suburb <span class="req">*</span></label>
+            <input type="text" name="suburb" value="{{.Form.Suburb}}" required>
+          </div>
+          <div class="form-group" style="max-width:130px">
+            <label>State <span class="req">*</span></label>
+            <select name="state_code" required>
+              <option value="">—</option>
+              {{range .States}}
+              <option value="{{.}}"{{if eq $.Form.StateCode .}} selected{{end}}>{{.}}</option>
+              {{end}}
+            </select>
+          </div>
+          <div class="form-group" style="max-width:110px">
+            <label>Postcode <span class="req">*</span></label>
+            <input type="text" name="postcode" value="{{.Form.Postcode}}"
+                   pattern="[0-9]{4}" maxlength="4" required>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn-primary">
+          {{if .IsNew}}Create Person{{else}}Save Changes{{end}}
+        </button>
+        <a class="btn-secondary" href="{{if .IsNew}}/admin/people{{else}}/admin/people/{{.Form.ID}}{{end}}">
+          Cancel
+        </a>
+      </div>
+    </form>
+
+    {{if not .IsNew}}
+    <div class="form-section" style="margin-top:24px">
+      <h2 class="form-section-title">Roles</h2>
+      <div class="roles-grid">
+
+        <div class="role-card{{if .Person.IsStudent}} role-card-active{{end}}">
+          <div class="role-card-header role-student-header">Student</div>
+          <div class="role-card-body">
+            {{if .Person.IsStudent}}
+              <p class="role-number">{{.Person.StudentNumber}}</p>
+              <a class="btn-row-action" href="/admin/people/{{.Form.ID}}/role?type=student">Edit</a>
+            {{else}}
+              <p class="role-none">Not assigned</p>
+              <a class="btn-primary" href="/admin/people/{{.Form.ID}}/role?type=student">Add Student Role</a>
+            {{end}}
+          </div>
+        </div>
+
+        <div class="role-card{{if .Person.IsTeacher}} role-card-active{{end}}">
+          <div class="role-card-header role-teacher-header">Teacher</div>
+          <div class="role-card-body">
+            {{if .Person.IsTeacher}}
+              <p class="role-number">{{.Person.TeacherNumber}}</p>
+              <a class="btn-row-action" href="/admin/people/{{.Form.ID}}/role?type=teacher">Edit</a>
+            {{else}}
+              <p class="role-none">Not assigned</p>
+              <a class="btn-primary" href="/admin/people/{{.Form.ID}}/role?type=teacher">Add Teacher Role</a>
+            {{end}}
+          </div>
+        </div>
+
+        <div class="role-card{{if .Person.IsStaff}} role-card-active{{end}}">
+          <div class="role-card-header role-staff-header">Staff</div>
+          <div class="role-card-body">
+            {{if .Person.IsStaff}}
+              <p class="role-number">{{.Person.StaffNumber}}</p>
+              <a class="btn-row-action" href="/admin/people/{{.Form.ID}}/role?type=staff">Edit</a>
+            {{else}}
+              <p class="role-none">Not assigned</p>
+              <a class="btn-primary" href="/admin/people/{{.Form.ID}}/role?type=staff">Add Staff Role</a>
+            {{end}}
+          </div>
+        </div>
+
+      </div>
+    </div>
+    {{end}}
+  </main>
+</body>
+</html>{{end}}

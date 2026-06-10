@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
@@ -84,6 +85,8 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 		return result
 	}
 
+	funcs["dateISO"] = func(t time.Time) string { return t.Format("2006-01-02") }
+
 	tmpl := template.Must(
 		template.New("").Funcs(funcs).ParseFiles(
 			"templates/menu.html",
@@ -94,6 +97,10 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 			"templates/partials/classes.html",
 			"templates/partials/attendance.html",
 			"templates/partials/results.html",
+			"templates/admin/menu.html",
+			"templates/admin/people.html",
+			"templates/admin/person.html",
+			"templates/admin/role_form.html",
 		),
 	)
 	return &Handler{store: st, sessions: sessions, tmpl: tmpl}
@@ -364,6 +371,219 @@ func (h *Handler) PublishSCColumn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.render(w, "results", map[string]any{"Cols": cols, "Rows": rows})
+}
+
+// ── Admin ──────────────────────────────────────────────────────────────────
+
+var auStates = []string{"NSW", "VIC", "QLD", "SA", "WA", "TAS", "NT", "ACT"}
+
+type personForm struct {
+	ID            int64
+	Title         string
+	FirstName     string
+	FamilyName    string
+	PreferredName string
+	DOBStr        string
+	Gender        string
+	Email         string
+	PhoneMobile   string
+	Suburb        string
+	StateCode     string
+	Postcode      string
+}
+
+func personFormFrom(d store.PersonDetail) personForm {
+	return personForm{
+		ID: d.ID, Title: d.Title, FirstName: d.FirstName, FamilyName: d.FamilyName,
+		PreferredName: d.PreferredName, DOBStr: d.DOB.Format("2006-01-02"),
+		Gender: d.Gender, Email: d.Email, PhoneMobile: d.PhoneMobile,
+		Suburb: d.Suburb, StateCode: d.StateCode, Postcode: d.Postcode,
+	}
+}
+
+func personFormFromPost(r *http.Request, id int64) personForm {
+	return personForm{
+		ID: id, Title: r.FormValue("title"),
+		FirstName: strings.TrimSpace(r.FormValue("first_name")),
+		FamilyName: strings.TrimSpace(r.FormValue("family_name")),
+		PreferredName: strings.TrimSpace(r.FormValue("preferred_name")),
+		DOBStr: r.FormValue("dob"), Gender: r.FormValue("gender"),
+		Email: strings.TrimSpace(r.FormValue("email")),
+		PhoneMobile: strings.TrimSpace(r.FormValue("phone_mobile")),
+		Suburb: strings.TrimSpace(r.FormValue("suburb")),
+		StateCode: r.FormValue("state_code"),
+		Postcode: strings.TrimSpace(r.FormValue("postcode")),
+	}
+}
+
+func (h *Handler) AdminMenu(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	h.render(w, "admin-menu", map[string]any{"User": user})
+}
+
+func (h *Handler) AdminPeople(w http.ResponseWriter, r *http.Request) {
+	search := strings.TrimSpace(r.URL.Query().Get("q"))
+	people, err := h.store.ListPeople(r.Context(), search)
+	if err != nil {
+		log.Printf("ListPeople: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	user, _ := auth.Current(r)
+	h.render(w, "admin-people", map[string]any{"People": people, "Search": search, "User": user})
+}
+
+func (h *Handler) AdminPersonNew(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	h.render(w, "admin-person", map[string]any{
+		"IsNew": true, "Form": personForm{}, "Error": "", "States": auStates, "User": user,
+	})
+}
+
+func (h *Handler) AdminPersonCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	user, _ := auth.Current(r)
+	f := personFormFromPost(r, 0)
+	if f.FirstName == "" || f.FamilyName == "" || f.DOBStr == "" || f.Gender == "" ||
+		f.Email == "" || f.Suburb == "" || f.StateCode == "" || f.Postcode == "" {
+		h.render(w, "admin-person", map[string]any{
+			"IsNew": true, "Form": f, "Error": "Please fill in all required fields.", "States": auStates, "User": user,
+		})
+		return
+	}
+	id, err := h.store.CreatePerson(r.Context(),
+		f.Title, f.FirstName, f.FamilyName, f.PreferredName,
+		f.DOBStr, f.Gender, f.Email, f.PhoneMobile,
+		f.Suburb, f.StateCode, f.Postcode)
+	if err != nil {
+		log.Printf("CreatePerson: %v", err)
+		h.render(w, "admin-person", map[string]any{
+			"IsNew": true, "Form": f,
+			"Error": "Could not save — check the email address is not already in use.",
+			"States": auStates, "User": user,
+		})
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/admin/people/%d", id), http.StatusSeeOther)
+}
+
+func (h *Handler) AdminPersonView(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	person, err := h.store.GetPerson(r.Context(), id)
+	if err != nil {
+		log.Printf("GetPerson(%d): %v", id, err)
+		http.NotFound(w, r)
+		return
+	}
+	user, _ := auth.Current(r)
+	h.render(w, "admin-person", map[string]any{
+		"IsNew": false, "Form": personFormFrom(person), "Person": person,
+		"Error": "", "Success": r.URL.Query().Get("saved") == "1",
+		"States": auStates, "User": user,
+	})
+}
+
+func (h *Handler) AdminPersonUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	user, _ := auth.Current(r)
+	f := personFormFromPost(r, id)
+	if f.FirstName == "" || f.FamilyName == "" || f.DOBStr == "" || f.Gender == "" ||
+		f.Email == "" || f.Suburb == "" || f.StateCode == "" || f.Postcode == "" {
+		person, _ := h.store.GetPerson(r.Context(), id)
+		h.render(w, "admin-person", map[string]any{
+			"IsNew": false, "Form": f, "Person": person,
+			"Error": "Please fill in all required fields.", "States": auStates, "User": user,
+		})
+		return
+	}
+	if err := h.store.UpdatePerson(r.Context(), id,
+		f.Title, f.FirstName, f.FamilyName, f.PreferredName,
+		f.DOBStr, f.Gender, f.Email, f.PhoneMobile,
+		f.Suburb, f.StateCode, f.Postcode); err != nil {
+		log.Printf("UpdatePerson(%d): %v", id, err)
+		person, _ := h.store.GetPerson(r.Context(), id)
+		h.render(w, "admin-person", map[string]any{
+			"IsNew": false, "Form": f, "Person": person,
+			"Error": "Could not save — check the email address is not already in use.",
+			"States": auStates, "User": user,
+		})
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/admin/people/%d?saved=1", id), http.StatusSeeOther)
+}
+
+func (h *Handler) AdminRoleForm(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	person, err := h.store.GetPerson(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	user, _ := auth.Current(r)
+	h.render(w, "admin-role-form", map[string]any{
+		"Person": person, "RoleType": r.URL.Query().Get("type"),
+		"Error": "", "User": user,
+	})
+}
+
+func (h *Handler) AdminRoleAdd(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	roleType := r.FormValue("role_type")
+	number := strings.TrimSpace(r.FormValue("number"))
+	email := strings.TrimSpace(r.FormValue("email"))
+	user, _ := auth.Current(r)
+
+	var roleErr error
+	switch roleType {
+	case "student":
+		roleErr = h.store.AddStudentRole(r.Context(), id, number, email)
+	case "teacher":
+		roleErr = h.store.AddTeacherRole(r.Context(), id, number, email, r.FormValue("employment_status"))
+	case "staff":
+		roleErr = h.store.AddStaffRole(r.Context(), id, number, email)
+	default:
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	if roleErr != nil {
+		log.Printf("AddRole(%s,%d): %v", roleType, id, roleErr)
+		person, _ := h.store.GetPerson(r.Context(), id)
+		h.render(w, "admin-role-form", map[string]any{
+			"Person": person, "RoleType": roleType,
+			"Error": "Could not add role — check that the number is not already in use.",
+			"User": user,
+		})
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/admin/people/%d?saved=1", id), http.StatusSeeOther)
 }
 
 func (h *Handler) render(w http.ResponseWriter, name string, data any) {

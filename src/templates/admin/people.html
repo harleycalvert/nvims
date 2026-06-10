@@ -1,0 +1,64 @@
+{{define "admin-people"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS-SMS — People</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/admin">Administration</a>
+        <h1>People</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+  <main>
+    <div class="admin-toolbar">
+      <form class="admin-search" method="GET" action="/admin/people">
+        <input type="search" name="q" value="{{.Search}}" placeholder="Search by name or email…">
+        <button type="submit" class="btn-primary">Search</button>
+      </form>
+      <a class="btn-primary" href="/admin/people/new">+ Add Person</a>
+    </div>
+
+    {{if not .People}}
+      <p class="hint">{{if .Search}}No people match "{{.Search}}".{{else}}No people on record yet.{{end}}</p>
+    {{else}}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="col-name">Name</th>
+            <th>Email</th>
+            <th>Roles</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .People}}
+          <tr>
+            <td class="col-name">{{.FamilyName}}, {{.FirstName}}</td>
+            <td style="text-align:left">{{.Email}}</td>
+            <td>
+              {{if .IsStudent}}<span class="role-badge role-student">Student</span>{{end}}
+              {{if .IsTeacher}}<span class="role-badge role-teacher">Teacher</span>{{end}}
+              {{if .IsStaff}}<span class="role-badge role-staff">Staff</span>{{end}}
+            </td>
+            <td><a class="btn-row-action" href="/admin/people/{{.ID}}">Edit</a></td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{end}}
+  </main>
+</body>
+</html>{{end}}

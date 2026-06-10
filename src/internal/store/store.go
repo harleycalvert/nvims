@@ -497,3 +497,174 @@ func (s *Store) PublishSCColumn(ctx context.Context, classID, subjectID int64) e
 	`, classID, subjectID)
 	return err
 }
+
+// ── Admin / People ─────────────────────────────────────────────────────────
+
+type PersonListRow struct {
+	ID         int64
+	FirstName  string
+	FamilyName string
+	Email      string
+	DOB        time.Time
+	IsStudent  bool
+	IsTeacher  bool
+	IsStaff    bool
+}
+
+type PersonDetail struct {
+	ID            int64
+	Title         string
+	FirstName     string
+	FamilyName    string
+	PreferredName string
+	DOB           time.Time
+	Gender        string
+	Email         string
+	PhoneMobile   string
+	Suburb        string
+	StateCode     string
+	Postcode      string
+	IsStudent     bool
+	IsTeacher     bool
+	IsStaff       bool
+	StudentNumber string
+	TeacherNumber string
+	StaffNumber   string
+}
+
+func (s *Store) ListPeople(ctx context.Context, search string) ([]PersonListRow, error) {
+	const base = `
+		SELECT p.id, p.first_given_name, p.family_name, p.primary_email, p.dob,
+		       EXISTS(SELECT 1 FROM public.students st WHERE st.id = p.id AND st.deleted_at IS NULL),
+		       EXISTS(SELECT 1 FROM public.teachers t  WHERE t.id  = p.id),
+		       EXISTS(SELECT 1 FROM public.staff   sf WHERE sf.id  = p.id)
+		FROM public.people p
+	`
+	var q string
+	var args []any
+	if search == "" {
+		q = base + ` ORDER BY p.family_name, p.first_given_name`
+	} else {
+		q = base + ` WHERE p.family_name ILIKE $1 OR p.first_given_name ILIKE $1
+		             OR p.primary_email ILIKE $1
+		             ORDER BY p.family_name, p.first_given_name`
+		args = []any{"%" + search + "%"}
+	}
+	rows, err := s.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PersonListRow
+	for rows.Next() {
+		var r PersonListRow
+		if err := rows.Scan(&r.ID, &r.FirstName, &r.FamilyName, &r.Email, &r.DOB,
+			&r.IsStudent, &r.IsTeacher, &r.IsStaff); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) GetPerson(ctx context.Context, id int64) (PersonDetail, error) {
+	var d PersonDetail
+	err := s.pool.QueryRow(ctx, `
+		SELECT p.id,
+		       COALESCE(p.title,''), p.first_given_name, p.family_name,
+		       COALESCE(p.preferred_name,''), p.dob, p.gender,
+		       p.primary_email, COALESCE(p.phone_mobile,''),
+		       p.suburb, p.state_code, p.postcode,
+		       EXISTS(SELECT 1 FROM public.students st WHERE st.id = p.id AND st.deleted_at IS NULL),
+		       EXISTS(SELECT 1 FROM public.teachers t  WHERE t.id  = p.id),
+		       EXISTS(SELECT 1 FROM public.staff   sf WHERE sf.id  = p.id),
+		       COALESCE((SELECT student_number FROM public.students WHERE id = p.id),''),
+		       COALESCE((SELECT teacher_number FROM public.teachers WHERE id = p.id),''),
+		       COALESCE((SELECT staff_number   FROM public.staff    WHERE id = p.id),'')
+		FROM public.people p WHERE p.id = $1
+	`, id).Scan(
+		&d.ID, &d.Title, &d.FirstName, &d.FamilyName, &d.PreferredName,
+		&d.DOB, &d.Gender, &d.Email, &d.PhoneMobile,
+		&d.Suburb, &d.StateCode, &d.Postcode,
+		&d.IsStudent, &d.IsTeacher, &d.IsStaff,
+		&d.StudentNumber, &d.TeacherNumber, &d.StaffNumber,
+	)
+	return d, err
+}
+
+func (s *Store) CreatePerson(ctx context.Context, title, firstName, familyName, preferredName, dob, gender, email, phoneMobile, suburb, stateCode, postcode string) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO public.people
+		    (title, first_given_name, family_name, preferred_name,
+		     dob, gender, primary_email, phone_mobile,
+		     suburb, state_code, postcode)
+		VALUES
+		    (NULLIF($1,''), $2, $3, NULLIF($4,''),
+		     $5::date, $6, $7, NULLIF($8,''),
+		     $9, $10, $11)
+		RETURNING id
+	`, title, firstName, familyName, preferredName,
+		dob, gender, email, phoneMobile,
+		suburb, stateCode, postcode,
+	).Scan(&id)
+	return id, err
+}
+
+func (s *Store) UpdatePerson(ctx context.Context, id int64, title, firstName, familyName, preferredName, dob, gender, email, phoneMobile, suburb, stateCode, postcode string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.people SET
+		    title          = NULLIF($2,''),
+		    first_given_name = $3,
+		    family_name    = $4,
+		    preferred_name = NULLIF($5,''),
+		    dob            = $6::date,
+		    gender         = $7,
+		    primary_email  = $8,
+		    phone_mobile   = NULLIF($9,''),
+		    suburb         = $10,
+		    state_code     = $11,
+		    postcode       = $12,
+		    updated_at     = NOW()
+		WHERE id = $1
+	`, id, title, firstName, familyName, preferredName,
+		dob, gender, email, phoneMobile,
+		suburb, stateCode, postcode,
+	)
+	return err
+}
+
+func (s *Store) AddStudentRole(ctx context.Context, personID int64, studentNumber, studentEmail string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO public.students (id, student_number, student_email)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (id) DO UPDATE SET
+		    student_number = EXCLUDED.student_number,
+		    student_email  = EXCLUDED.student_email,
+		    deleted_at     = NULL
+	`, personID, studentNumber, studentEmail)
+	return err
+}
+
+func (s *Store) AddTeacherRole(ctx context.Context, personID int64, teacherNumber, teacherEmail, employmentStatus string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO public.teachers (id, teacher_number, teacher_email, employment_status)
+		VALUES ($1, $2, $3, $4::public.employment_type)
+		ON CONFLICT (id) DO UPDATE SET
+		    teacher_number    = EXCLUDED.teacher_number,
+		    teacher_email     = EXCLUDED.teacher_email,
+		    employment_status = EXCLUDED.employment_status
+	`, personID, teacherNumber, teacherEmail, employmentStatus)
+	return err
+}
+
+func (s *Store) AddStaffRole(ctx context.Context, personID int64, staffNumber, staffEmail string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO public.staff (id, staff_number, staff_email)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (id) DO UPDATE SET
+		    staff_number = EXCLUDED.staff_number,
+		    staff_email  = EXCLUDED.staff_email
+	`, personID, staffNumber, staffEmail)
+	return err
+}
