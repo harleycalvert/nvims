@@ -59,6 +59,9 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 		},
 	}
 
+	funcs["attCell"] = func(sessionID, studentID int64, status string) store.AttendanceCell {
+		return store.AttendanceCell{SessionID: sessionID, StudentID: studentID, Status: status}
+	}
 	funcs["resultCSS"] = func(result string, published bool) string {
 		switch result {
 		case "SC":
@@ -214,6 +217,48 @@ func (h *Handler) Attendance(w http.ResponseWriter, r *http.Request) {
 		"Sessions": sessions,
 		"Rows":     rows,
 	})
+}
+
+func (h *Handler) AttendancePopup(w http.ResponseWriter, r *http.Request) {
+	sessionID, err := strconv.ParseInt(r.URL.Query().Get("session_id"), 10, 64)
+	studentID, err2 := strconv.ParseInt(r.URL.Query().Get("student_id"), 10, 64)
+	if err != nil || err2 != nil || sessionID == 0 || studentID == 0 {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	data, err := h.store.GetAttendancePopupData(r.Context(), sessionID, studentID)
+	if err != nil {
+		log.Printf("GetAttendancePopupData(%d,%d): %v", sessionID, studentID, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	h.render(w, "att-popup", data)
+}
+
+func (h *Handler) SetAttendance(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	sessionID, err := strconv.ParseInt(r.FormValue("session_id"), 10, 64)
+	studentID, err2 := strconv.ParseInt(r.FormValue("student_id"), 10, 64)
+	if err != nil || err2 != nil || sessionID == 0 || studentID == 0 {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	status := r.FormValue("status")
+	valid := map[string]bool{"Present": true, "Online": true, "Absent-Notified": true, "Excused": true, "Absent": true, "": true}
+	if !valid[status] {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	cell, err := h.store.SetAttendance(r.Context(), sessionID, studentID, status)
+	if err != nil {
+		log.Printf("SetAttendance(%d,%d,%q): %v", sessionID, studentID, status, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	h.render(w, "att-cell", cell)
 }
 
 func (h *Handler) Results(w http.ResponseWriter, r *http.Request) {

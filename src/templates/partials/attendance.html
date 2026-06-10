@@ -22,21 +22,138 @@
         <tr>
           <td class="col-name">{{.LastName}}, {{.FirstName}} ({{.StudentNumber}})</td>
           {{range $.Sessions}}
-          {{$status := index $row.Attendance .ID}}
-          <td class="att-cell {{statusCSS $status}}" title="{{if $status}}{{$status}}{{else}}Not recorded{{end}}">{{statusAbbr $status}}</td>
+          {{template "att-cell" (attCell .ID $row.StudentID (index $row.Attendance .ID))}}
           {{end}}
         </tr>
         {{end}}
       </tbody>
     </table>
   </div>
-  <div class="legend">
-    <span class="att-cell att-present">P</span> Present
-    <span class="att-cell att-online">O</span> Online
-    <span class="att-cell att-notified">AN</span> Absent (notified)
-    <span class="att-cell att-excused">E</span> Excused
-    <span class="att-cell att-absent">A</span> Absent
-    <span class="att-cell att-none">–</span> Not recorded
+  <div class="legend_text">
+    <span class="legend att-present">P</span> Present
+    <span class="legend att-online">O</span> Online
+    <span class="legend att-notified">AN</span> Absent (notified)
+    <span class="legend att-excused">E</span> Excused
+    <span class="legend att-absent">A</span> Absent
+    <span class="legend att-none">–</span> Not recorded
   </div>
 {{end}}
+
+<dialog id="att-dialog" class="result-dialog">
+  <div id="att-dialog-content"></div>
+</dialog>
+<script>
+function showAttDialog(cell) {
+  const dialog = document.getElementById('att-dialog');
+  dialog.style.cssText = 'margin:0;visibility:hidden;top:0;left:0;';
+  dialog.showModal();
+  const dh = dialog.offsetHeight;
+  const dw = dialog.offsetWidth;
+  const rect = cell.getBoundingClientRect();
+  let top = rect.top - dh - 8;
+  if (top < 8) top = rect.bottom + 8;
+  let left = rect.left + rect.width / 2 - dw / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - dw - 8));
+  dialog.style.top = top + 'px';
+  dialog.style.left = left + 'px';
+  dialog.style.visibility = '';
+}
+
+if (!window._attKeysRegistered) {
+  window._attKeysRegistered = true;
+  let _attPendingFocus = null;
+
+  function _attAjax(cell, status) {
+    const parts = cell.id.slice(4).split('-'); // strip "att-", split sessionID-studentID
+    _attPendingFocus = cell.id;
+    htmx.ajax('POST', '/attendance', {
+      target: cell, swap: 'outerHTML',
+      values: {session_id: parts[0], student_id: parts[1], status: status}
+    });
+  }
+
+  function _attNavigate(cell, dir) {
+    const row = cell.closest('tr');
+    const tbody = row.closest('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    const cells = Array.from(row.querySelectorAll('td.att-cell'));
+    const rowIdx = rows.indexOf(row);
+    const colIdx = cells.indexOf(cell);
+    let target = null;
+    if (dir === 'ArrowLeft')  target = cells[colIdx - 1];
+    if (dir === 'ArrowRight') target = cells[colIdx + 1];
+    if (dir === 'ArrowUp')    target = (rows[rowIdx - 1] || {querySelectorAll:()=>[]}).querySelectorAll('td.att-cell')[colIdx];
+    if (dir === 'ArrowDown')  target = (rows[rowIdx + 1] || {querySelectorAll:()=>[]}).querySelectorAll('td.att-cell')[colIdx];
+    if (target) target.focus();
+  }
+
+  document.addEventListener('keydown', function(e) {
+    const cell = document.activeElement;
+    if (!cell || !cell.matches('td.att-cell')) return;
+    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) {
+      e.preventDefault(); _attNavigate(cell, e.key); return;
+    }
+    switch (e.key) {
+      case 'p': case 'P': e.preventDefault(); _attAjax(cell, 'Present'); break;
+      case 'o': case 'O': e.preventDefault(); _attAjax(cell, 'Online'); break;
+      case 'n': case 'N': e.preventDefault(); _attAjax(cell, 'Absent-Notified'); break;
+      case 'e': case 'E': e.preventDefault(); _attAjax(cell, 'Excused'); break;
+      case 'a': case 'A': e.preventDefault(); _attAjax(cell, 'Absent'); break;
+      case 'Enter':
+      case '-':           e.preventDefault(); _attAjax(cell, ''); break;
+    }
+  });
+
+  document.addEventListener('htmx:afterSwap', function() {
+    if (_attPendingFocus) {
+      const el = document.getElementById(_attPendingFocus);
+      if (el) el.focus();
+      _attPendingFocus = null;
+    }
+  });
+}
+</script>
+{{end}}
+
+{{define "att-cell"}}
+<td id="att-{{.SessionID}}-{{.StudentID}}"
+    class="att-cell {{statusCSS .Status}}"
+    tabindex="0"
+    title="{{if .Status}}{{.Status}}{{else}}Not recorded{{end}}"
+    hx-get="/attendance/popup?session_id={{.SessionID}}&student_id={{.StudentID}}"
+    hx-target="#att-dialog-content"
+    hx-trigger="click"
+    hx-on::after-request="showAttDialog(this)">
+  {{statusAbbr .Status}}
+</td>
+{{end}}
+
+{{define "att-popup"}}
+<div class="popup-header">
+  <strong>{{.ClassCode}} — {{dateShort .SessionDate}}</strong>
+  <span class="popup-student">{{.StudentName}}</span>
+</div>
+{{if .Status}}
+<p class="popup-current">
+  Current: <span class="att-cell {{statusCSS .Status}}">{{statusAbbr .Status}}</span>
+</p>
+{{end}}
+<div class="popup-actions">
+  <form hx-post="/attendance"
+        hx-target="#att-{{.SessionID}}-{{.StudentID}}"
+        hx-swap="outerHTML"
+        hx-on::after-request="document.getElementById('att-dialog').close()">
+    <input type="hidden" name="session_id" value="{{.SessionID}}">
+    <input type="hidden" name="student_id" value="{{.StudentID}}">
+    <button class="btn-att btn-att-present"  name="status" value="Present">P &nbsp;Present</button>
+    <button class="btn-att btn-att-online"   name="status" value="Online">O &nbsp;Online</button>
+    <button class="btn-att btn-att-notified" name="status" value="Absent-Notified">N &nbsp;Abs. Notified</button>
+    <button class="btn-att btn-att-excused"  name="status" value="Excused">E &nbsp;Excused</button>
+    <button class="btn-att btn-att-absent"   name="status" value="Absent">A &nbsp;Absent</button>
+    {{if .Status}}<button class="btn-clear" name="status" value="">Clear</button>{{end}}
+  </form>
+</div>
+<div class="popup-footer">
+  <button class="btn-close" onclick="this.closest('dialog').close()">Cancel</button>
+</div>
 {{end}}

@@ -233,6 +233,11 @@ select:focus { outline: 2px solid #1a4480; outline-offset: 1px; }
   padding: 16px;
 }
 
+/* ── Hide class checkboxes in results view ────────────────── */
+.controls:has(input[name="view_mode"][value="results"]:checked) #classes-panel {
+  display: none;
+}
+
 /* ── View toggle (inside .controls) ──────────────────────── */
 .view-toggle {
   display: flex;
@@ -307,6 +312,14 @@ table tbody tr:nth-child(even) td {
   background: #fafafa;
 }
 
+/* td overrides must beat even-row striping (higher specificity via !important) */
+td.att-present  { background: #d4edda !important; color: #155724; }
+td.att-online   { background: #cce5ff !important; color: #004085; }
+td.att-notified { background: #fff3cd !important; color: #856404; }
+td.att-excused  { background: #e2d9f3 !important; color: #4a235a; }
+td.att-absent   { background: #f8d7da !important; color: #721c24; }
+td.att-none     { background: #f5f5f5 !important; color: #aaa; }
+
 table tbody tr:hover td {
   background: #eef3fb !important;
 }
@@ -336,8 +349,46 @@ table tbody tr:hover td {
 .att-absent   { background: #f8d7da; color: #721c24; }
 .att-none     { background: #f5f5f5; color: #aaa; }
 
+
+
+td.att-cell { cursor: pointer; }
+
+td.att-cell:focus {
+  outline: 2px solid #1a4480;
+  outline-offset: -2px;
+  z-index: 2;
+}
+
+
+
+/* ── Attendance popup buttons ─────────────────────────────── */
+.btn-att {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-att-present  { background: #155724; color: #fff; }
+.btn-att-online   { background: #004085; color: #fff; }
+.btn-att-notified { background: #856404; color: #fff; }
+.btn-att-excused  { background: #4a235a; color: #fff; }
+.btn-att-absent   { background: #721c24; color: #fff; }
+
+
+
 /* ── Legend ───────────────────────────────────────────────── */
-.legend {
+.legend     {
+  align-items: center;
+  display: flex; 
+  justify-content: center;
+  max-width: fit-content;
+  padding: 3px 5px; 
+}
+
+.legend_text {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -345,14 +396,6 @@ table tbody tr:hover td {
   flex-wrap: wrap;
   font-size: 12px;
   color: #555;
-}
-
-.legend .att-cell {
-  width: 24px;
-  height: 18px;
-  line-height: 18px;
-  font-size: 10px;
-  vertical-align: middle;
 }
 
 /* ── Results table ────────────────────────────────────────── */
@@ -368,6 +411,12 @@ table tbody tr:hover td {
 
 table tbody td.res-cell:hover {
   filter: brightness(0.92);
+}
+
+td.res-cell:focus {
+  outline: 2px solid #1a4480;
+  outline-offset: -2px;
+  z-index: 2;
 }
 
 /* ── Result cells ─────────────────────────────────────────── */
@@ -406,23 +455,6 @@ td.res-none     { background: #f5f5f5 !important; color: #999; }
 
 .publish-sc-btn:hover {
   background: #c5d7f7;
-}
-
-/* ── Results legend ───────────────────────────────────────── */
-.res-legend {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 12px;
-  flex-wrap: wrap;
-  font-size: 12px;
-  color: #555;
-}
-
-.res-legend .res-cell {
-  height: 18px;
-  font-size: 10px;
-  vertical-align: middle;
 }
 
 /* ── Result popup dialog ──────────────────────────────────── */

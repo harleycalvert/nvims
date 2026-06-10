@@ -430,6 +430,60 @@ func (s *Store) PublishResult(ctx context.Context, cseID int64) (ResultCell, err
 	return cell, err
 }
 
+// ── Attendance write ───────────────────────────────────────────────────────
+
+type AttendanceCell struct {
+	SessionID int64
+	StudentID int64
+	Status    string
+}
+
+type AttendancePopupData struct {
+	SessionID   int64
+	StudentID   int64
+	Status      string
+	StudentName string
+	SessionDate time.Time
+	StartTime   time.Time
+	EndTime     time.Time
+	ClassCode   string
+}
+
+// GetAttendancePopupData fetches display data for the attendance popup.
+func (s *Store) GetAttendancePopupData(ctx context.Context, sessionID, studentID int64) (AttendancePopupData, error) {
+	d := AttendancePopupData{SessionID: sessionID, StudentID: studentID}
+	err := s.pool.QueryRow(ctx, `
+		SELECT COALESCE(sa.status,''), p.first_given_name || ' ' || p.family_name,
+		       cs.session_date, cs.start_time, cs.end_time, c.class_code
+		FROM public.class_sessions cs
+		JOIN public.classes c ON c.id = cs.class_id
+		JOIN public.students st ON st.id = $2
+		JOIN public.people p ON p.id = st.id
+		LEFT JOIN public.session_attendance sa ON sa.session_id = $1 AND sa.student_id = $2
+		WHERE cs.id = $1
+	`, sessionID, studentID).Scan(&d.Status, &d.StudentName, &d.SessionDate, &d.StartTime, &d.EndTime, &d.ClassCode)
+	return d, err
+}
+
+// SetAttendance upserts or deletes a session_attendance row.
+// Empty status means "not recorded" — deletes the row.
+func (s *Store) SetAttendance(ctx context.Context, sessionID, studentID int64, status string) (AttendanceCell, error) {
+	cell := AttendanceCell{SessionID: sessionID, StudentID: studentID}
+	if status == "" {
+		_, err := s.pool.Exec(ctx, `
+			DELETE FROM public.session_attendance WHERE session_id=$1 AND student_id=$2
+		`, sessionID, studentID)
+		return cell, err
+	}
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO public.session_attendance (session_id, student_id, status)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (session_id, student_id) DO UPDATE SET status = EXCLUDED.status
+		RETURNING status
+	`, sessionID, studentID, status).Scan(&cell.Status)
+	return cell, err
+}
+
 // PublishSCColumn publishes all SC results in the given class+subject column.
 func (s *Store) PublishSCColumn(ctx context.Context, classID, subjectID int64) error {
 	_, err := s.pool.Exec(ctx, `

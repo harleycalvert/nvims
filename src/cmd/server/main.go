@@ -47,6 +47,8 @@ func main() {
 	mux.HandleFunc("GET /groups", protect(h.Groups))
 	mux.HandleFunc("GET /classes", protect(h.Classes))
 	mux.HandleFunc("GET /attendance", protect(h.Attendance))
+	mux.HandleFunc("GET /attendance/popup", protect(h.AttendancePopup))
+	mux.HandleFunc("POST /attendance", protect(h.SetAttendance))
 	mux.HandleFunc("GET /results", protect(h.Results))
 	mux.HandleFunc("GET /result/popup", protect(h.ResultPopup))
 	mux.HandleFunc("POST /result", protect(h.SetResult))

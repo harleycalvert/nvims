@@ -37,28 +37,104 @@
       </tbody>
     </table>
   </div>
-  <div class="res-legend">
-    <span class="res-cell res-sc-pub">SC</span> Competent (published)
-    <span class="res-cell res-sc-unpub">SC</span> Competent (unpublished)
-    <span class="res-cell res-ns-pub">NS</span> Not satisfactory (published)
-    <span class="res-cell res-ns-unpub">NS</span> Not satisfactory (unpublished)
-    <span class="res-cell res-none">–</span> Not yet assessed
+  <div class="legend_text">
+    <span class="legend res-sc-pub">SC</span> Competent (published)
+    <span class="legend res-sc-unpub">SC</span> Competent (unpublished)
+    <span class="legend res-ns-pub">NS</span> Not satisfactory (published)
+    <span class="legend res-ns-unpub">NS</span> Not satisfactory (unpublished)
+    <span class="legend res-none">–</span> Not yet assessed
   </div>
 {{end}}
 
 <dialog id="result-dialog" class="result-dialog">
   <div id="result-dialog-content"></div>
 </dialog>
+<script>
+function showResultDialog(cell) {
+  const dialog = document.getElementById('result-dialog');
+  dialog.style.cssText = 'margin:0;visibility:hidden;top:0;left:0;';
+  dialog.showModal();
+  const dh = dialog.offsetHeight;
+  const dw = dialog.offsetWidth;
+  const rect = cell.getBoundingClientRect();
+  let top = rect.top - dh - 8;
+  if (top < 8) top = rect.bottom + 8;
+  let left = rect.left + rect.width / 2 - dw / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - dw - 8));
+  dialog.style.top = top + 'px';
+  dialog.style.left = left + 'px';
+  dialog.style.visibility = '';
+}
+
+if (!window._resultKeysRegistered) {
+  window._resultKeysRegistered = true;
+  let _pendingFocus = null;
+
+  function navigateCell(cell, dir) {
+    const row = cell.closest('tr');
+    const tbody = row.closest('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    const cells = Array.from(row.querySelectorAll('td.res-cell'));
+    const rowIdx = rows.indexOf(row);
+    const colIdx = cells.indexOf(cell);
+    let target = null;
+    if (dir === 'ArrowLeft')  target = cells[colIdx - 1];
+    if (dir === 'ArrowRight') target = cells[colIdx + 1];
+    if (dir === 'ArrowUp')    target = (rows[rowIdx - 1] || {querySelector: ()=>null}).querySelectorAll('td.res-cell')[colIdx];
+    if (dir === 'ArrowDown')  target = (rows[rowIdx + 1] || {querySelector: ()=>null}).querySelectorAll('td.res-cell')[colIdx];
+    if (target) target.focus();
+  }
+
+  document.addEventListener('keydown', function(e) {
+    const cell = document.activeElement;
+    if (!cell || !cell.matches('td.res-cell:not(.res-cell-empty)')) return;
+    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) {
+      e.preventDefault();
+      navigateCell(cell, e.key);
+      return;
+    }
+    const cseid = cell.id.replace('cell-', '');
+    if (e.key === 's' || e.key === 'S') {
+      e.preventDefault();
+      _pendingFocus = cell.id;
+      htmx.ajax('POST', '/result', {target: cell, swap: 'outerHTML', values: {cse_id: cseid, result: 'SC'}});
+    } else if (e.key === 'n' || e.key === 'N') {
+      e.preventDefault();
+      _pendingFocus = cell.id;
+      htmx.ajax('POST', '/result', {target: cell, swap: 'outerHTML', values: {cse_id: cseid, result: 'NS'}});
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      _pendingFocus = cell.id;
+      htmx.ajax('POST', '/result', {target: cell, swap: 'outerHTML', values: {cse_id: cseid, result: ''}});
+    } else if (e.key === '-') {
+      if (cell.classList.contains('res-sc-unpub') || cell.classList.contains('res-ns-unpub')) {
+        e.preventDefault();
+        _pendingFocus = cell.id;
+        htmx.ajax('POST', '/result', {target: cell, swap: 'outerHTML', values: {cse_id: cseid, result: ''}});
+      }
+    }
+  });
+
+  document.addEventListener('htmx:afterSwap', function() {
+    if (_pendingFocus) {
+      const el = document.getElementById(_pendingFocus);
+      if (el) el.focus();
+      _pendingFocus = null;
+    }
+  });
+}
+</script>
 {{end}}
 
 {{define "result-cell"}}
 {{if .CSEID}}
 <td id="cell-{{.CSEID}}"
     class="res-cell {{resultCSS .Result .IsPublished}}"
+    tabindex="0"
     hx-get="/result/popup?cse_id={{.CSEID}}"
     hx-target="#result-dialog-content"
     hx-trigger="click"
-    hx-on::after-request="document.getElementById('result-dialog').showModal()">
+    hx-on::after-request="showResultDialog(this)">
   {{resultAbbr .Result}}
 </td>
 {{else}}

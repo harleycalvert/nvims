@@ -64,7 +64,8 @@
             hx-get="/results"
             hx-target="#view-panel"
             hx-include="[name='class_id']:checked"
-            hx-trigger="change">
+            hx-trigger="change"
+            onclick="document.querySelectorAll('[name=class_id]').forEach(cb => cb.checked = true)">
           Results
         </label>
       </div>
