@@ -8,12 +8,12 @@
         <tr>
           <th class="col-name">Student</th>
           {{range .Cols}}
-          <th class="col-subject" title="{{.SubjectCode}}">
-            {{.SubjectLabel}}
+          <th class="col-subject" title="{{.SubjectLabel}}">
+            {{.SubjectCode}}
             <br>
             <button class="publish-sc-btn"
               hx-post="/result/publish-sc"
-              hx-vals='{"col_class_id":"{{.ClassID}}","col_subject_id":"{{.SubjectID}}"}'
+              hx-vals='{"col_subject_id":"{{.SubjectID}}"}'
               hx-include="[name='class_id']:checked"
               hx-target="#view-panel"
               hx-swap="innerHTML"
@@ -27,8 +27,11 @@
       <tbody>
         {{range .Rows}}
         {{$row := .}}
-        <tr>
-          <td class="col-name">{{.LastName}}, {{.FirstName}} ({{.StudentNumber}})</td>
+        <tr data-student-id="{{.StudentID}}"
+            data-student-name="{{.LastName}}, {{.FirstName}}"
+            data-student-number="{{.StudentNumber}}"
+            data-photo="{{.PhotoURL}}">
+          <td class="col-name" tabindex="0">{{.LastName}}, {{.FirstName}} ({{.StudentNumber}})</td>
           {{range $i, $col := $.Cols}}
           {{template "result-cell" (index $row.Cells $i)}}
           {{end}}
@@ -42,7 +45,8 @@
     <span class="legend res-sc-unpub">SC</span> Competent (unpublished)
     <span class="legend res-ns-pub">NS</span> Not satisfactory (published)
     <span class="legend res-ns-unpub">NS</span> Not satisfactory (unpublished)
-    <span class="legend res-none">–</span> Not yet assessed
+    <span class="legend res-ip">IP</span> In progress
+    <span class="legend res-none">–</span> Not yet started
   </div>
 {{end}}
 
@@ -52,7 +56,7 @@
 <script>
 function showResultDialog(cell) {
   const dialog = document.getElementById('result-dialog');
-  dialog.style.cssText = 'margin:0;visibility:hidden;top:0;left:0;';
+  dialog.classList.add('dialog-measuring');
   dialog.showModal();
   const dh = dialog.offsetHeight;
   const dw = dialog.offsetWidth;
@@ -61,9 +65,9 @@ function showResultDialog(cell) {
   if (top < 8) top = rect.bottom + 8;
   let left = rect.left + rect.width / 2 - dw / 2;
   left = Math.max(8, Math.min(left, window.innerWidth - dw - 8));
+  dialog.classList.remove('dialog-measuring');
   dialog.style.top = top + 'px';
   dialog.style.left = left + 'px';
-  dialog.style.visibility = '';
 }
 
 if (!window._resultKeysRegistered) {
@@ -161,6 +165,7 @@ if (!window._resultKeysRegistered) {
     <input type="hidden" name="cse_id" value="{{.CSEID}}">
     <button class="btn-sc" name="result" value="SC">Mark SC</button>
     <button class="btn-ns" name="result" value="NS">Mark NS</button>
+    <button class="btn-ip" name="result" value="IP">Mark IP</button>
     {{if .Result}}<button class="btn-clear" name="result" value="">Clear</button>{{end}}
   </form>
   {{if and .Result (not .IsPublished)}}

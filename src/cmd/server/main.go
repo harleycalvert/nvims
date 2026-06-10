@@ -58,6 +58,7 @@ func main() {
 	mux.HandleFunc("POST /admin/people/{id}", protect(h.AdminPersonUpdate))
 	mux.HandleFunc("GET /admin/people/{id}/role", protect(h.AdminRoleForm))
 	mux.HandleFunc("POST /admin/people/{id}/role", protect(h.AdminRoleAdd))
+	mux.HandleFunc("GET /student/panel", protect(h.StudentPanel))
 	mux.HandleFunc("GET /results", protect(h.Results))
 	mux.HandleFunc("GET /result/popup", protect(h.ResultPopup))
 	mux.HandleFunc("POST /result", protect(h.SetResult))

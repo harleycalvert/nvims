@@ -19,8 +19,11 @@
       <tbody>
         {{range .Rows}}
         {{$row := .}}
-        <tr>
-          <td class="col-name">{{.LastName}}, {{.FirstName}} ({{.StudentNumber}})</td>
+        <tr data-student-id="{{.StudentID}}"
+            data-student-name="{{.LastName}}, {{.FirstName}}"
+            data-student-number="{{.StudentNumber}}"
+            data-photo="{{.PhotoURL}}">
+          <td class="col-name" tabindex="0">{{.LastName}}, {{.FirstName}} ({{.StudentNumber}})</td>
           {{range $.Sessions}}
           {{template "att-cell" (attCell .ID $row.StudentID (index $row.Attendance .ID))}}
           {{end}}
@@ -39,13 +42,14 @@
   </div>
 {{end}}
 
+
 <dialog id="att-dialog" class="result-dialog">
   <div id="att-dialog-content"></div>
 </dialog>
 <script>
 function showAttDialog(cell) {
   const dialog = document.getElementById('att-dialog');
-  dialog.style.cssText = 'margin:0;visibility:hidden;top:0;left:0;';
+  dialog.classList.add('dialog-measuring');
   dialog.showModal();
   const dh = dialog.offsetHeight;
   const dw = dialog.offsetWidth;
@@ -54,9 +58,9 @@ function showAttDialog(cell) {
   if (top < 8) top = rect.bottom + 8;
   let left = rect.left + rect.width / 2 - dw / 2;
   left = Math.max(8, Math.min(left, window.innerWidth - dw - 8));
+  dialog.classList.remove('dialog-measuring');
   dialog.style.top = top + 'px';
   dialog.style.left = left + 'px';
-  dialog.style.visibility = '';
 }
 
 if (!window._attKeysRegistered) {
@@ -113,6 +117,7 @@ if (!window._attKeysRegistered) {
   });
 }
 </script>
+
 {{end}}
 
 {{define "att-cell"}}

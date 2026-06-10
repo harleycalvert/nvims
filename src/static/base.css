@@ -76,3 +76,5 @@ header h1 {
 main {
   padding: 20px 24px;
 }
+
+.hidden { display: none; }

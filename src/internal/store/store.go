@@ -53,7 +53,28 @@ type AttendanceRow struct {
 	StudentNumber string
 	FirstName     string
 	LastName      string
+	PhotoURL      string
 	Attendance    map[int64]string // session_id -> status ("" means not recorded)
+}
+
+type StudentPanelData struct {
+	StudentNumber string `json:"studentNumber"`
+	FullName      string `json:"fullName"`
+	PhotoURL      string `json:"photoURL"`
+	DOBStr        string `json:"dob"`
+	Gender        string `json:"gender"`
+	Email         string `json:"email"`
+	PhoneMobile   string `json:"phoneMobile"`
+	Suburb        string `json:"suburb"`
+	StateCode     string `json:"stateCode"`
+	Postcode      string `json:"postcode"`
+	WWCCNumber    string `json:"wwccNumber"`
+	WWCCExpiryStr string `json:"wwccExpiry"`
+	Competent     int `json:"competent"`
+	NotCompetent  int `json:"notCompetent"`
+	InProgress    int `json:"inProgress"`
+	NotYetStarted int `json:"notYetStarted"`
+	Total         int `json:"total"`
 }
 
 func (s *Store) Periods(ctx context.Context) ([]Period, error) {
@@ -188,7 +209,8 @@ func (s *Store) AttendanceGrid(ctx context.Context, classIDs []int64) ([]Session
 
 	// Students enrolled in the selected classes
 	studentRows, err := s.pool.Query(ctx, `
-		SELECT DISTINCT s.id, s.student_number, p.first_given_name, p.family_name
+		SELECT DISTINCT s.id, s.student_number, p.first_given_name, p.family_name,
+		       COALESCE(p.photo_url,'')
 		FROM public.class_enrollments ce
 		JOIN public.client_subject_enrolments cse ON cse.id = ce.client_subject_enrolment_id
 		JOIN public.students s ON s.id = cse.student_id
@@ -205,7 +227,7 @@ func (s *Store) AttendanceGrid(ctx context.Context, classIDs []int64) ([]Session
 	studentIdx := map[int64]int{}
 	for studentRows.Next() {
 		var r AttendanceRow
-		if err := studentRows.Scan(&r.StudentID, &r.StudentNumber, &r.FirstName, &r.LastName); err != nil {
+		if err := studentRows.Scan(&r.StudentID, &r.StudentNumber, &r.FirstName, &r.LastName, &r.PhotoURL); err != nil {
 			return nil, nil, err
 		}
 		r.Attendance = make(map[int64]string)
@@ -278,7 +300,6 @@ func (s *Store) UpdateLastLogin(ctx context.Context, userID int64) {
 // ── Results ────────────────────────────────────────────────────────────────
 
 type ResultCol struct {
-	ClassID      int64
 	SubjectID    int64
 	SubjectCode  string
 	SubjectLabel string
@@ -295,6 +316,7 @@ type ResultRow struct {
 	StudentNumber string
 	FirstName     string
 	LastName      string
+	PhotoURL      string
 	Cells         []ResultCell // parallel to Cols slice
 }
 
@@ -306,14 +328,22 @@ type ResultPopupData struct {
 	IsPublished  bool
 }
 
-// ResultsGrid returns columns and per-student result cells for the given classes.
+// ResultsGrid returns all subject columns and result cells for students enrolled
+// in the given classes. Columns are ALL subjects the students are enrolled in
+// (via client_subject_enrolments), not just subjects attached to these classes.
 func (s *Store) ResultsGrid(ctx context.Context, classIDs []int64) ([]ResultCol, []ResultRow, error) {
 	colRows, err := s.pool.Query(ctx, `
-		SELECT cs.class_id, cs.subject_id, cs.subject_label, sub.subject_code
-		FROM public.class_subjects cs
-		JOIN public.subjects sub ON sub.id = cs.subject_id
-		WHERE cs.class_id = ANY($1)
-		ORDER BY sub.subject_code, cs.class_id
+		WITH enrolled AS (
+			SELECT DISTINCT cse.student_id
+			FROM public.class_enrollments ce
+			JOIN public.client_subject_enrolments cse ON cse.id = ce.client_subject_enrolment_id
+			WHERE ce.class_id = ANY($1)
+		)
+		SELECT DISTINCT cse.subject_id, sub.subject_code, sub.subject_name
+		FROM enrolled e
+		JOIN public.client_subject_enrolments cse ON cse.student_id = e.student_id
+		JOIN public.subjects sub ON sub.id = cse.subject_id
+		ORDER BY sub.subject_code, sub.subject_name
 	`, classIDs)
 	if err != nil {
 		return nil, nil, err
@@ -321,14 +351,13 @@ func (s *Store) ResultsGrid(ctx context.Context, classIDs []int64) ([]ResultCol,
 	defer colRows.Close()
 
 	var cols []ResultCol
-	type colKey struct{ c, s int64 }
-	colIdx := map[colKey]int{}
+	colIdx := map[int64]int{} // subjectID → column index
 	for colRows.Next() {
 		var c ResultCol
-		if err := colRows.Scan(&c.ClassID, &c.SubjectID, &c.SubjectLabel, &c.SubjectCode); err != nil {
+		if err := colRows.Scan(&c.SubjectID, &c.SubjectCode, &c.SubjectLabel); err != nil {
 			return nil, nil, err
 		}
-		colIdx[colKey{c.ClassID, c.SubjectID}] = len(cols)
+		colIdx[c.SubjectID] = len(cols)
 		cols = append(cols, c)
 	}
 	if err := colRows.Err(); err != nil {
@@ -339,16 +368,20 @@ func (s *Store) ResultsGrid(ctx context.Context, classIDs []int64) ([]ResultCol,
 	}
 
 	dataRows, err := s.pool.Query(ctx, `
+		WITH enrolled AS (
+			SELECT DISTINCT cse.student_id
+			FROM public.class_enrollments ce
+			JOIN public.client_subject_enrolments cse ON cse.id = ce.client_subject_enrolment_id
+			WHERE ce.class_id = ANY($1)
+		)
 		SELECT s.id, s.student_number, p.first_given_name, p.family_name,
-		       cs.class_id, cs.subject_id,
-		       cse.id, COALESCE(cse.result,''), cse.result_is_published
-		FROM public.class_enrollments ce
-		JOIN public.client_subject_enrolments cse ON cse.id = ce.client_subject_enrolment_id
-		JOIN public.students s ON s.id = cse.student_id
+		       COALESCE(p.photo_url,''),
+		       cse.subject_id, cse.id, COALESCE(cse.result,''), cse.result_is_published
+		FROM enrolled e
+		JOIN public.students s ON s.id = e.student_id
 		JOIN public.people p ON p.id = s.id
-		JOIN public.class_subjects cs ON cs.class_id = ce.class_id AND cs.subject_id = cse.subject_id
-		WHERE ce.class_id = ANY($1)
-		ORDER BY p.family_name, p.first_given_name, cs.class_id, cs.subject_id
+		JOIN public.client_subject_enrolments cse ON cse.student_id = s.id
+		ORDER BY p.family_name, p.first_given_name, cse.subject_id
 	`, classIDs)
 	if err != nil {
 		return nil, nil, err
@@ -358,11 +391,11 @@ func (s *Store) ResultsGrid(ctx context.Context, classIDs []int64) ([]ResultCol,
 	var rows []ResultRow
 	studentIdx := map[int64]int{}
 	for dataRows.Next() {
-		var studID, classID, subjectID, cseID int64
-		var studNum, firstName, lastName, result string
+		var studID, subjectID, cseID int64
+		var studNum, firstName, lastName, photoURL, result string
 		var isPub bool
-		if err := dataRows.Scan(&studID, &studNum, &firstName, &lastName,
-			&classID, &subjectID, &cseID, &result, &isPub); err != nil {
+		if err := dataRows.Scan(&studID, &studNum, &firstName, &lastName, &photoURL,
+			&subjectID, &cseID, &result, &isPub); err != nil {
 			return nil, nil, err
 		}
 		idx, exists := studentIdx[studID]
@@ -372,12 +405,13 @@ func (s *Store) ResultsGrid(ctx context.Context, classIDs []int64) ([]ResultCol,
 				StudentNumber: studNum,
 				FirstName:     firstName,
 				LastName:      lastName,
+				PhotoURL:      photoURL,
 				Cells:         make([]ResultCell, len(cols)),
 			})
 			idx = len(rows) - 1
 			studentIdx[studID] = idx
 		}
-		if ci, ok := colIdx[colKey{classID, subjectID}]; ok {
+		if ci, ok := colIdx[subjectID]; ok {
 			rows[idx].Cells[ci] = ResultCell{CSEID: cseID, Result: result, IsPublished: isPub}
 		}
 	}
@@ -484,17 +518,20 @@ func (s *Store) SetAttendance(ctx context.Context, sessionID, studentID int64, s
 	return cell, err
 }
 
-// PublishSCColumn publishes all SC results in the given class+subject column.
-func (s *Store) PublishSCColumn(ctx context.Context, classID, subjectID int64) error {
+// PublishSCColumn publishes all SC results for a subject across the given classes.
+func (s *Store) PublishSCColumn(ctx context.Context, subjectID int64, classIDs []int64) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE public.client_subject_enrolments cse
 		SET result_is_published = true
-		FROM public.class_enrollments ce
-		WHERE ce.client_subject_enrolment_id = cse.id
-		  AND ce.class_id = $1
-		  AND cse.subject_id = $2
-		  AND cse.result = 'SC'
-	`, classID, subjectID)
+		WHERE cse.student_id IN (
+			SELECT DISTINCT cse2.student_id
+			FROM public.class_enrollments ce
+			JOIN public.client_subject_enrolments cse2 ON cse2.id = ce.client_subject_enrolment_id
+			WHERE ce.class_id = ANY($2)
+		)
+		AND cse.subject_id = $1
+		AND cse.result = 'SC'
+	`, subjectID, classIDs)
 	return err
 }
 
@@ -605,6 +642,43 @@ func (s *Store) GetPerson(ctx context.Context, id int64) (PersonDetail, error) {
 		&d.StudentNumber,
 		&d.TeacherNumber, &d.TeacherPoliceCheckStatus, &d.TeacherPoliceCheckDateStr,
 		&d.StaffNumber, &d.StaffPoliceCheckStatus, &d.StaffPoliceCheckDateStr,
+	)
+	return d, err
+}
+
+func (s *Store) GetStudentPanel(ctx context.Context, studentID int64) (StudentPanelData, error) {
+	var d StudentPanelData
+	err := s.pool.QueryRow(ctx, `
+		SELECT s.student_number,
+		       p.family_name || ', ' || p.first_given_name,
+		       COALESCE(p.photo_url,''),
+		       COALESCE(TO_CHAR(p.dob,'YYYY-MM-DD'),''),
+		       COALESCE(p.gender,''),
+		       COALESCE(p.primary_email,''),
+		       COALESCE(p.phone_mobile,''),
+		       COALESCE(p.suburb,''),
+		       COALESCE(p.state_code,''),
+		       COALESCE(p.postcode,''),
+		       COALESCE(p.wwcc_number,''),
+		       COALESCE(TO_CHAR(p.wwcc_expiry,'YYYY-MM-DD'),''),
+		       COUNT(cse.id) FILTER (WHERE cse.result = 'SC'),
+		       COUNT(cse.id) FILTER (WHERE cse.result = 'NS'),
+		       COUNT(cse.id) FILTER (WHERE cse.result = 'IP'),
+		       COUNT(cse.id) FILTER (WHERE cse.result IS NULL),
+		       COUNT(cse.id)
+		FROM public.students s
+		JOIN public.people p ON p.id = s.id
+		LEFT JOIN public.client_subject_enrolments cse ON cse.student_id = s.id
+		WHERE s.id = $1
+		GROUP BY s.student_number, p.family_name, p.first_given_name, p.photo_url,
+		         p.dob, p.gender, p.primary_email, p.phone_mobile,
+		         p.suburb, p.state_code, p.postcode, p.wwcc_number, p.wwcc_expiry
+	`, studentID).Scan(
+		&d.StudentNumber, &d.FullName, &d.PhotoURL,
+		&d.DOBStr, &d.Gender, &d.Email, &d.PhoneMobile,
+		&d.Suburb, &d.StateCode, &d.Postcode,
+		&d.WWCCNumber, &d.WWCCExpiryStr,
+		&d.Competent, &d.NotCompetent, &d.InProgress, &d.NotYetStarted, &d.Total,
 	)
 	return d, err
 }

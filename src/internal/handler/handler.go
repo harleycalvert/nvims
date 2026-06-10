@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
@@ -75,6 +76,8 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 				return "res-ns-pub"
 			}
 			return "res-ns-unpub"
+		case "IP":
+			return "res-ip"
 		}
 		return "res-none"
 	}
@@ -315,7 +318,7 @@ func (h *Handler) SetResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result := r.FormValue("result") // "SC", "NS", or ""
-	if result != "SC" && result != "NS" && result != "" {
+	if result != "SC" && result != "NS" && result != "IP" && result != "" {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
@@ -352,11 +355,10 @@ func (h *Handler) PublishSCColumn(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	colClassID, _ := strconv.ParseInt(r.FormValue("col_class_id"), 10, 64)
 	colSubjectID, _ := strconv.ParseInt(r.FormValue("col_subject_id"), 10, 64)
-	if colClassID > 0 && colSubjectID > 0 {
-		if err := h.store.PublishSCColumn(r.Context(), colClassID, colSubjectID); err != nil {
-			log.Printf("PublishSCColumn(%d,%d): %v", colClassID, colSubjectID, err)
+	if colSubjectID > 0 {
+		if err := h.store.PublishSCColumn(r.Context(), colSubjectID, parseIDs(r.Form["class_id"])); err != nil {
+			log.Printf("PublishSCColumn(sub=%d): %v", colSubjectID, err)
 		}
 	}
 	classIDs := parseIDs(r.Form["class_id"])
@@ -598,6 +600,22 @@ func (h *Handler) AdminRoleAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/admin/people/%d?saved=1", id), http.StatusSeeOther)
+}
+
+func (h *Handler) StudentPanel(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.URL.Query().Get("student_id"), 10, 64)
+	if err != nil || id == 0 {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	d, err := h.store.GetStudentPanel(r.Context(), id)
+	if err != nil {
+		log.Printf("GetStudentPanel(%d): %v", id, err)
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(d)
 }
 
 func (h *Handler) render(w http.ResponseWriter, name string, data any) {

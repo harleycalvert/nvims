@@ -41,7 +41,7 @@
         </h2>
 
         <div class="form-row">
-          <div class="form-group" style="max-width:200px">
+          <div class="form-group fg-200">
             <label>
               {{if eq .RoleType "student"}}Student Number
               {{else if eq .RoleType "teacher"}}Teacher Number
@@ -62,7 +62,7 @@
 
         {{if eq .RoleType "teacher"}}
         <div class="form-row">
-          <div class="form-group" style="max-width:220px">
+          <div class="form-group fg-220">
             <label>Employment Status <span class="req">*</span></label>
             <select name="employment_status" required>
               <option value="">— select —</option>
@@ -76,7 +76,7 @@
 
         {{if or (eq .RoleType "teacher") (eq .RoleType "staff")}}
         <div class="form-row">
-          <div class="form-group" style="max-width:220px">
+          <div class="form-group fg-220">
             <label>Police Check Status</label>
             <select name="police_check_status">
               <option value="">— not recorded —</option>
@@ -85,7 +85,7 @@
               <option value="Not Required">Not Required</option>
             </select>
           </div>
-          <div class="form-group" style="max-width:180px">
+          <div class="form-group fg-180">
             <label>Police Check Date</label>
             <input type="date" name="police_check_date">
           </div>

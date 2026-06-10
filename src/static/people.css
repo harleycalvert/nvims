@@ -279,3 +279,17 @@
   font-style: italic;
   padding: 8px 0;
 }
+
+/* ── Form field width constraints ─────────────────────────── */
+.fg-100 { max-width: 100px; }
+.fg-110 { max-width: 110px; }
+.fg-120 { max-width: 120px; }
+.fg-160 { max-width: 160px; }
+.fg-180 { max-width: 180px; }
+.fg-200 { max-width: 200px; }
+.fg-220 { max-width: 220px; }
+.fg-260 { max-width: 260px; }
+
+.form-section--spaced { margin-top: 24px; }
+
+.td-left { text-align: left; }

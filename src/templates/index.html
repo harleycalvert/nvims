@@ -78,6 +78,198 @@
     <div id="view-panel">
       <p class="hint">Check one or more classes above to view attendance.</p>
     </div>
+
+    <section id="student-panel" class="student-panel hidden">
+      <div class="sp-photo">
+        <img id="sp-photo-img" src="" alt="" class="hidden">
+        <span id="sp-no-photo" class="sp-no-photo-placeholder">No photo</span>
+      </div>
+      <div class="sp-cols">
+        <div class="sp-col">
+          <div class="sp-col-title">Student</div>
+          <div class="sp-row">
+            <span class="sp-label">Name</span>
+            <span class="sp-value sp-name" id="sp-name">—</span>
+          </div>
+          <div class="sp-row">
+            <span class="sp-label">Number</span>
+            <span class="sp-value" id="sp-number">—</span>
+          </div>
+          <div class="sp-row">
+            <span class="sp-label">Date of Birth</span>
+            <span class="sp-value" id="sp-dob">—</span>
+          </div>
+          <div class="sp-row">
+            <span class="sp-label">Gender</span>
+            <span class="sp-value" id="sp-gender">—</span>
+          </div>
+        </div>
+        <div class="sp-col">
+          <div class="sp-col-title">Contact</div>
+          <div class="sp-row">
+            <span class="sp-label">Email</span>
+            <span class="sp-value" id="sp-email">—</span>
+          </div>
+          <div class="sp-row">
+            <span class="sp-label">Phone</span>
+            <span class="sp-value" id="sp-phone">—</span>
+          </div>
+          <div class="sp-row">
+            <span class="sp-label">Address</span>
+            <span class="sp-value" id="sp-address">—</span>
+          </div>
+          <div class="sp-row hidden" id="sp-wwcc-row">
+            <span class="sp-label">WWCC</span>
+            <span class="sp-value" id="sp-wwcc">—</span>
+          </div>
+        </div>
+      </div>
+      <div class="sp-charts">
+        <div id="sp-att-section" class="sp-chart-block">
+          <div class="sp-chart-title">Attendance</div>
+          <div id="sp-att-bar" class="sp-bar"></div>
+          <div class="sp-legend" id="sp-att-legend"></div>
+        </div>
+        <div class="sp-chart-block">
+          <div class="sp-chart-title">Competency</div>
+          <div id="sp-comp-bar" class="sp-bar"></div>
+          <div class="sp-legend" id="sp-comp-legend"></div>
+        </div>
+      </div>
+    </section>
   </main>
+<script>
+// ── Student panel (persistent — works for both attendance and results views) ──
+(function() {
+  let _currentSID = null;
+  const _cache = {};
+
+  function _drawBar(barID, slices, legendID) {
+    const bar = document.getElementById(barID);
+    if (!bar) return;
+    const total = slices.reduce((s,d) => s+d.v, 0);
+    bar.innerHTML = '';
+    if (total > 0) {
+      for (const sl of slices) {
+        if (!sl.v) continue;
+        const seg = document.createElement('div');
+        seg.className = 'sp-bar-seg ' + sl.cls;
+        seg.style.width = (sl.v / total * 100).toFixed(1) + '%';
+        seg.title = sl.l + ': ' + sl.v + ' (' + Math.round(sl.v/total*100) + '%)';
+        bar.appendChild(seg);
+      }
+    }
+    const leg = document.getElementById(legendID);
+    if (leg) leg.innerHTML = slices
+      .map(s => `<span class="sp-dot ${s.cls}"></span>${s.l} (${s.v})`).join('');
+  }
+
+  function _fmtDate(s) {
+    if (!s) return '—';
+    const [y,m,d] = s.split('-');
+    const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return parseInt(d)+' '+mon[parseInt(m)-1]+' '+y;
+  }
+
+  function _fmtGender(g) {
+    return g==='M'?'Male': g==='F'?'Female': g==='X'?'Non-binary / Other':'—';
+  }
+
+  function _setText(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val||'—';
+  }
+
+  function _applyData(data) {
+    const img = document.getElementById('sp-photo-img');
+    const ph  = document.getElementById('sp-no-photo');
+    if (data.photoURL) { img.src=data.photoURL; img.classList.remove('hidden'); ph.classList.add('hidden'); }
+    else               { img.classList.add('hidden'); ph.classList.remove('hidden'); }
+
+    _setText('sp-name',   data.fullName);
+    _setText('sp-number', data.studentNumber);
+    _setText('sp-dob',    _fmtDate(data.dob));
+    _setText('sp-gender', _fmtGender(data.gender));
+    _setText('sp-email',  data.email);
+    _setText('sp-phone',  data.phoneMobile);
+    _setText('sp-address',
+      [data.suburb, data.stateCode, data.postcode].filter(Boolean).join(' ') || '—');
+
+    const wwccRow = document.getElementById('sp-wwcc-row');
+    if (data.wwccNumber) {
+      _setText('sp-wwcc', data.wwccNumber + (data.wwccExpiry ? ' (exp. '+_fmtDate(data.wwccExpiry)+')' : ''));
+      wwccRow.classList.remove('hidden');
+    } else {
+      wwccRow.classList.add('hidden');
+    }
+
+    _drawBar('sp-comp-bar', [
+      {l:'Competent',       v:data.competent,     cls:'sp-comp-c'},
+      {l:'Not competent',   v:data.notCompetent,  cls:'sp-comp-nc'},
+      {l:'In progress',     v:data.inProgress,    cls:'sp-comp-ip'},
+      {l:'Not yet started', v:data.notYetStarted, cls:'sp-comp-nys'},
+    ], 'sp-comp-legend');
+  }
+
+  function _updatePanel(cell) {
+    const row = cell.closest('tr');
+    if (!row || !row.dataset.studentId) return;
+    const sid = row.dataset.studentId;
+
+    document.getElementById('student-panel').classList.remove('hidden');
+
+    // Attendance chart — only in attendance view (row has att-cells)
+    const attSection = document.getElementById('sp-att-section');
+    const atts = Array.from(row.querySelectorAll('td.att-cell'));
+    if (atts.length > 0) {
+      attSection.classList.remove('hidden');
+      _drawBar('sp-att-bar', [
+        {l:'Present',       v:atts.filter(c=>c.classList.contains('att-present')).length,  cls:'att-present'},
+        {l:'Online',        v:atts.filter(c=>c.classList.contains('att-online')).length,   cls:'att-online'},
+        {l:'Abs. Notified', v:atts.filter(c=>c.classList.contains('att-notified')).length, cls:'att-notified'},
+        {l:'Excused',       v:atts.filter(c=>c.classList.contains('att-excused')).length,  cls:'att-excused'},
+        {l:'Absent',        v:atts.filter(c=>c.classList.contains('att-absent')).length,   cls:'att-absent'},
+        {l:'Not recorded',  v:atts.filter(c=>c.classList.contains('att-none')).length,     cls:'att-none'},
+      ], 'sp-att-legend');
+    } else {
+      attSection.classList.add('hidden');
+    }
+
+    // Full details from server (cached per student)
+    _currentSID = sid;
+    if (_cache[sid]) {
+      _applyData(_cache[sid]);
+    } else {
+      _setText('sp-name',   row.dataset.studentName);
+      _setText('sp-number', row.dataset.studentNumber);
+      const img = document.getElementById('sp-photo-img');
+      const ph  = document.getElementById('sp-no-photo');
+      const url = row.dataset.photo;
+      if (url) { img.src=url; img.classList.remove('hidden'); ph.classList.add('hidden'); }
+      else     { img.classList.add('hidden'); ph.classList.remove('hidden'); }
+
+      fetch('/student/panel?student_id='+sid)
+        .then(r => r.json())
+        .then(data => { _cache[sid]=data; if (_currentSID===sid) _applyData(data); })
+        .catch(()=>{});
+    }
+  }
+
+  document.addEventListener('focusin', function(e) {
+    if (e.target.matches('td.att-cell, td.col-name')) _updatePanel(e.target);
+  });
+
+  document.addEventListener('htmx:afterSwap', function(e) {
+    // Hide panel when the main view panel is swapped (view mode change)
+    if (e.detail && e.detail.target === document.getElementById('view-panel')) {
+      document.getElementById('student-panel').classList.add('hidden');
+      return;
+    }
+    // Re-draw attendance chart after an attendance cell swap
+    const cell = document.querySelector('td.att-cell:focus');
+    if (cell) _updatePanel(cell);
+  });
+})();
+</script>
 </body>
 </html>{{end}}

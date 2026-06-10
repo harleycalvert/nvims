@@ -197,7 +197,8 @@ table tbody tr:hover td {
 
 td.att-cell { cursor: pointer; }
 
-td.att-cell:focus {
+td.att-cell:focus,
+td.col-name:focus {
   outline: 2px solid #1a4480;
   outline-offset: -2px;
   z-index: 2;
@@ -267,6 +268,7 @@ td.res-cell-empty {
 .res-sc-unpub { background: #d4edda; color: #155724; }
 .res-ns-pub   { background: #721c24; color: #fff; }
 .res-ns-unpub { background: #f8d7da; color: #721c24; }
+.res-ip       { background: #fff3cd; color: #856404; }
 .res-none     { background: #f5f5f5; color: #999; }
 
 /* td overrides must beat even-row striping (higher specificity via !important) */
@@ -274,6 +276,7 @@ td.res-sc-pub   { background: #155724 !important; color: #fff; }
 td.res-sc-unpub { background: #d4edda !important; color: #155724; }
 td.res-ns-pub   { background: #721c24 !important; color: #fff; }
 td.res-ns-unpub { background: #f8d7da !important; color: #721c24; }
+td.res-ip       { background: #fff3cd !important; color: #856404; }
 td.res-none     { background: #f5f5f5 !important; color: #999; }
 
 /* ── Publish SC column button ─────────────────────────────── */
@@ -300,9 +303,16 @@ td.res-none     { background: #f5f5f5 !important; color: #999; }
   border: 1px solid #ddd;
   border-radius: 8px;
   padding: 0;
+  margin: 0;
   box-shadow: 0 8px 32px rgba(0,0,0,0.18);
   min-width: 280px;
   max-width: 380px;
+}
+
+.dialog-measuring {
+  visibility: hidden;
+  top: 0;
+  left: 0;
 }
 
 .result-dialog::backdrop {
@@ -381,6 +391,19 @@ td.res-none     { background: #f5f5f5 !important; color: #999; }
 
 .btn-ns:hover { background: #4f1319; }
 
+.btn-ip {
+  padding: 6px 14px;
+  background: #856404;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-ip:hover { background: #5e4700; }
+
 .btn-clear {
   padding: 6px 12px;
   background: #f5f5f5;
@@ -418,3 +441,148 @@ td.res-none     { background: #f5f5f5 !important; color: #999; }
 }
 
 .btn-close:hover { background: #f5f5f5; }
+
+/* ── Student panel ────────────────────────────────────────── */
+.student-panel {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 20px 24px;
+  margin-top: 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.sp-photo {
+  width: 120px;
+  height: 120px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #f5f5f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sp-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.sp-no-photo-placeholder {
+  font-size: 11px;
+  color: #bbb;
+  font-style: italic;
+  text-align: center;
+}
+
+.sp-cols {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+.sp-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 180px;
+}
+
+.sp-col-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #888;
+  margin-bottom: 2px;
+}
+
+.sp-row {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  align-items: baseline;
+}
+
+.sp-label {
+  color: #888;
+  min-width: 80px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.sp-value {
+  color: #222;
+  font-weight: 500;
+}
+
+.sp-name {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.sp-charts {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-left: auto;
+  min-width: 240px;
+}
+
+.sp-chart-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sp-chart-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #555;
+}
+
+/* ── Horizontal stacked bar ───────────────────────────────── */
+.sp-bar {
+  display: flex;
+  height: 18px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: #e8e8e8;
+  width: 100%;
+}
+
+.sp-bar-seg { height: 100%; }
+
+/* ── Legend ───────────────────────────────────────────────── */
+.sp-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: #444;
+}
+
+.sp-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 5px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+/* ── Competency colors (dots + bar segments) ──────────────── */
+.sp-comp-c   { background: #4a7c59; }
+.sp-comp-nc  { background: #c0534f; }
+.sp-comp-ip  { background: #7db3d5; }
+.sp-comp-nys { background: #d0d0d0; }

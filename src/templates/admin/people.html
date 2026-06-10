@@ -47,7 +47,7 @@
           {{range .People}}
           <tr>
             <td class="col-name">{{.FamilyName}}, {{.FirstName}}</td>
-            <td style="text-align:left">{{.Email}}</td>
+            <td class="td-left">{{.Email}}</td>
             <td>
               {{if .IsStudent}}<span class="role-badge role-student">Student</span>{{end}}
               {{if .IsTeacher}}<span class="role-badge role-teacher">Teacher</span>{{end}}

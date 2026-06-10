@@ -32,7 +32,7 @@
       <div class="form-section">
         <h2 class="form-section-title">Personal Information</h2>
         <div class="form-row">
-          <div class="form-group" style="max-width:120px">
+          <div class="form-group fg-120">
             <label>Title</label>
             <input type="text" name="title" value="{{.Form.Title}}" placeholder="Mr / Ms / Dr">
           </div>
@@ -46,15 +46,15 @@
           </div>
         </div>
         <div class="form-row">
-          <div class="form-group" style="max-width:200px">
+          <div class="form-group fg-200">
             <label>Preferred Name</label>
             <input type="text" name="preferred_name" value="{{.Form.PreferredName}}">
           </div>
-          <div class="form-group" style="max-width:160px">
+          <div class="form-group fg-160">
             <label>Date of Birth <span class="req">*</span></label>
             <input type="date" name="dob" value="{{.Form.DOBStr}}" required>
           </div>
-          <div class="form-group" style="max-width:160px">
+          <div class="form-group fg-160">
             <label>Gender <span class="req">*</span></label>
             <select name="gender" required>
               <option value="">— select —</option>
@@ -70,8 +70,8 @@
         <h2 class="form-section-title">Photo</h2>
         <div class="photo-row">
           <div class="photo-preview">
-            <img id="photo-img" src="{{.Form.PhotoURL}}" alt="Photo"{{if not .Form.PhotoURL}} style="display:none"{{end}}>
-            <span id="photo-placeholder" class="photo-placeholder"{{if .Form.PhotoURL}} style="display:none"{{end}}>No photo</span>
+            <img id="photo-img" src="{{.Form.PhotoURL}}" alt="Photo" class="{{if not .Form.PhotoURL}}hidden{{end}}">
+            <span id="photo-placeholder" class="photo-placeholder{{if .Form.PhotoURL}} hidden{{end}}">No photo</span>
           </div>
           <div class="form-group form-group-grow">
             <label>Photo URL</label>
@@ -89,7 +89,7 @@
             <label>Primary Email <span class="req">*</span></label>
             <input type="email" name="email" value="{{.Form.Email}}" required>
           </div>
-          <div class="form-group" style="max-width:200px">
+          <div class="form-group fg-200">
             <label>Mobile Phone</label>
             <input type="tel" name="phone_mobile" value="{{.Form.PhoneMobile}}">
           </div>
@@ -99,11 +99,11 @@
       <div class="form-section">
         <h2 class="form-section-title">Address</h2>
         <div class="form-row">
-          <div class="form-group" style="max-width:260px">
+          <div class="form-group fg-260">
             <label>Suburb <span class="req">*</span></label>
             <input type="text" name="suburb" value="{{.Form.Suburb}}" required>
           </div>
-          <div class="form-group" style="max-width:100px">
+          <div class="form-group fg-100">
             <label>State <span class="req">*</span></label>
             <select name="state_code" required>
               <option value="">—</option>
@@ -112,7 +112,7 @@
               {{end}}
             </select>
           </div>
-          <div class="form-group" style="max-width:110px">
+          <div class="form-group fg-110">
             <label>Postcode <span class="req">*</span></label>
             <input type="text" name="postcode" value="{{.Form.Postcode}}"
                    pattern="[0-9]{4}" maxlength="4" required>
@@ -123,11 +123,11 @@
       <div class="form-section">
         <h2 class="form-section-title">Working with Children Check</h2>
         <div class="form-row">
-          <div class="form-group" style="max-width:220px">
+          <div class="form-group fg-220">
             <label>WWCC Number</label>
             <input type="text" name="wwcc_number" value="{{.Form.WWCCNumber}}">
           </div>
-          <div class="form-group" style="max-width:180px">
+          <div class="form-group fg-180">
             <label>Expiry Date</label>
             <input type="date" name="wwcc_expiry" value="{{.Form.WWCCExpiryStr}}">
           </div>
@@ -145,7 +145,7 @@
     </form>
 
     {{if not .IsNew}}
-    <div class="form-section" style="margin-top:24px">
+    <div class="form-section form-section--spaced">
       <h2 class="form-section-title">Roles</h2>
       <div class="roles-grid">
 
@@ -215,8 +215,8 @@
   if (urlInput) {
     urlInput.addEventListener('input', () => {
       const url = urlInput.value.trim();
-      if (url) { img.src = url; img.style.display = ''; ph.style.display = 'none'; }
-      else      { img.src = '';  img.style.display = 'none'; ph.style.display = ''; }
+      if (url) { img.src = url; img.classList.remove('hidden'); ph.classList.add('hidden'); }
+      else      { img.src = '';  img.classList.add('hidden');    ph.classList.remove('hidden'); }
     });
   }
 </script>
