@@ -86,6 +86,7 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 
 	tmpl := template.Must(
 		template.New("").Funcs(funcs).ParseFiles(
+			"templates/menu.html",
 			"templates/index.html",
 			"templates/login.html",
 			"templates/partials/programs.html",
@@ -98,7 +99,12 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 	return &Handler{store: st, sessions: sessions, tmpl: tmpl}
 }
 
-func (h *Handler) Index(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Menu(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	h.render(w, "menu", map[string]any{"User": user})
+}
+
+func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	periods, err := h.store.Periods(r.Context())
 	if err != nil {
 		log.Printf("Periods: %v", err)

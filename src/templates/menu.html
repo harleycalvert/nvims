@@ -1,0 +1,55 @@
+{{define "menu"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS-SMS</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <h1>NVIMS Student Management</h1>
+      <form method="POST" action="/logout">
+        <button class="btn-signout">Sign Out</button>
+      </form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+
+  <main>
+    <div class="menu-grid">
+
+      <a class="menu-card" href="/register">
+        <div class="menu-card-accent menu-accent-blue"></div>
+        <div class="menu-card-body">
+          <div class="menu-card-title">Attendance Register</div>
+          <div class="menu-card-desc">Record and review class attendance and unit results</div>
+        </div>
+      </a>
+
+      <div class="menu-card menu-card-disabled">
+        <div class="menu-card-accent menu-accent-green"></div>
+        <div class="menu-card-body">
+          <div class="menu-card-title">VCM</div>
+          <div class="menu-card-desc">Vocational Competency Matrix — track unit sign-offs</div>
+          <span class="menu-soon">Coming soon</span>
+        </div>
+      </div>
+
+      <div class="menu-card menu-card-disabled">
+        <div class="menu-card-accent menu-accent-purple"></div>
+        <div class="menu-card-body">
+          <div class="menu-card-title">Administration</div>
+          <div class="menu-card-desc">Manage users, programs, classes and enrolments</div>
+          <span class="menu-soon">Coming soon</span>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</body>
+</html>{{end}}
