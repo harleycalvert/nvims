@@ -390,6 +390,7 @@ type personForm struct {
 	Suburb        string
 	StateCode     string
 	Postcode      string
+	PhotoURL      string
 	WWCCNumber    string
 	WWCCExpiryStr string
 }
@@ -400,7 +401,7 @@ func personFormFrom(d store.PersonDetail) personForm {
 		PreferredName: d.PreferredName, DOBStr: d.DOB.Format("2006-01-02"),
 		Gender: d.Gender, Email: d.Email, PhoneMobile: d.PhoneMobile,
 		Suburb: d.Suburb, StateCode: d.StateCode, Postcode: d.Postcode,
-		WWCCNumber: d.WWCCNumber, WWCCExpiryStr: d.WWCCExpiryStr,
+		PhotoURL: d.PhotoURL, WWCCNumber: d.WWCCNumber, WWCCExpiryStr: d.WWCCExpiryStr,
 	}
 }
 
@@ -416,6 +417,7 @@ func personFormFromPost(r *http.Request, id int64) personForm {
 		Suburb: strings.TrimSpace(r.FormValue("suburb")),
 		StateCode: r.FormValue("state_code"),
 		Postcode: strings.TrimSpace(r.FormValue("postcode")),
+		PhotoURL:      strings.TrimSpace(r.FormValue("photo_url")),
 		WWCCNumber:    strings.TrimSpace(r.FormValue("wwcc_number")),
 		WWCCExpiryStr: r.FormValue("wwcc_expiry"),
 	}
@@ -463,7 +465,7 @@ func (h *Handler) AdminPersonCreate(w http.ResponseWriter, r *http.Request) {
 		f.Title, f.FirstName, f.FamilyName, f.PreferredName,
 		f.DOBStr, f.Gender, f.Email, f.PhoneMobile,
 		f.Suburb, f.StateCode, f.Postcode,
-		f.WWCCNumber, f.WWCCExpiryStr)
+		f.WWCCNumber, f.WWCCExpiryStr, f.PhotoURL)
 	if err != nil {
 		log.Printf("CreatePerson: %v", err)
 		h.render(w, "admin-person", map[string]any{
@@ -521,7 +523,7 @@ func (h *Handler) AdminPersonUpdate(w http.ResponseWriter, r *http.Request) {
 		f.Title, f.FirstName, f.FamilyName, f.PreferredName,
 		f.DOBStr, f.Gender, f.Email, f.PhoneMobile,
 		f.Suburb, f.StateCode, f.Postcode,
-		f.WWCCNumber, f.WWCCExpiryStr); err != nil {
+		f.WWCCNumber, f.WWCCExpiryStr, f.PhotoURL); err != nil {
 		log.Printf("UpdatePerson(%d): %v", id, err)
 		person, _ := h.store.GetPerson(r.Context(), id)
 		h.render(w, "admin-person", map[string]any{

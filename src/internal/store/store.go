@@ -524,6 +524,7 @@ type PersonDetail struct {
 	Suburb        string
 	StateCode     string
 	Postcode      string
+	PhotoURL      string
 	WWCCNumber    string
 	WWCCExpiryStr string
 	IsStudent     bool
@@ -581,6 +582,7 @@ func (s *Store) GetPerson(ctx context.Context, id int64) (PersonDetail, error) {
 		       COALESCE(p.preferred_name,''), p.dob, p.gender,
 		       p.primary_email, COALESCE(p.phone_mobile,''),
 		       p.suburb, p.state_code, p.postcode,
+		       COALESCE(p.photo_url,''),
 		       COALESCE(p.wwcc_number,''),
 		       COALESCE(TO_CHAR(p.wwcc_expiry,'YYYY-MM-DD'),''),
 		       EXISTS(SELECT 1 FROM public.students st WHERE st.id = p.id AND st.deleted_at IS NULL),
@@ -598,7 +600,7 @@ func (s *Store) GetPerson(ctx context.Context, id int64) (PersonDetail, error) {
 		&d.ID, &d.Title, &d.FirstName, &d.FamilyName, &d.PreferredName,
 		&d.DOB, &d.Gender, &d.Email, &d.PhoneMobile,
 		&d.Suburb, &d.StateCode, &d.Postcode,
-		&d.WWCCNumber, &d.WWCCExpiryStr,
+		&d.PhotoURL, &d.WWCCNumber, &d.WWCCExpiryStr,
 		&d.IsStudent, &d.IsTeacher, &d.IsStaff,
 		&d.StudentNumber,
 		&d.TeacherNumber, &d.TeacherPoliceCheckStatus, &d.TeacherPoliceCheckDateStr,
@@ -607,29 +609,31 @@ func (s *Store) GetPerson(ctx context.Context, id int64) (PersonDetail, error) {
 	return d, err
 }
 
-func (s *Store) CreatePerson(ctx context.Context, title, firstName, familyName, preferredName, dob, gender, email, phoneMobile, suburb, stateCode, postcode, wwccNumber, wwccExpiry string) (int64, error) {
+func (s *Store) CreatePerson(ctx context.Context, title, firstName, familyName, preferredName, dob, gender, email, phoneMobile, suburb, stateCode, postcode, wwccNumber, wwccExpiry, photoURL string) (int64, error) {
 	var id int64
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO public.people
 		    (title, first_given_name, family_name, preferred_name,
 		     dob, gender, primary_email, phone_mobile,
 		     suburb, state_code, postcode,
-		     wwcc_number, wwcc_expiry)
+		     wwcc_number, wwcc_expiry,
+		     photo_url, photo_uploaded_at)
 		VALUES
 		    (NULLIF($1,''), $2, $3, NULLIF($4,''),
 		     $5::date, $6, $7, NULLIF($8,''),
 		     $9, $10, $11,
-		     NULLIF($12,''), NULLIF($13,'')::date)
+		     NULLIF($12,''), NULLIF($13,'')::date,
+		     NULLIF($14,''), CASE WHEN NULLIF($14,'') IS NOT NULL THEN NOW() ELSE NULL END)
 		RETURNING id
 	`, title, firstName, familyName, preferredName,
 		dob, gender, email, phoneMobile,
 		suburb, stateCode, postcode,
-		wwccNumber, wwccExpiry,
+		wwccNumber, wwccExpiry, photoURL,
 	).Scan(&id)
 	return id, err
 }
 
-func (s *Store) UpdatePerson(ctx context.Context, id int64, title, firstName, familyName, preferredName, dob, gender, email, phoneMobile, suburb, stateCode, postcode, wwccNumber, wwccExpiry string) error {
+func (s *Store) UpdatePerson(ctx context.Context, id int64, title, firstName, familyName, preferredName, dob, gender, email, phoneMobile, suburb, stateCode, postcode, wwccNumber, wwccExpiry, photoURL string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE public.people SET
 		    title            = NULLIF($2,''),
@@ -645,12 +649,16 @@ func (s *Store) UpdatePerson(ctx context.Context, id int64, title, firstName, fa
 		    postcode         = $12,
 		    wwcc_number      = NULLIF($13,''),
 		    wwcc_expiry      = NULLIF($14,'')::date,
+		    photo_url        = NULLIF($15,''),
+		    photo_uploaded_at = CASE
+		        WHEN NULLIF($15,'') IS NOT NULL THEN COALESCE(photo_uploaded_at, NOW())
+		        ELSE NULL END,
 		    updated_at       = NOW()
 		WHERE id = $1
 	`, id, title, firstName, familyName, preferredName,
 		dob, gender, email, phoneMobile,
 		suburb, stateCode, postcode,
-		wwccNumber, wwccExpiry,
+		wwccNumber, wwccExpiry, photoURL,
 	)
 	return err
 }

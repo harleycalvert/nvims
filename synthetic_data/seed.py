@@ -19,7 +19,7 @@ import argparse
 import random
 import sys
 from collections import defaultdict
-from datetime import date, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 
 import bcrypt
 import psycopg2
@@ -165,12 +165,19 @@ VIC_LOCS = [
     ("Benalla",    "3672"), ("Seymour",    "3660"), ("Echuca",   "3564"),
     ("Ballarat",   "3350"), ("Bendigo",    "3550"), ("Geelong",  "3220"),
     ("Traralgon",  "3844"), ("Sale",       "3850"), ("Mildura",  "3500"),
+    ("Frankston",  "3199"), ("Dandenong",  "3175"), ("Berwick",  "3806"),
 ]
 
 
 def rand_loc():    return random.choice(VIC_LOCS)
 def rand_phone():  return f"04{random.randint(10000000, 99999999)}"
 def rand_street(): return str(random.randint(1, 250)), fake.street_name()
+
+PHOTO_URLS = [f"https://nanopi.au/id_imgs/{i:02d}.png" for i in range(1, 19)]
+
+
+def gen_wwcc():
+    return f"WWC{random.randint(1000000, 9999999):07d}A"
 
 
 def make_person(domain, min_age=17, max_age=60):
@@ -367,10 +374,14 @@ def seed(cur):
     # ── Academic periods ──────────────────────────────────────────────────────
     print("academic_periods...")
     period_defs = [
-        ("SEM1-2025",2025,"Semester 1 2025",date(2025,2,3), date(2025,6,27),"SEMESTER",1),
-        ("SEM2-2025",2025,"Semester 2 2025",date(2025,7,14),date(2025,11,28),"SEMESTER",2),
-        ("SEM1-2026",2026,"Semester 1 2026",date(2026,2,2), date(2026,6,26),"SEMESTER",1),
-        ("SEM2-2026",2026,"Semester 2 2026",date(2026,7,13),date(2026,11,27),"SEMESTER",2),
+        ("T1-2025",2025,"Term 1 2025",date(2025,2,3), date(2025,4,11), "TERM",1),
+        ("T2-2025",2025,"Term 2 2025",date(2025,4,28),date(2025,7,4),  "TERM",2),
+        ("T3-2025",2025,"Term 3 2025",date(2025,7,21),date(2025,9,26), "TERM",3),
+        ("T4-2025",2025,"Term 4 2025",date(2025,10,13),date(2025,12,12),"TERM",4),
+        ("T1-2026",2026,"Term 1 2026",date(2026,2,2), date(2026,4,10), "TERM",1),
+        ("T2-2026",2026,"Term 2 2026",date(2026,4,27),date(2026,7,3),  "TERM",2),
+        ("T3-2026",2026,"Term 3 2026",date(2026,7,20),date(2026,9,25), "TERM",3),
+        ("T4-2026",2026,"Term 4 2026",date(2026,10,12),date(2026,12,11),"TERM",4),
     ]
     period_ids = many(cur, "academic_periods",
         ["period_code","year","period_name",
@@ -389,13 +400,37 @@ def seed(cur):
     def person_tuple(p):
         return (p["first"], p["last"], p["dob"], p["gender"],
                 p["street_num"], p["street_name"], p["suburb"],
-                "VIC", p["postcode"], "1101", p["email"], p["mobile"])
+                "VIC", p["postcode"], "1101", p["email"], p["mobile"],
+                p.get("photo_url"), p.get("photo_uploaded_at"),
+                p.get("wwcc_number"), p.get("wwcc_expiry"))
 
-    all_persons    = teacher_persons + staff_persons + student_persons
+    all_persons = teacher_persons + staff_persons + student_persons
+
+    # Assign photo URLs (cycling 18 images) and WWCC to every person.
+    # Teachers and staff always get WWCC; ~15% of students do.
+    for idx, p in enumerate(all_persons):
+        p["photo_url"] = PHOTO_URLS[idx % 18]
+        p["photo_uploaded_at"] = datetime(
+            2024, random.randint(1, 12), random.randint(1, 28), 10, 0,
+            tzinfo=timezone.utc)
+    for p in teacher_persons + staff_persons:
+        p["wwcc_number"] = gen_wwcc()
+        p["wwcc_expiry"] = date(random.randint(2025, 2028),
+                                random.randint(1, 12), random.randint(1, 28))
+    for p in student_persons:
+        if random.random() < 0.15:
+            p["wwcc_number"] = gen_wwcc()
+            p["wwcc_expiry"] = date(random.randint(2025, 2028),
+                                    random.randint(1, 12), random.randint(1, 28))
+        else:
+            p["wwcc_number"] = None
+            p["wwcc_expiry"] = None
+
     all_person_ids = many(cur, "people",
         ["first_given_name","family_name","dob","gender",
          "street_number","street_name","suburb","state_code","postcode",
-         "country_id","primary_email","phone_mobile"],
+         "country_id","primary_email","phone_mobile",
+         "photo_url","photo_uploaded_at","wwcc_number","wwcc_expiry"],
         [person_tuple(p) for p in all_persons])
 
     teacher_pids = all_person_ids[:N_TEACHERS]
@@ -425,24 +460,38 @@ def seed(cur):
     # ── Teachers (shared PK = people.id) ─────────────────────────────────────
     FAC_CYCLE = [fac_biz]*4 + [fac_health]*4 + [fac_trades]*4
     EMP_CYCLE = (["Full-Time"]*3 + ["Part-Time"]) * 3
+    PC_CYCLE  = ["Clear"]*8 + ["Pending"]*2 + ["Not Required"]*2
     teachers = []
     for i, (pid, p) in enumerate(zip(teacher_pids, teacher_persons)):
         emp   = EMP_CYCLE[i]
         max_h = 800.00 if emp == "Full-Time" else 640.00
         tf    = 1.000  if emp == "Full-Time" else 0.800
+        pcs   = PC_CYCLE[i % len(PC_CYCLE)]
+        pcd   = (date(random.randint(2022, 2024), random.randint(1, 12),
+                      random.randint(1, 28))
+                 if pcs in ("Clear", "Pending") else None)
         teachers.append(dict(pid=pid, fac=FAC_CYCLE[i], email=p["email"],
-                             phone=p["mobile"], emp=emp, max_h=max_h, tf=tf))
+                             phone=p["mobile"], emp=emp, max_h=max_h, tf=tf,
+                             pcs=pcs, pcd=pcd))
     bulk(cur, "teachers",
         ["id","faculty_id","teacher_number","teacher_email","teacher_phone",
-         "employment_status","sector","default_max_hours_per_year"],
+         "employment_status","sector","default_max_hours_per_year",
+         "police_check_status","police_check_date"],
         [(t["pid"], t["fac"], f"T{1000+i}", t["email"], t["phone"],
-          t["emp"], "VET", t["max_h"])
+          t["emp"], "VET", t["max_h"], t["pcs"], t["pcd"])
          for i, t in enumerate(teachers)])
 
     # ── Staff (shared PK = people.id) ────────────────────────────────────────
+    STAFF_PC = [
+        ("Clear",        date(2023, 5, 10)),
+        ("Clear",        date(2022, 8, 22)),
+        ("Not Required", None),
+    ]
     bulk(cur, "staff",
-        ["id","faculty_id","staff_number","staff_email","staff_phone"],
-        [(pid, fac_biz, f"S{2000+i}", p["email"], p["mobile"])
+        ["id","faculty_id","staff_number","staff_email","staff_phone",
+         "police_check_status","police_check_date"],
+        [(pid, fac_biz, f"S{2000+i}", p["email"], p["mobile"],
+          STAFF_PC[i][0], STAFF_PC[i][1])
          for i, (pid, p) in enumerate(zip(staff_pids, staff_persons))])
 
     # ── Students (shared PK = people.id) ─────────────────────────────────────
@@ -485,33 +534,33 @@ def seed(cur):
     SUBJ_WEEKDAY = [1, 3, 4]
 
     GROUP_CFG = [
-        # SEM1-2025
-        ("SEM1-2025","BSB50120","G1",loc_shep,25),
-        ("SEM1-2025","BSB50120","G2",loc_shep,22),
-        ("SEM1-2025","BSB50120","G3",loc_wan, 20),
-        ("SEM1-2025","CHC43015","G1",loc_shep,20),
-        ("SEM1-2025","CHC43015","G2",loc_shep,18),
-        ("SEM1-2025","CHC43015","G3",loc_wan, 20),
-        # SEM2-2025
-        ("SEM2-2025","BSB40120","G1",loc_shep,25),
-        ("SEM2-2025","BSB40120","G2",loc_shep,22),
-        ("SEM2-2025","BSB40120","G3",loc_wan, 20),
-        ("SEM2-2025","CHC52021","G1",loc_wan, 20),
-        ("SEM2-2025","CHC52021","G2",loc_wan, 18),
-        ("SEM2-2025","CHC52021","G3",loc_shep,20),
-        # SEM1-2026
-        ("SEM1-2026","MEM30319","G1",loc_wan, 16),
-        ("SEM1-2026","MEM30319","G2",loc_wan, 14),
-        ("SEM1-2026","ICT50220","G1",loc_shep,22),
-        ("SEM1-2026","ICT50220","G2",loc_shep,20),
-        ("SEM1-2026","ICT50220","G3",loc_shep,18),
-        # SEM2-2026
-        ("SEM2-2026","BSB30120","G1",loc_shep,25),
-        ("SEM2-2026","BSB30120","G2",loc_shep,22),
-        ("SEM2-2026","BSB30120","G3",loc_wan, 20),
-        ("SEM2-2026","CHC33015","G1",loc_wan, 20),
-        ("SEM2-2026","CHC33015","G2",loc_wan, 18),
-        ("SEM2-2026","CHC33015","G3",loc_shep,20),
+        # T1-2025
+        ("T1-2025","BSB50120","G1",loc_shep,25),
+        ("T1-2025","BSB50120","G2",loc_shep,22),
+        ("T1-2025","BSB50120","G3",loc_wan, 20),
+        ("T1-2025","CHC43015","G1",loc_shep,20),
+        ("T1-2025","CHC43015","G2",loc_shep,18),
+        ("T1-2025","CHC43015","G3",loc_wan, 20),
+        # T3-2025
+        ("T3-2025","BSB40120","G1",loc_shep,25),
+        ("T3-2025","BSB40120","G2",loc_shep,22),
+        ("T3-2025","BSB40120","G3",loc_wan, 20),
+        ("T3-2025","CHC52021","G1",loc_wan, 20),
+        ("T3-2025","CHC52021","G2",loc_wan, 18),
+        ("T3-2025","CHC52021","G3",loc_shep,20),
+        # T1-2026
+        ("T1-2026","MEM30319","G1",loc_wan, 16),
+        ("T1-2026","MEM30319","G2",loc_wan, 14),
+        ("T1-2026","ICT50220","G1",loc_shep,22),
+        ("T1-2026","ICT50220","G2",loc_shep,20),
+        ("T1-2026","ICT50220","G3",loc_shep,18),
+        # T3-2026
+        ("T3-2026","BSB30120","G1",loc_shep,25),
+        ("T3-2026","BSB30120","G2",loc_shep,22),
+        ("T3-2026","BSB30120","G3",loc_wan, 20),
+        ("T3-2026","CHC33015","G1",loc_wan, 20),
+        ("T3-2026","CHC33015","G2",loc_wan, 18),
+        ("T3-2026","CHC33015","G3",loc_shep,20),
     ]
 
     # Build flat list of individual subject-classes

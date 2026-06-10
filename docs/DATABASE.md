@@ -2,7 +2,7 @@
 
 PostgreSQL schema for a national, potentially AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.18`: its entities, relationships, business rules, and the
+describes the design of `v0.19`: its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -157,13 +157,14 @@ erDiagram
         date dob
         varchar gender
         varchar state_code FK
+        varchar photo_url
+        timestamptz photo_uploaded_at
     }
     STUDENTS {
         bigint id PK,FK
         varchar student_number UK
         varchar usi UK
         varchar indigenous_status_id
-        varchar photo_url
         timestamptz deleted_at
     }
     TEACHERS {
@@ -648,7 +649,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 
 ## Data dictionary
 
-Every table and column, generated from `v0.18`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
+Every table and column, generated from `v0.19`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
 
 ### Identity & reference
 
@@ -683,6 +684,8 @@ Every table and column, generated from `v0.18`. **Null** = whether the column ac
 | `preferred_contact_method` | `varchar(20)` | yes |  |  |
 | `wwcc_number` | `text` | yes |  |  |
 | `wwcc_expiry` | `date` | yes |  |  |
+| `photo_url` | `varchar(2048)` | yes |  |  |
+| `photo_uploaded_at` | `timestamp with time zone` | yes |  |  |
 | `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 | `updated_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 
@@ -716,8 +719,6 @@ Every table and column, generated from `v0.18`. **Null** = whether the column ac
 | `state_allocated_student_number` | `varchar(20)` | yes |  |  |
 | `state_identity_issuing_body_code` | `varchar(3)` | yes |  | FK&nbsp;&rarr;&nbsp;australian_states |
 | `at_school_flag` | `varchar(1)` | no | `'N'` |  |
-| `photo_url` | `varchar(2048)` | yes |  |  |
-| `photo_uploaded_at` | `timestamp with time zone` | yes |  |  |
 | `id_expiry_date` | `date` | yes |  |  |
 | `id_document_type` | `varchar(50)` | yes |  |  |
 | `id_document_number` | `varchar(50)` | yes |  |  |
@@ -2590,4 +2591,4 @@ periodically.
 
 ---
 
-*Generated from `v0.18` (2026-06-10).*
+*Generated from `v0.19` (2026-06-10).*

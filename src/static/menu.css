@@ -1,0 +1,65 @@
+.menu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 20px;
+  margin-top: 8px;
+}
+
+.menu-card {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  display: flex;
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  transition: box-shadow 0.15s, border-color 0.15s;
+  cursor: pointer;
+}
+
+.menu-card:hover:not(.menu-card-disabled) {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  border-color: #b0c4e8;
+}
+
+.menu-card-disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.menu-card-accent {
+  width: 6px;
+  flex-shrink: 0;
+}
+
+.menu-accent-blue   { background: #1a4480; }
+.menu-accent-green  { background: #155724; }
+.menu-accent-purple { background: #4a235a; }
+
+.menu-card-body {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.menu-card-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #222;
+}
+
+.menu-card-desc {
+  font-size: 13px;
+  color: #666;
+  line-height: 1.4;
+}
+
+.menu-soon {
+  font-size: 11px;
+  font-weight: 600;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 2px;
+}

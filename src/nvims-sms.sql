@@ -1,6 +1,11 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.18, 2026-06-10
+-- AVETMISS-compliant SMS schema  --  version 0.19, 2026-06-10
 -- =========================================================================
+-- Changes from v0.18:
+--   1.  photo_url varchar(2048) and photo_uploaded_at timestamptz moved from
+--       public.students to public.people (both nullable). Photos belong to the
+--       identity record, not the student role — teachers and staff can also
+--       have profile photos without holding a student row.
 -- Changes from v0.17:
 --   1.  people gains wwcc_number text and wwcc_expiry date for Working with
 --       Children Check details. Any person (student, teacher, staff) may hold
@@ -234,6 +239,8 @@ CREATE TABLE IF NOT EXISTS public.people (
     preferred_contact_method varchar(20) NULL,
     wwcc_number text NULL,                           -- NEW v18: Working with Children Check
     wwcc_expiry date NULL,
+    photo_url varchar(2048) NULL,                    -- profile/ID photo
+    photo_uploaded_at timestamp with time zone NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -285,8 +292,6 @@ CREATE TABLE IF NOT EXISTS public.students (
     state_allocated_student_number varchar(20) NULL,
     state_identity_issuing_body_code varchar(3) NULL,
     at_school_flag varchar(1) NOT NULL DEFAULT 'N',
-    photo_url varchar(2048) NULL,
-    photo_uploaded_at timestamp with time zone NULL,
     id_expiry_date date NULL,
     id_document_type varchar(50) NULL,
     id_document_number varchar(50) NULL,

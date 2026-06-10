@@ -1,0 +1,281 @@
+/* ── Photo ────────────────────────────────────────────────── */
+.photo-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+}
+
+.photo-preview {
+  width: 100px;
+  height: 100px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #f5f5f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.photo-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.photo-placeholder {
+  font-size: 12px;
+  color: #bbb;
+  font-style: italic;
+}
+
+/* ── Admin toolbar / search ───────────────────────────────── */
+.admin-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.admin-search {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  max-width: 480px;
+}
+
+.admin-search input[type="search"] {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+/* ── Admin form ───────────────────────────────────────────── */
+.admin-form {
+  max-width: 860px;
+}
+
+.form-section {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+
+.form-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #555;
+  margin-bottom: 14px;
+}
+
+.form-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.form-row:last-child { margin-bottom: 0; }
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.form-group-grow { flex: 1; }
+
+.form-group label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #444;
+}
+
+.form-group input,
+.form-group select {
+  padding: 6px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 13px;
+  background: #fff;
+  width: 100%;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: 2px solid #1a4480;
+  outline-offset: -1px;
+  border-color: #1a4480;
+}
+
+.req { color: #c0392b; }
+
+.form-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+/* ── Buttons ──────────────────────────────────────────────── */
+.btn-primary {
+  padding: 7px 18px;
+  background: #1a4480;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.btn-primary:hover { background: #123060; }
+
+.btn-secondary {
+  padding: 7px 18px;
+  background: #fff;
+  color: #444;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.btn-secondary:hover { background: #f5f5f5; }
+
+.btn-row-action {
+  padding: 4px 10px;
+  background: #f0f4f9;
+  color: #1a4480;
+  border: 1px solid #b0c4e8;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.btn-row-action:hover { background: #dce8f5; }
+
+/* ── Form messages ────────────────────────────────────────── */
+.form-error {
+  background: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+  border-radius: 4px;
+  padding: 8px 14px;
+  font-size: 13px;
+  margin-bottom: 14px;
+  max-width: 860px;
+}
+
+.form-success {
+  background: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+  border-radius: 4px;
+  padding: 8px 14px;
+  font-size: 13px;
+  margin-bottom: 14px;
+  max-width: 860px;
+}
+
+/* ── Role badges (people list) ────────────────────────────── */
+.role-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-right: 4px;
+}
+
+.role-student  { background: #cce5ff; color: #004085; }
+.role-teacher  { background: #d4edda; color: #155724; }
+.role-staff    { background: #e2d9f3; color: #4a235a; }
+
+/* ── Role cards (person detail) ───────────────────────────── */
+.roles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.role-card {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.role-card-active { border-color: #b0c4e8; }
+
+.role-card-header {
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: #f0f4f9;
+  color: #555;
+}
+
+.role-student-header { background: #cce5ff; color: #004085; }
+.role-teacher-header { background: #d4edda; color: #155724; }
+.role-staff-header   { background: #e2d9f3; color: #4a235a; }
+
+.role-card-body {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.role-number {
+  font-size: 13px;
+  font-weight: 600;
+  color: #222;
+}
+
+.role-none {
+  font-size: 12px;
+  color: #999;
+  font-style: italic;
+}
+
+.role-check-info {
+  font-size: 12px;
+  color: #444;
+}
+
+.role-check-none {
+  font-size: 12px;
+  color: #bbb;
+  font-style: italic;
+}
+
+.hint {
+  font-size: 13px;
+  color: #888;
+  font-style: italic;
+  padding: 8px 0;
+}
