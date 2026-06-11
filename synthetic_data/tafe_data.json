@@ -23,12 +23,12 @@
       { "subject_code": "ICTSAS310", "subject_name": "Install, configure and secure a small office or home office network", "nominal_hours": 50 }
     ],
     "class_subjects": [
-      { "cluster": "Web & Digital Media", "period_code": "Term 1", "created": true, "subjects": ["ICTWEB431", "ICTWEB305"] },
-      { "cluster": "Programming & ICT Support", "period_code": "Term 1", "created": true, "subjects": ["ICTPRG302", "ICTSAS305"] },
-      { "cluster": "ICT Professional Practice", "period_code": "Term 1", "created": true, "subjects": ["BSBXTW301", "ICTICT313"] },
-      { "cluster": "Networking", "period_code": "Term 2", "created": true, "subjects": ["ICTNWK311", "ICTSAS310"] },
-      { "cluster": "Cyber & Cloud", "period_code": "Term 2", "created": true, "subjects": ["BSBXCS303", "ICTCLD301", "BSBXCS301"] },
-      { "cluster": "Critical Thinking", "period_code": "Term 2", "created": true, "subjects": ["BSBCRT301"] }
+      { "cluster": "Programming", "period_code": "Term 1", "created": true, "subjects": ["ICTPRG302"] },
+      { "cluster": "Web Development", "period_code": "Term 1", "created": true, "subjects": ["ICTWEB305", "ICTWEB431"] },
+      { "cluster": "Work Skills", "period_code": "Term 1", "created": true, "subjects": ["BSBXTW301", "ICTICT313", "ICTSAS305"] },
+      { "cluster": "BSBXCS301/BSBCRT301", "period_code": "Term 2", "created": true, "subjects": ["BSBXCS301", "BSBCRT301"] },
+      { "cluster": "Cloud Computing", "period_code": "Term 2", "created": true, "subjects": ["ICTCLD301", "BSBXCS303"] },
+      { "cluster": "Networking Protocols", "period_code": "Term 2", "created": true, "subjects": ["ICTNWK311", "ICTSAS310"] }
     ]
   },
   {
@@ -59,13 +59,13 @@
       { "subject_code": "BSBINS401", "subject_name": "Analyse and present research information", "nominal_hours": 40 }
     ],
     "class_subjects": [
-      { "cluster": "Cyber Security Secure Devices", "period_code": "Term 1", "created": false, "subjects": ["VU23217", "VU23214"] },
-      { "cluster": "Network Engineering Fundamentals 1", "period_code": "Term 1", "created": false, "subjects": ["VU23213", "ICTNWK422"] },
-      { "cluster": "IT Professional", "period_code": "Term 2", "created": false, "subjects": ["BSBWHS309", "ICTICT443", "VU23223"] },
-      { "cluster": "Cyber Security Programming Principles", "period_code": "Term 2", "created": false, "subjects": ["ICTPRG435", "VU23215", "VU23222"] },
-      { "cluster": "Network Engineering Fundamentals 2", "period_code": "Term 3", "created": false, "subjects": ["ICTNWK544", "VU23218"] },
+      { "cluster": "CS Secure Devices", "period_code": "Term 1", "created": false, "subjects": ["VU23217", "VU23214"] },
+      { "cluster": "NEF 1", "period_code": "Term 1", "created": false, "subjects": ["VU23213", "ICTNWK422"] },
+      { "cluster": "IT Professional", "period_code": "Term 2", "created": false, "subjects": ["ICTICT443", "BSBWHS309", "VU23223"] },
+      { "cluster": "CS Programming Principles", "period_code": "Term 2", "created": false, "subjects": ["ICTPRG435", "VU23215", "VU23222"] },
+      { "cluster": "NEF 2", "period_code": "Term 3", "created": false, "subjects": ["VU23218", "ICTNWK544"] },
       { "cluster": "Cyber Security Practice", "period_code": "Term 3", "created": false, "subjects": ["VU23219", "VU23221"] },
-      { "cluster": "Cyber Security Design Project", "period_code": "Term 4", "created": false, "subjects": ["VU23220", "BSBINS401"] }
+      { "cluster": "CS Design Project", "period_code": "Term 4", "created": false, "subjects": ["VU23220", "BSBINS401"] }
     ]
   },
   {
@@ -100,12 +100,13 @@
       { "subject_code": "ICTDAT402", "subject_name": "Clear and verify data", "nominal_hours": 50 }
     ],
     "class_subjects": [
-      { "cluster": "Programming Fundamentals", "period_code": "Term 1", "created": true, "subjects": ["ICTPRG302", "ICTPRG430", "ICTPRG431", "ICTPRG440"] },
-      { "cluster": "Database Foundations", "period_code": "Term 1", "created": true, "subjects": ["ICTDBS416", "ICTDBS418"] },
-      { "cluster": "ICT Professional Practice", "period_code": "Term 1", "created": true, "subjects": ["BSBCRT404", "ICTICT426", "ICTICT443"] },
-      { "cluster": "Database Development", "period_code": "Term 2", "created": true, "subjects": ["ICTDBS407", "ICTDBS413", "ICTDBS415", "ICTDAT402"] },
-      { "cluster": "Software Development", "period_code": "Term 2", "created": true, "subjects": ["ICTPRG433", "ICTPRG437", "ICTICT449"] },
-      { "cluster": "Data, Cyber & Professional", "period_code": "Term 2", "created": true, "subjects": ["BSBXBD406", "BSBXCS404", "ICTICT451", "ICTSAS432"] }
+      { "cluster": "Work Skills 1", "period_code": "Term 1", "created": true, "subjects": ["BSBCRT404", "ICTICT443", "ICTICT451"] },
+      { "cluster": "Programming 1", "period_code": "Term 1", "created": true, "subjects": ["ICTPRG302", "ICTPRG430", "ICTPRG440"] },
+      { "cluster": "Database 1", "period_code": "Term 1", "created": true, "subjects": ["ICTDBS416", "ICTDBS418", "ICTPRG431"] },
+      { "cluster": "Programming 2", "period_code": "Term 2", "created": true, "subjects": ["ICTPRG433", "ICTPRG437"] },
+      { "cluster": "Work Skills 2", "period_code": "Term 2", "created": true, "subjects": ["BSBXCS404", "ICTICT451", "ICTSAS432"] },
+      { "cluster": "Database 2", "period_code": "Term 2", "created": true, "subjects": ["ICTDBS407", "ICTDBS413", "ICTDBS415"] },
+      { "cluster": "Big Data", "period_code": "Term 2", "created": true, "subjects": ["BSBXBD406", "ICTDAT402", "ICTICT449"] }
     ]
   },
   {

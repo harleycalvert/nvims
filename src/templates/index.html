@@ -204,10 +204,10 @@
     }
 
     _drawBar('sp-comp-bar', [
-      {l:'Competent',       v:data.competent,     cls:'sp-comp-c'},
-      {l:'Not competent',   v:data.notCompetent,  cls:'sp-comp-nc'},
-      {l:'In progress',     v:data.inProgress,    cls:'sp-comp-ip'},
-      {l:'Not yet started', v:data.notYetStarted, cls:'sp-comp-nys'},
+      {l:'Competent',       v:data.competent,     cls:'res-sc-pub'},
+      {l:'Not competent',   v:data.notCompetent,  cls:'res-ns-pub'},
+      {l:'In progress',     v:data.inProgress,    cls:'res-ip'},
+      {l:'Not yet started', v:data.notYetStarted, cls:'res-none'},
     ], 'sp-comp-legend');
   }
 
@@ -260,10 +260,26 @@
   });
 
   document.addEventListener('htmx:afterSwap', function(e) {
-    // Hide panel when the main view panel is swapped (view mode change)
-    if (e.detail && e.detail.target === document.getElementById('view-panel')) {
+    const target = e.detail && e.detail.target;
+    // View switch — hide panel and clear whole cache so next click re-fetches
+    if (target === document.getElementById('view-panel')) {
       document.getElementById('student-panel').classList.add('hidden');
+      Object.keys(_cache).forEach(k => delete _cache[k]);
       return;
+    }
+    // Result cell updated — bust that student's cache and refresh competency bar
+    if (target && target.matches && target.matches('td.res-cell')) {
+      const row = target.closest('tr');
+      if (row && row.dataset.studentId) {
+        const sid = row.dataset.studentId;
+        delete _cache[sid];
+        if (sid === _currentSID) {
+          fetch('/student/panel?student_id=' + sid)
+            .then(r => r.json())
+            .then(data => { _cache[sid] = data; if (_currentSID === sid) _applyData(data); })
+            .catch(() => {});
+        }
+      }
     }
     // Re-draw attendance chart after an attendance cell swap
     const cell = document.querySelector('td.att-cell:focus');

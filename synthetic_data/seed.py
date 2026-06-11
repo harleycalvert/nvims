@@ -217,7 +217,7 @@ CAMPUS_INFO = {
 }
 
 # Suburb → short group-code suffix used in intake_groups
-SUBURB_GRP = {"Dandenong": "DAN", "Frankston": "FRK", "Berwick": "BER"}
+SUBURB_GRP = {"Dandenong": "DA", "Frankston": "FR", "Berwick": "BE"}
 
 # "Term N" string → zero-based offset from intake start
 def term_offset(period_label):
@@ -508,7 +508,7 @@ def seed(cur):
             ["program_id", "intake_code", "intake_name",
              "start_academic_period_id", "delivery_location_id",
              "faculty_id", "study_mode",
-             "duration_periods", "duration_years",
+             "duration_periods", "duration_years", "graded_assessment",
              "enrolment_open_date", "enrolment_close_date", "status"],
             (prog_ids[pc],
              f"{pc}-2026-T1",
@@ -519,6 +519,7 @@ def seed(cur):
              "Full-Time",
              p["duration_periods"],
              p["duration_years"],
+             p.get("graded_assessment", False),
              date(2025, 11, 1),
              date(2025, 12, 19),
              "Active"))

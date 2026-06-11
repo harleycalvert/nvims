@@ -1,6 +1,12 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.22, 2026-06-11
+-- AVETMISS-compliant SMS schema  --  version 0.23, 2026-06-11
 -- =========================================================================
+-- Changes from v0.22:
+--   1.  program_intakes gains graded_assessment boolean NOT NULL DEFAULT false.
+--       When true, the results UI requires a grade value (e.g. P, CR, D, HD)
+--       in addition to the standard VET competency outcome (SC / NS) for all
+--       subjects in the intake. The actual grade is stored in
+--       client_subject_enrolments.grade.
 -- Changes from v0.21:
 --   1.  program_intakes.intake_name widened varchar(100) → varchar(150) to
 --       accommodate long program names with a term suffix appended.
@@ -626,6 +632,7 @@ CREATE TABLE IF NOT EXISTS public.program_intakes (
     study_mode               varchar(10)    NOT NULL DEFAULT 'Full-Time',
     duration_periods         smallint       NOT NULL,           -- number of academic periods to complete
     duration_years           numeric(3,1)   NULL,               -- calendar duration in years (e.g. 1.0, 1.5, 2.0)
+    graded_assessment        boolean        NOT NULL DEFAULT false,
     enrolment_open_date      date           NULL,
     enrolment_close_date     date           NULL,
     status                   varchar(20)    NOT NULL DEFAULT 'Planned',

@@ -160,6 +160,7 @@ table tbody tr:nth-child(even) td {
 
 /* td overrides must beat even-row striping (higher specificity via !important) */
 /* ── Attendance status (spans in legend/popup) ────────────── */
+/* cell, legend + bar segments, button colours */
 td.att-present, .att-present, .btn-att-present    { background: #d4edda !important; color: #155724; }
 td.att-online, .att-online, .btn-att-online       { background: #cce5ff !important; color: #004085; }
 td.att-notified, .att-notified, .btn-att-notified { background: #fff3cd !important; color: #856404; }
@@ -260,12 +261,12 @@ td.res-cell-empty {
 /* Used on span elements in legend/popup */
 /* Published: richer pastel  |  Unpublished: soft pastel */
 /* ── Competency colors (dots + bar segments) ──────────────── */
-.res-sc-pub, td.res-sc-pub, .sp-comp-c, .publish-sc-btn, .btn-sc { background: #9ecfac; color: #155724; }
-.res-sc-unpub, td.res-sc-unpub                                     { background: #d4edda; color: #155724; }
-.res-ns-pub, td.res-ns-pub, .sp-comp-nc, .btn-ns                   { background: #f0a3a9; color: #721c24; }
-.res-ns-unpub, td.res-ns-unpub, .sp-comp-nys                       { background: #f8d7da; color: #721c24; }
-.res-ip, td.res-ip, .sp-comp-ip, .btn-ip                           { background: #fff3cd; color: #856404; }
-.res-none, td.res-none, .btn-clear                                  { background: #e0e0e0; color: #888; }
+td.res-sc-pub, .res-sc-pub, .sp-comp-c, .btn-res-sc-pub         { background: #9ecfac !important; color: #155724; }
+td.res-sc-unpub, .res-sc-unpub, .btn-res-sc-unpub               { background: #d4edda !important; color: #155724; }
+td.res-ns-pub, .res-ns-pub, .sp-comp-nc, .btn-res-ns-pub        { background: #f0a3a9 !important; color: #721c24; }
+td.res-ns-unpub, .res-ns-unpub, .sp-comp-nys, .btn-res-ns-unpub { background: #f8d7da !important; color: #721c24; }
+td.res-ip, .res-ip, .sp-comp-ip, .btn-res-ip                    { background: #fff3cd !important; color: #856404; }
+td.res-none, .res-none, .btn-res-none                            { background: #e0e0e0 !important; color: #888; }
 
 
 /* ── Publish SC column button ─────────────────────────────── */
@@ -352,7 +353,7 @@ td.res-cell-empty {
   text-align: right;
 }
 
-.btn-sc, .btn-ns, .btn-ip {
+.btn-res-sc-pub, .btn-res-ns-pub, .btn-res-ip {
   padding: 6px 14px;
   border: none;
   border-radius: 4px;
@@ -361,9 +362,9 @@ td.res-cell-empty {
   cursor: pointer;
 }
 
-.btn-sc:hover, .btn-ns:hover, .btn-ip:hover { filter: brightness(0.90); }
+.btn-res-sc-pub:hover, .btn-res-ns-pub:hover, .btn-res-ip:hover { filter: brightness(0.90); }
 
-.btn-clear {
+.btn-clear, .btn-res-none {
   padding: 6px 12px;
   border: 1px solid #ccc;
   border-radius: 4px;
@@ -371,7 +372,7 @@ td.res-cell-empty {
   cursor: pointer;
 }
 
-.btn-clear:hover { filter: brightness(0.95); }
+.btn-clear:hover, .btn-res-none:hover { filter: brightness(0.95); }
 
 .btn-publish {
   padding: 6px 14px;

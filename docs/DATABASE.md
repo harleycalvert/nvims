@@ -1146,7 +1146,7 @@ Many-to-many join between `subjects` and `programs` defining which units belong 
 
 #### `program_intakes`
 
-A scheduled offering of a program — the concrete instance of when, where, and how a program is delivered to a cohort of students. One program may have many intakes across different periods, locations, and study modes (e.g. Cert III IT delivered each term, full-time, at the city campus). `intake_code` is the unique human-readable identifier; `duration_periods` records how many academic periods it takes to complete the program on this intake; `duration_years` stores the equivalent calendar duration in years (e.g. `1.0`, `1.5`, `2.0`) for display and reporting. `start_academic_period_id` is the period the first class is taught. Enrolment window dates are optional and informational. References `programs`, `academic_periods`, `delivery_locations`, and optionally `faculties`.
+A scheduled offering of a program — the concrete instance of when, where, and how a program is delivered to a cohort of students. One program may have many intakes across different periods, locations, and study modes (e.g. Cert III IT delivered each term, full-time, at the city campus). `intake_code` is the unique human-readable identifier; `duration_periods` records how many academic periods it takes to complete the program on this intake; `duration_years` stores the equivalent calendar duration in years (e.g. `1.0`, `1.5`, `2.0`) for display and reporting. `graded_assessment` flags whether this intake requires a grade (e.g. P, CR, D, HD) alongside the standard VET competency outcome (SC / NS) for all enrolled subjects — the actual grade is stored in `client_subject_enrolments.grade`. `start_academic_period_id` is the period the first class is taught. Enrolment window dates are optional and informational. References `programs`, `academic_periods`, `delivery_locations`, and optionally `faculties`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1160,6 +1160,7 @@ A scheduled offering of a program — the concrete instance of when, where, and 
 | `study_mode` | `varchar(10)` | no | `'Full-Time'` |  |
 | `duration_periods` | `smallint` | no |  |  |
 | `duration_years` | `numeric(3,1)` | yes |  |  |
+| `graded_assessment` | `boolean` | no | `false` |  |
 | `enrolment_open_date` | `date` | yes |  |  |
 | `enrolment_close_date` | `date` | yes |  |  |
 | `status` | `varchar(20)` | no | `'Planned'` |  |
