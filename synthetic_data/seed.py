@@ -381,7 +381,8 @@ def seed(cur):
                 p["street_num"], p["street_name"], p["suburb"],
                 "VIC", p["postcode"], "1101", p["email"], p["mobile"],
                 p.get("photo_url"), p.get("photo_uploaded_at"),
-                p.get("wwcc_number"), p.get("wwcc_expiry"))
+                p.get("wwcc_number"), p.get("wwcc_expiry"),
+                p.get("police_check_status"), p.get("police_check_date"))
 
     all_persons = teacher_persons + staff_persons + student_persons
     for idx, p in enumerate(all_persons):
@@ -402,11 +403,27 @@ def seed(cur):
             p["wwcc_number"] = None
             p["wwcc_expiry"] = None
 
+    # Police check data now lives on people (v0.24). Assign before the people insert.
+    _PC_CYCLE = ["Clear"] * 8 + ["Pending"] * 2 + ["Not Required"] * 2
+    _STAFF_PC = [("Clear", date(2023, 5, 10)), ("Clear", date(2022, 8, 22)), ("Not Required", None)]
+    for i, p in enumerate(teacher_persons):
+        pcs = _PC_CYCLE[i % len(_PC_CYCLE)]
+        p["police_check_status"] = pcs
+        p["police_check_date"] = (date(random.randint(2022, 2024), random.randint(1, 12), random.randint(1, 28))
+                                  if pcs in ("Clear", "Pending") else None)
+    for i, p in enumerate(staff_persons):
+        p["police_check_status"] = _STAFF_PC[i][0]
+        p["police_check_date"]   = _STAFF_PC[i][1]
+    for p in student_persons:
+        p["police_check_status"] = None
+        p["police_check_date"]   = None
+
     all_person_ids = many(cur, "people",
         ["first_given_name","family_name","dob","gender",
          "street_number","street_name","suburb","state_code","postcode",
          "country_id","primary_email","phone_mobile",
-         "photo_url","photo_uploaded_at","wwcc_number","wwcc_expiry"],
+         "photo_url","photo_uploaded_at","wwcc_number","wwcc_expiry",
+         "police_check_status","police_check_date"],
         [person_tuple(p) for p in all_persons])
 
     teacher_pids = all_person_ids[:N_TEACHERS]
@@ -429,42 +446,33 @@ def seed(cur):
         [(pid, gen_username(p["first"], p["last"]), DEFAULT_PW_HASH, STAFF_ROLES[i])
          for i, (pid, p) in enumerate(zip(staff_pids, staff_persons))])
 
+    many(cur, "app_users",
+        ["person_id","username","password_hash","role"],
+        [(pid, gen_username(p["first"], p["last"]), DEFAULT_PW_HASH, "Student")
+         for pid, p in zip(student_pids, student_persons)])
+
     teacher_uid_map = {pid: uid for pid, uid in zip(teacher_pids, trainer_uids)}
 
     # ── Teachers ──────────────────────────────────────────────────────────────
     EMP_CYCLE = (["Full-Time"] * 3 + ["Part-Time"]) * 3
-    PC_CYCLE  = ["Clear"] * 8 + ["Pending"] * 2 + ["Not Required"] * 2
     teachers = []
     for i, (pid, p) in enumerate(zip(teacher_pids, teacher_persons)):
         emp   = EMP_CYCLE[i]
         max_h = 800.00 if emp == "Full-Time" else 640.00
         tf    = 1.000  if emp == "Full-Time" else 0.800
-        pcs   = PC_CYCLE[i % len(PC_CYCLE)]
-        pcd   = (date(random.randint(2022, 2024), random.randint(1, 12),
-                      random.randint(1, 28))
-                 if pcs in ("Clear", "Pending") else None)
         teachers.append(dict(pid=pid, fac=fac_biz, email=p["email"],
-                             phone=p["mobile"], emp=emp, max_h=max_h, tf=tf,
-                             pcs=pcs, pcd=pcd))
+                             phone=p["mobile"], emp=emp, max_h=max_h, tf=tf))
     bulk(cur, "teachers",
         ["id","faculty_id","teacher_number","teacher_email","teacher_phone",
-         "employment_status","sector","default_max_hours_per_year",
-         "police_check_status","police_check_date"],
+         "employment_status","sector","default_max_hours_per_year"],
         [(t["pid"], t["fac"], f"T{1000+i}", t["email"], t["phone"],
-          t["emp"], "VET", t["max_h"], t["pcs"], t["pcd"])
+          t["emp"], "VET", t["max_h"])
          for i, t in enumerate(teachers)])
 
     # ── Staff ─────────────────────────────────────────────────────────────────
-    STAFF_PC = [
-        ("Clear",        date(2023, 5, 10)),
-        ("Clear",        date(2022, 8, 22)),
-        ("Not Required", None),
-    ]
     bulk(cur, "staff",
-        ["id","faculty_id","staff_number","staff_email","staff_phone",
-         "police_check_status","police_check_date"],
-        [(pid, fac_biz, f"S{2000+i}", p["email"], p["mobile"],
-          STAFF_PC[i][0], STAFF_PC[i][1])
+        ["id","faculty_id","staff_number","staff_email","staff_phone"],
+        [(pid, fac_biz, f"S{2000+i}", p["email"], p["mobile"])
          for i, (pid, p) in enumerate(zip(staff_pids, staff_persons))])
 
     # ── Students ──────────────────────────────────────────────────────────────
