@@ -1019,8 +1019,7 @@ type SessionInput struct {
 // ── Timetable ──────────────────────────────────────────────────────────────
 
 type TimetableFilters struct {
-	StaffID   int64
-	StudentID int64
+	PersonID int64 // show sessions where this person is a teacher OR a student (for "my schedule")
 }
 
 type TimetableSession struct {
@@ -1048,15 +1047,16 @@ func (s *Store) TimetableRange(ctx context.Context, start, end time.Time, f Time
 		return fmt.Sprintf("$%d", len(args))
 	}
 
-	if f.StaffID > 0 {
-		extraJoins = append(extraJoins, "JOIN public.session_teachers _st2 ON _st2.session_id = cs.id")
-		extraWheres = append(extraWheres, "_st2.teacher_id = "+add(f.StaffID))
-	}
-
-	if f.StudentID > 0 {
-		extraJoins = append(extraJoins, `JOIN public.class_enrollments _ce ON _ce.class_id = c.id
-			JOIN public.client_subject_enrolments _cse ON _cse.id = _ce.client_subject_enrolment_id`)
-		extraWheres = append(extraWheres, "_cse.student_id = "+add(f.StudentID))
+	if f.PersonID > 0 {
+		p := add(f.PersonID)
+		extraWheres = append(extraWheres, `(
+			EXISTS (SELECT 1 FROM public.session_teachers _pst WHERE _pst.session_id = cs.id AND _pst.teacher_id = `+p+`)
+			OR EXISTS (
+				SELECT 1 FROM public.class_enrollments _pce
+				JOIN public.client_subject_enrolments _pcse ON _pcse.id = _pce.client_subject_enrolment_id
+				WHERE _pce.class_id = c.id AND _pcse.student_id = `+p+`
+			)
+		)`)
 	}
 
 	joinSQL := strings.Join(extraJoins, "\n")

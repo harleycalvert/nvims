@@ -2,7 +2,7 @@
 
 PostgreSQL schema for a national, potentially AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.19`: its entities, relationships, business rules, and the
+describes the design of `v0.24`: its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -708,7 +708,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 
 ## Data dictionary
 
-Every table and column, generated from `v0.19`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
+Every table and column, generated from `v0.24`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
 
 ### Identity & reference
 
@@ -862,7 +862,7 @@ Support and administrative staff. Extends `people` via a shared PK (`staff.id = 
 
 #### `app_users`
 
-System login accounts and RBAC roles. Each account links to a person via `person_id` (nullable for service accounts). The `role` column drives access control (`Admin`, `Trainer`, `Compliance`, `Reception`, `SupportStaff`, `System`, `Staff`). Every `*_by` audit column in the schema (e.g. `recorded_by`, `submitted_by`, `deleted_by`, `created_by`) references this table, making it the universal audit actor. Also used as the sender identity for `messages` and `message_campaigns`.
+System login accounts and RBAC roles. Each account links to a person via `person_id` (nullable for service accounts). The `role` column drives access control (`Admin`, `Trainer`, `Compliance`, `Reception`, `SupportStaff`, `System`, `Staff`, `Student`). Every `*_by` audit column in the schema (e.g. `recorded_by`, `submitted_by`, `deleted_by`, `created_by`) references this table, making it the universal audit actor. Also used as the sender identity for `messages` and `message_campaigns`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -880,7 +880,7 @@ System login accounts and RBAC roles. Each account links to a person via `person
 - `PRIMARY KEY (id)`
 - `CONSTRAINT uq_app_user_username UNIQUE (username)`
 - `CONSTRAINT fk_app_user_person FOREIGN KEY (person_id) REFERENCES public.people(id) ON DELETE SET NULL`
-- `CONSTRAINT chk_app_user_role CHECK (role IN ('Admin','Trainer','Compliance','Reception','SupportStaff','System','Staff'))`
+- `CONSTRAINT chk_app_user_role CHECK (role IN ('Admin','Trainer','Compliance','Reception','SupportStaff','System','Staff','Student'))`
 
 #### `teacher_yearly_balances`
 
@@ -2864,4 +2864,4 @@ periodically.
 
 ---
 
-*Generated from `v0.22` (2026-06-11).*
+*Generated from `v0.24` (2026-06-11).*

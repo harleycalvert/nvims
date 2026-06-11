@@ -291,7 +291,7 @@ CREATE TABLE IF NOT EXISTS public.app_users (
     PRIMARY KEY (id),
     CONSTRAINT uq_app_user_username UNIQUE (username),
     CONSTRAINT fk_app_user_person FOREIGN KEY (person_id) REFERENCES public.people(id) ON DELETE SET NULL,
-    CONSTRAINT chk_app_user_role CHECK (role IN ('Admin','Trainer','Compliance','Reception','SupportStaff','System','Staff'))
+    CONSTRAINT chk_app_user_role CHECK (role IN ('Admin','Trainer','Compliance','Reception','SupportStaff','System','Staff','Student'))
 );
 
 CREATE TABLE IF NOT EXISTS public.faculties (

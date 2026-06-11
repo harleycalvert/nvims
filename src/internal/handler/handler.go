@@ -314,16 +314,10 @@ func (h *Handler) Timetable(w http.ResponseWriter, r *http.Request) {
 
 	// ── role-based default: show only own sessions unless overridden ───────
 	isDefault := false
-	canToggleScope := (user.Role == "teacher" || user.Role == "student") && user.PersonID > 0
+	canToggleScope := user.PersonID > 0
 	if !showAll && canToggleScope {
-		switch user.Role {
-		case "teacher":
-			tf.StaffID = user.PersonID
-			isDefault = true
-		case "student":
-			tf.StudentID = user.PersonID
-			isDefault = true
-		}
+		tf.PersonID = user.PersonID
+		isDefault = true
 	}
 
 	// ── reference date ────────────────────────────────────────────────────
