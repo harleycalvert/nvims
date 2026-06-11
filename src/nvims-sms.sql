@@ -1,6 +1,12 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.19, 2026-06-10
+-- AVETMISS-compliant SMS schema  --  version 0.20, 2026-06-11
 -- =========================================================================
+-- Changes from v0.19:
+--   1.  program_intakes and intake_groups tables added (section 4.5).
+--       A program may be offered as multiple scheduled intakes (one per term,
+--       per year, etc.). Each intake may have one or more groups — sub-cohorts
+--       that attend classes together. intake_group_id (nullable FK) added to
+--       student_course_enrollments and classes.
 -- Changes from v0.18:
 --   1.  photo_url varchar(2048) and photo_uploaded_at timestamptz moved from
 --       public.students to public.people (both nullable). Photos belong to the
@@ -594,6 +600,62 @@ CREATE TABLE IF NOT EXISTS public.rooms (
 );
 
 -- =========================================================================
+-- 4.5. INTAKES & COHORTS
+-- A program may be delivered as multiple scheduled intakes (e.g. once per
+-- term, once per year). Each intake may have one or more groups — sub-
+-- cohorts that attend classes together throughout the program.  Students
+-- are enrolled into a specific intake group; classes are linked to an
+-- intake group so the register shows the right cohort.
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS public.program_intakes (
+    id                       bigserial      NOT NULL,
+    program_id               bigint         NOT NULL,
+    intake_code              varchar(30)    NOT NULL,           -- e.g. 'ICT30120-2025-T1-FT'
+    intake_name              varchar(100)   NOT NULL,           -- e.g. 'Cert III IT — 2025 Term 1 Full-time'
+    start_academic_period_id bigint         NOT NULL,           -- academic period this intake begins
+    delivery_location_id     bigint         NOT NULL,
+    faculty_id               bigint         NULL,
+    study_mode               varchar(10)    NOT NULL DEFAULT 'Full-Time',
+    duration_periods         smallint       NOT NULL,           -- number of academic periods to complete
+    enrolment_open_date      date           NULL,
+    enrolment_close_date     date           NULL,
+    status                   varchar(20)    NOT NULL DEFAULT 'Planned',
+    notes                    text           NULL,
+    created_at               timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at               timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT uq_intake_code            UNIQUE (intake_code),
+    CONSTRAINT fk_intake_program         FOREIGN KEY (program_id)               REFERENCES public.programs(id)            ON DELETE RESTRICT,
+    CONSTRAINT fk_intake_period          FOREIGN KEY (start_academic_period_id) REFERENCES public.academic_periods(id)    ON DELETE RESTRICT,
+    CONSTRAINT fk_intake_location        FOREIGN KEY (delivery_location_id)     REFERENCES public.delivery_locations(id)  ON DELETE RESTRICT,
+    CONSTRAINT fk_intake_faculty         FOREIGN KEY (faculty_id)               REFERENCES public.faculties(id)           ON DELETE SET NULL,
+    CONSTRAINT chk_intake_study_mode     CHECK (study_mode IN ('Full-Time', 'Part-Time')),
+    CONSTRAINT chk_intake_duration       CHECK (duration_periods > 0),
+    CONSTRAINT chk_intake_status         CHECK (status IN ('Planned', 'Active', 'Closed', 'Cancelled')),
+    CONSTRAINT chk_intake_enrolment_dates CHECK (
+        enrolment_open_date IS NULL OR enrolment_close_date IS NULL OR
+        enrolment_close_date >= enrolment_open_date
+    )
+);
+
+-- Sub-cohorts within an intake that attend classes together.
+-- e.g. Intake 2025-T1 may have Group A (Mon/Wed) and Group B (Tue/Thu).
+CREATE TABLE IF NOT EXISTS public.intake_groups (
+    id         bigserial    NOT NULL,
+    intake_id  bigint       NOT NULL,
+    group_code varchar(20)  NOT NULL,           -- e.g. 'A', 'B', 'MON'
+    group_name varchar(100) NOT NULL,           -- e.g. 'Group A', 'Monday Group'
+    capacity   integer      NULL,
+    notes      text         NULL,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT uq_group_per_intake UNIQUE (intake_id, group_code),
+    CONSTRAINT fk_ig_intake        FOREIGN KEY (intake_id) REFERENCES public.program_intakes(id) ON DELETE CASCADE,
+    CONSTRAINT chk_ig_capacity     CHECK (capacity IS NULL OR capacity > 0)
+);
+
+-- =========================================================================
 -- 5. PROGRESSION & ENROLMENT
 -- =========================================================================
 
@@ -601,6 +663,7 @@ CREATE TABLE IF NOT EXISTS public.student_course_enrollments (
     id bigserial NOT NULL,
     student_id bigint NOT NULL,
     program_id bigint NOT NULL,
+    intake_group_id bigint NULL,                -- which intake group this student belongs to
     enrollment_status varchar(20) NOT NULL DEFAULT 'Active',
     commencement_date date NOT NULL,
     commencing_program_id varchar(1) NOT NULL DEFAULT '3',
@@ -613,9 +676,10 @@ CREATE TABLE IF NOT EXISTS public.student_course_enrollments (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    CONSTRAINT fk_enrollment_state FOREIGN KEY (funding_state_code) REFERENCES public.australian_states(state_code),
-    CONSTRAINT fk_sce_deleted_by FOREIGN KEY (deleted_by) REFERENCES public.app_users(id) ON DELETE SET NULL,
-    CONSTRAINT chk_enrollment_status CHECK (enrollment_status IN ('Active', 'Deferred', 'Suspended', 'Cancelled', 'Completed')),
+    CONSTRAINT fk_enrollment_state    FOREIGN KEY (funding_state_code) REFERENCES public.australian_states(state_code),
+    CONSTRAINT fk_sce_deleted_by      FOREIGN KEY (deleted_by)         REFERENCES public.app_users(id)    ON DELETE SET NULL,
+    CONSTRAINT fk_sce_intake_group    FOREIGN KEY (intake_group_id)    REFERENCES public.intake_groups(id) ON DELETE SET NULL,
+    CONSTRAINT chk_enrollment_status  CHECK (enrollment_status IN ('Active', 'Deferred', 'Suspended', 'Cancelled', 'Completed')),
     CONSTRAINT chk_commencing_program_id CHECK (commencing_program_id IN ('3', '4', '8'))
 );
 -- NOTE: state-specific funding attributes (Skills First, Smart & Skilled, etc.)
@@ -837,19 +901,21 @@ CREATE TABLE IF NOT EXISTS public.enrollment_credit_claims (
 -- =========================================================================
 
 CREATE TABLE IF NOT EXISTS public.classes (
-    id bigserial NOT NULL,
-    class_code varchar(80) NOT NULL,
-    group_code varchar(20) NULL,
-    academic_period_id bigint NOT NULL,
-    delivery_location_id bigint NOT NULL,
-    enrolment_cap integer NULL,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    id                   bigserial    NOT NULL,
+    class_code           varchar(80)  NOT NULL,
+    group_code           varchar(20)  NULL,      -- legacy free-text; prefer intake_group_id
+    intake_group_id      bigint       NULL,       -- the cohort group this class belongs to
+    academic_period_id   bigint       NOT NULL,
+    delivery_location_id bigint       NOT NULL,
+    enrolment_cap        integer      NULL,
+    created_at           timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at           timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    CONSTRAINT uq_class_code UNIQUE (class_code),
-    CONSTRAINT fk_class_period FOREIGN KEY (academic_period_id) REFERENCES public.academic_periods(id),
-    CONSTRAINT fk_class_location FOREIGN KEY (delivery_location_id) REFERENCES public.delivery_locations(id),
-    CONSTRAINT chk_class_cap CHECK (enrolment_cap > 0)
+    CONSTRAINT uq_class_code         UNIQUE (class_code),
+    CONSTRAINT fk_class_period       FOREIGN KEY (academic_period_id)   REFERENCES public.academic_periods(id),
+    CONSTRAINT fk_class_location     FOREIGN KEY (delivery_location_id) REFERENCES public.delivery_locations(id),
+    CONSTRAINT fk_class_intake_group FOREIGN KEY (intake_group_id)      REFERENCES public.intake_groups(id) ON DELETE SET NULL,
+    CONSTRAINT chk_class_cap         CHECK (enrolment_cap > 0)
 );
 
 -- The set of subjects/units a class delivers.
@@ -1467,6 +1533,14 @@ CREATE INDEX IF NOT EXISTS idx_we_session                 ON public.workplan_ent
 CREATE INDEX IF NOT EXISTS idx_pay_periods_year           ON public.pay_periods(calendar_year);
 CREATE INDEX IF NOT EXISTS idx_timesheets_teacher         ON public.timesheets(teacher_id);
 CREATE INDEX IF NOT EXISTS idx_timesheets_pay_period      ON public.timesheets(pay_period_id);
+
+-- NEW v20: intake & cohort indexes.
+CREATE INDEX IF NOT EXISTS idx_pi_program       ON public.program_intakes(program_id);
+CREATE INDEX IF NOT EXISTS idx_pi_period        ON public.program_intakes(start_academic_period_id);
+CREATE INDEX IF NOT EXISTS idx_pi_status        ON public.program_intakes(status);
+CREATE INDEX IF NOT EXISTS idx_ig_intake        ON public.intake_groups(intake_id);
+CREATE INDEX IF NOT EXISTS idx_sce_intake_grp   ON public.student_course_enrollments(intake_group_id) WHERE (intake_group_id IS NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_class_intake_grp ON public.classes(intake_group_id) WHERE (intake_group_id IS NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_timesheets_status          ON public.timesheets(status) WHERE (status <> 'Exported');
 CREATE INDEX IF NOT EXISTS idx_te_timesheet               ON public.timesheet_entries(timesheet_id);
 CREATE INDEX IF NOT EXISTS idx_te_session                 ON public.timesheet_entries(class_session_id) WHERE (class_session_id IS NOT NULL);
@@ -1507,6 +1581,7 @@ CREATE OR REPLACE TRIGGER trg_upper_family_name
 CREATE OR REPLACE TRIGGER trg_touch_app_users                  BEFORE UPDATE ON public.app_users                  FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
 CREATE OR REPLACE TRIGGER trg_touch_students                   BEFORE UPDATE ON public.students                   FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
 CREATE OR REPLACE TRIGGER trg_touch_teachers                   BEFORE UPDATE ON public.teachers                   FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+CREATE OR REPLACE TRIGGER trg_touch_program_intakes            BEFORE UPDATE ON public.program_intakes             FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
 CREATE OR REPLACE TRIGGER trg_touch_course_enrollments         BEFORE UPDATE ON public.student_course_enrollments  FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
 CREATE OR REPLACE TRIGGER trg_touch_subject_enrolments         BEFORE UPDATE ON public.client_subject_enrolments   FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
 CREATE OR REPLACE TRIGGER trg_touch_training_plans             BEFORE UPDATE ON public.training_plans             FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();

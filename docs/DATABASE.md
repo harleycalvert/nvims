@@ -28,10 +28,12 @@ mapping to the AVETMISS NAT reporting files.
   - [10. Timesheet](#10-timesheet)
   - [11. Employment services](#11-employment-services)
   - [12. VCM](#12-vcm)
+  - [13. Intakes & cohorts](#13-intakes--cohorts)
 - [Table reference](#table-reference)
 - [Data dictionary](#data-dictionary)
   - Identity & reference: [`people`](#people) · [`students`](#students) · [`teachers`](#teachers) · [`staff`](#staff) · [`app_users`](#app_users) · [`teacher_yearly_balances`](#teacher_yearly_balances) · [`teacher_period_allocations`](#teacher_period_allocations) · [`student_guardians`](#student_guardians) · [`student_disabilities`](#student_disabilities) · [`student_prior_achievements`](#student_prior_achievements) · [`australian_states`](#australian_states) · [`disability_types`](#disability_types) · [`prior_educational_achievements`](#prior_educational_achievements) · [`highest_school_levels`](#highest_school_levels) · [`secondary_schools`](#secondary_schools) · [`faculties`](#faculties)
   - Curriculum: [`programs`](#programs) · [`subjects`](#subjects) · [`subject_programs`](#subject_programs)
+  - Intakes & cohorts: [`program_intakes`](#program_intakes) · [`intake_groups`](#intake_groups)
   - Enrolment & extensions: [`student_course_enrollments`](#student_course_enrollments) · [`client_subject_enrolments`](#client_subject_enrolments) · [`apprenticeship_details`](#apprenticeship_details) · [`traineeship_details`](#traineeship_details) · [`training_plans`](#training_plans) · [`learning_access_plans`](#learning_access_plans) · [`vet_student_loans`](#vet_student_loans) · [`he_enrolment_details`](#he_enrolment_details) · [`enrollment_credit_claims`](#enrollment_credit_claims) · [`state_funding_details`](#state_funding_details)
   - RTO infrastructure: [`training_orgs`](#training_orgs) · [`delivery_locations`](#delivery_locations) · [`buildings`](#buildings) · [`rooms`](#rooms) · [`employers`](#employers) · [`employer_workplaces`](#employer_workplaces) · [`aasn_providers`](#aasn_providers)
   - Timetabling: [`academic_periods`](#academic_periods) · [`classes`](#classes) · [`class_subjects`](#class_subjects) · [`class_enrollments`](#class_enrollments) · [`class_slots`](#class_slots) · [`class_sessions`](#class_sessions) · [`session_teachers`](#session_teachers) · [`session_attendance`](#session_attendance) · [`class_support_staff`](#class_support_staff) · [`class_exceptions`](#class_exceptions)
@@ -66,6 +68,9 @@ system, designed for both VET and Higher Education delivery:
 - **Public holidays** — recurrence rules expanded into concrete observances.
 - **Communications** — email/SMS bulk campaigns, per-recipient delivery logs, and
   teacher-to-recipient direct messages with automatic sender CC.
+- **Intakes & cohorts** — scheduled program intake offerings (start period, delivery
+  location, study mode, duration) and the sub-cohorts (groups) within each intake that
+  attend classes together; students are enrolled into a group, classes are linked to a group.
 - **Compliance** — AVETMISS NAT export sources, program completions, and an audit trail.
 - **Workplan** — annual teacher workplan per VTSA 2024 clause 32.4: Teaching Delivery,
   CAPPS, and Education-Related Duties allocations with an approval workflow.
@@ -99,6 +104,7 @@ system, designed for both VET and Higher Education delivery:
 graph TD
     P[Identity<br/>people, students, teachers, staff, app_users]
     C[Curriculum<br/>programs, subjects]
+    IC[Intakes & Cohorts<br/>program_intakes, intake_groups]
     E[Enrolment<br/>course & subject enrolments + extensions]
     I[RTO Infrastructure<br/>training_orgs, delivery_locations, buildings, rooms]
     T[Timetabling<br/>classes, slots, sessions, attendance]
@@ -111,6 +117,10 @@ graph TD
     V[VCM<br/>teacher_vcms, qualifications, courses, units, currency, documents]
 
     P --> E
+    C --> IC
+    I --> IC
+    IC --> E
+    IC --> T
     C --> E
     I --> E
     E --> T
@@ -517,6 +527,41 @@ erDiagram
     TEACHER_VCMS ||--o{ TEACHER_VCM_PROFILING : "dimension scores"
 ```
 
+### 13. Intakes & cohorts
+
+```mermaid
+erDiagram
+    PROGRAMS ||--o{ PROGRAM_INTAKES : "offered as"
+    ACADEMIC_PERIODS ||--o{ PROGRAM_INTAKES : "starts in"
+    DELIVERY_LOCATIONS ||--o{ PROGRAM_INTAKES : "delivered at"
+    FACULTIES ||--o{ PROGRAM_INTAKES : "owned by"
+    PROGRAM_INTAKES ||--o{ INTAKE_GROUPS : "has groups"
+    INTAKE_GROUPS ||--o{ STUDENT_COURSE_ENROLLMENTS : "enrolled in"
+    INTAKE_GROUPS ||--o{ CLASSES : "attends"
+
+    PROGRAM_INTAKES {
+        bigserial id PK
+        bigint program_id FK
+        varchar intake_code UK
+        varchar intake_name
+        bigint start_academic_period_id FK
+        bigint delivery_location_id FK
+        bigint faculty_id FK
+        varchar study_mode "Full-Time/Part-Time"
+        smallint duration_periods
+        date enrolment_open_date
+        date enrolment_close_date
+        varchar status "Planned/Active/Closed/Cancelled"
+    }
+    INTAKE_GROUPS {
+        bigserial id PK
+        bigint intake_id FK
+        varchar group_code
+        varchar group_name
+        integer capacity
+    }
+```
+
 ---
 
 ## Table reference
@@ -548,11 +593,18 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | `subjects` | Units/modules/subjects (NAT00060). `credit_points` holds the HE unit credit point value (NULL for VET-only units). | — |
 | `subject_programs` | Which subjects belong to which programs (many-to-many). `is_core` flags mandatory units; `group_code`/`group_title` support unit grouping within a qualification. | → `subjects`, `programs` |
 
+### Intakes & cohorts
+
+| Table | Purpose | Key relationships |
+|---|---|---|
+| `program_intakes` | A scheduled offering of a program — the when, where, mode, and duration of a particular intake cohort. `intake_code` is the unique human identifier (e.g. `ICT30120-2025-T1-FT`). `duration_periods` records how many academic periods the program runs. | → `programs`, `academic_periods` (start), `delivery_locations`, `faculties` |
+| `intake_groups` | Sub-cohorts within an intake that attend classes together. Each group has a short `group_code` and a display `group_name`; optional `capacity` caps enrolments. Students are linked to a group via `student_course_enrollments.intake_group_id`; classes are linked via `classes.intake_group_id`. | → `program_intakes` |
+
 ### Enrolment & extensions
 
 | Table | Purpose | Key relationships |
 |---|---|---|
-| `student_course_enrollments` | Program-level enrolment; commencement/completion, funding state. Soft-deletable. | → `students`, `programs` |
+| `student_course_enrollments` | Program-level enrolment; commencement/completion, funding state. `intake_group_id` links the student to their specific intake cohort group. Soft-deletable. | → `students`, `programs`, `intake_groups` |
 | `client_subject_enrolments` | Subject-level training activity (NAT00120). `student_course_enrollment_id` is **nullable** to allow standalone unit enrolments. Holds the draft/finalised result workflow. | → `students`, `subjects`, `student_course_enrollments`, `delivery_locations` |
 | `apprenticeship_details` | Apprenticeship contract, employer, AASN, training-plan milestones (1:1). | → `student_course_enrollments`, `employers`, `employer_workplaces`, `aasn_providers` |
 | `traineeship_details` | Traineeship probation/extension data (1:1). | → `student_course_enrollments` |
@@ -578,7 +630,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | Table | Purpose | Key relationships |
 |---|---|---|
 | `academic_periods` | Terms/semesters/trimesters/years with date ranges. `period_type` supports `TERM`, `SEMESTER`, `TRIMESTER`, `YEAR`, `BLOCK` (6–8 week intensive), and `ROLLING` (monthly intake). `sequence_number` orders periods within a year. | — |
-| `classes` | A delivery instance within a period at a location. | → `academic_periods`, `delivery_locations` |
+| `classes` | A delivery instance within a period at a location. `intake_group_id` links the class to the cohort group it is taught to. | → `academic_periods`, `delivery_locations`, `intake_groups` |
 | `class_subjects` | The units a class delivers. | → `classes`, `subjects` |
 | `class_enrollments` | Maps a student's subject enrolment to a class. | → `classes`, `client_subject_enrolments` |
 | `class_slots` | **Recurring weekly template** (weekday + time + teacher + room). Carries `academic_period_id` for exclusion scoping. | → `classes`, `academic_periods`, `teachers`, `rooms` |
@@ -1090,6 +1142,64 @@ Many-to-many join between `subjects` and `programs` defining which units belong 
 - `CONSTRAINT fk_sp_subject FOREIGN KEY (subject_id) REFERENCES public.subjects(id) ON DELETE CASCADE`
 - `CONSTRAINT fk_sp_program FOREIGN KEY (program_id) REFERENCES public.programs(id) ON DELETE CASCADE`
 
+### Intakes & cohorts
+
+#### `program_intakes`
+
+A scheduled offering of a program — the concrete instance of when, where, and how a program is delivered to a cohort of students. One program may have many intakes across different periods, locations, and study modes (e.g. Cert III IT delivered each term, full-time, at the city campus). `intake_code` is the unique human-readable identifier; `duration_periods` records how many academic periods it takes to complete the program on this intake. `start_academic_period_id` is the period the first class is taught. Enrolment window dates are optional and informational. References `programs`, `academic_periods`, `delivery_locations`, and optionally `faculties`.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `program_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;programs |
+| `intake_code` | `varchar(30)` | no |  | UK |
+| `intake_name` | `varchar(100)` | no |  |  |
+| `start_academic_period_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;academic_periods |
+| `delivery_location_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;delivery_locations |
+| `faculty_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;faculties |
+| `study_mode` | `varchar(10)` | no | `'Full-Time'` |  |
+| `duration_periods` | `smallint` | no |  |  |
+| `enrolment_open_date` | `date` | yes |  |  |
+| `enrolment_close_date` | `date` | yes |  |  |
+| `status` | `varchar(20)` | no | `'Planned'` |  |
+| `notes` | `text` | yes |  |  |
+| `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+| `updated_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT uq_intake_code UNIQUE (intake_code)`
+- `CONSTRAINT fk_intake_program FOREIGN KEY (program_id) REFERENCES public.programs(id) ON DELETE RESTRICT`
+- `CONSTRAINT fk_intake_period FOREIGN KEY (start_academic_period_id) REFERENCES public.academic_periods(id) ON DELETE RESTRICT`
+- `CONSTRAINT fk_intake_location FOREIGN KEY (delivery_location_id) REFERENCES public.delivery_locations(id) ON DELETE RESTRICT`
+- `CONSTRAINT fk_intake_faculty FOREIGN KEY (faculty_id) REFERENCES public.faculties(id) ON DELETE SET NULL`
+- `CONSTRAINT chk_intake_study_mode CHECK (study_mode IN ('Full-Time', 'Part-Time'))`
+- `CONSTRAINT chk_intake_duration CHECK (duration_periods > 0)`
+- `CONSTRAINT chk_intake_status CHECK (status IN ('Planned', 'Active', 'Closed', 'Cancelled'))`
+- `CONSTRAINT chk_intake_enrolment_dates CHECK (open IS NULL OR close IS NULL OR close >= open)`
+
+#### `intake_groups`
+
+Sub-cohorts within an intake that attend classes together throughout the program. A single intake may split into multiple groups with different timetables (e.g. Group A on Monday/Wednesday, Group B on Tuesday/Thursday). Students are assigned to a group via `student_course_enrollments.intake_group_id`; classes are linked to a group via `classes.intake_group_id`. `group_code` is short and unique within the intake (e.g. `A`, `B`, `MON`); `group_name` is the display label. Optional `capacity` caps enrolment into the group. Cascade-deletes when its parent intake is deleted.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `intake_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;program_intakes |
+| `group_code` | `varchar(20)` | no |  |  |
+| `group_name` | `varchar(100)` | no |  |  |
+| `capacity` | `integer` | yes |  |  |
+| `notes` | `text` | yes |  |  |
+| `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT uq_group_per_intake UNIQUE (intake_id, group_code)`
+- `CONSTRAINT fk_ig_intake FOREIGN KEY (intake_id) REFERENCES public.program_intakes(id) ON DELETE CASCADE`
+- `CONSTRAINT chk_ig_capacity CHECK (capacity IS NULL OR capacity > 0)`
+
 ### Enrolment & extensions
 
 #### `student_course_enrollments`
@@ -1101,6 +1211,7 @@ Program-level enrolment record — one row per student per qualification attempt
 | `id` | `bigserial` | no |  | PK |
 | `student_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;students |
 | `program_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;programs |
+| `intake_group_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;intake_groups |
 | `enrollment_status` | `varchar(20)` | no | `'Active'` |  |
 | `commencement_date` | `date` | no |  |  |
 | `commencing_program_id` | `varchar(1)` | no | `'3'` |  |
@@ -1118,6 +1229,7 @@ Program-level enrolment record — one row per student per qualification attempt
 - `PRIMARY KEY (id)`
 - `CONSTRAINT fk_enrollment_state FOREIGN KEY (funding_state_code) REFERENCES public.australian_states(state_code)`
 - `CONSTRAINT fk_sce_deleted_by FOREIGN KEY (deleted_by) REFERENCES public.app_users(id) ON DELETE SET NULL`
+- `CONSTRAINT fk_sce_intake_group FOREIGN KEY (intake_group_id) REFERENCES public.intake_groups(id) ON DELETE SET NULL`
 - `CONSTRAINT chk_enrollment_status CHECK (enrollment_status IN ('Active', 'Deferred', 'Suspended', 'Cancelled', 'Completed'))`
 - `CONSTRAINT chk_commencing_program_id CHECK (commencing_program_id IN ('3', '4', '8'))`
 - `CONSTRAINT fk_se_student FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE RESTRICT`
@@ -1552,12 +1664,14 @@ Terms, semesters, trimesters, years, blocks, or rolling periods with calendar da
 
 #### `classes`
 
-A delivery instance of a program within an academic period at a delivery location. The central timetabling entity: all of `class_subjects`, `class_enrollments`, `class_slots`, `class_sessions`, `class_support_staff`, and `class_exceptions` attach to a class. `enrolment_cap` optionally limits enrolment. References `academic_periods` and `delivery_locations`. Also targeted by `message_campaigns` for class-level bulk communications.
+A delivery instance of a program within an academic period at a delivery location. The central timetabling entity: all of `class_subjects`, `class_enrollments`, `class_slots`, `class_sessions`, `class_support_staff`, and `class_exceptions` attach to a class. `intake_group_id` links the class to the specific cohort group that attends it; `enrolment_cap` optionally limits enrolment. Also targeted by `message_campaigns` for class-level bulk communications.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
-| `class_code` | `varchar(50)` | no |  | UK |
+| `class_code` | `varchar(80)` | no |  | UK |
+| `group_code` | `varchar(20)` | yes |  |  |
+| `intake_group_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;intake_groups |
 | `academic_period_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;academic_periods |
 | `delivery_location_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;delivery_locations |
 | `enrolment_cap` | `integer` | yes |  |  |
@@ -1570,6 +1684,7 @@ A delivery instance of a program within an academic period at a delivery locatio
 - `CONSTRAINT uq_class_code UNIQUE (class_code)`
 - `CONSTRAINT fk_class_period FOREIGN KEY (academic_period_id) REFERENCES public.academic_periods(id)`
 - `CONSTRAINT fk_class_location FOREIGN KEY (delivery_location_id) REFERENCES public.delivery_locations(id)`
+- `CONSTRAINT fk_class_intake_group FOREIGN KEY (intake_group_id) REFERENCES public.intake_groups(id) ON DELETE SET NULL`
 - `CONSTRAINT chk_class_cap CHECK (enrolment_cap > 0)`
 
 #### `class_subjects`
@@ -2748,4 +2863,4 @@ periodically.
 
 ---
 
-*Generated from `v0.19` (2026-06-10).*
+*Generated from `v0.20` (2026-06-11).*
