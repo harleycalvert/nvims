@@ -1,0 +1,74 @@
+{{define "admin-faculties"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS-SMS — Faculties</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/admin">Administration</a>
+        <h1>Faculties</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+  <main>
+    <div class="admin-toolbar">
+      <a class="btn-secondary" href="/admin/programs">← Programs</a>
+    </div>
+
+    {{if not .Faculties}}
+      <p class="hint">No faculties on record yet.</p>
+    {{else}}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="td-left">Faculty Name</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Faculties}}
+          <tr>
+            <td class="td-left">{{.Name}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{end}}
+
+    <div class="form-section form-section--spaced">
+      <h2 class="form-section-title">Add Faculty</h2>
+
+      {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
+      {{if .Success}}<p class="form-success">Faculty saved.</p>{{end}}
+
+      <form class="admin-form" method="POST" action="/admin/faculties/new">
+        <div class="form-section">
+          <div class="form-row">
+            <div class="form-group form-group-grow">
+              <label>Faculty Name <span class="req">*</span></label>
+              <input type="text" name="faculty_name" value="{{.FacultyName}}"
+                     maxlength="100" required autofocus>
+            </div>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">Add Faculty</button>
+          <a class="btn-secondary" href="/admin/faculties">Reset</a>
+        </div>
+      </form>
+    </div>
+  </main>
+</body>
+</html>{{end}}

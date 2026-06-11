@@ -1,0 +1,190 @@
+{{define "admin-sessions"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS-SMS — Class Sessions</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/admin">Administration</a>
+        <h1>Class Sessions</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+  <main>
+    <div class="admin-toolbar">
+      <a class="btn-secondary" href="/admin/classes">← Classes</a>
+    </div>
+
+    {{/* Class selector */}}
+    <div class="form-section">
+      <form class="admin-form" method="GET" action="/admin/sessions">
+        <div class="form-row">
+          <div class="form-group fg-360">
+            <label>Class</label>
+            <select name="class_id" onchange="this.form.submit()">
+              <option value="">— select a class to view sessions —</option>
+              {{range .Classes}}
+              <option value="{{.ID}}"{{if eq $.SelectedClass .ID}} selected{{end}}>
+                {{.ClassCode}} — {{.PeriodName}}
+              </option>
+              {{end}}
+            </select>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    {{if .SelectedClass}}
+
+    {{if .Success}}<p class="form-success">Session saved.</p>{{end}}
+    {{if .Generated}}<p class="form-success">Generated {{.Generated}} new session(s).</p>{{end}}
+
+    {{/* Session list */}}
+    {{if not .Sessions}}
+      <p class="hint">No sessions yet for this class.</p>
+    {{else}}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Start</th>
+            <th>End</th>
+            <th>Type</th>
+            <th>Cancelled</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Sessions}}
+          <tr{{if .Cancelled}} class="row-cancelled"{{end}}>
+            <td>{{dateFull .SessionDate}}</td>
+            <td>{{timeShort .StartTime}}</td>
+            <td>{{timeShort .EndTime}}</td>
+            <td>{{.SessionType}}</td>
+            <td>{{if .Cancelled}}Yes{{else}}—{{end}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{end}}
+
+    {{/* Add single session */}}
+    <div class="form-section form-section--spaced">
+      <h2 class="form-section-title">Add Single Session</h2>
+      <form class="admin-form" method="POST" action="/admin/sessions/new">
+        <input type="hidden" name="class_id" value="{{.SelectedClass}}">
+        <div class="form-section">
+          <div class="form-row">
+            <div class="form-group fg-180">
+              <label>Date <span class="req">*</span></label>
+              <input type="date" name="session_date" value="{{.SForm.SessionDate}}" required>
+            </div>
+            <div class="form-group fg-140">
+              <label>Start Time <span class="req">*</span></label>
+              <input type="time" name="start_time" value="{{.SForm.StartTime}}" required>
+            </div>
+            <div class="form-group fg-140">
+              <label>End Time <span class="req">*</span></label>
+              <input type="time" name="end_time" value="{{.SForm.EndTime}}" required>
+            </div>
+            <div class="form-group fg-180">
+              <label>Type</label>
+              <select name="session_type">
+                {{range .SessionTypes}}
+                <option value="{{.}}"{{if eq $.SForm.SessionType .}} selected{{end}}>{{.}}</option>
+                {{end}}
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group form-group-grow">
+              <label>Notes</label>
+              <input type="text" name="notes" value="{{.SForm.Notes}}" maxlength="255">
+            </div>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">Add Session</button>
+        </div>
+      </form>
+    </div>
+
+    {{/* Generate recurring sessions */}}
+    <div class="form-section form-section--spaced">
+      <h2 class="form-section-title">Generate Recurring Sessions</h2>
+      <p class="hint">Creates one session per matching weekday in the date range. Skips dates that already have a session at the same time.</p>
+      <form class="admin-form" method="POST" action="/admin/sessions/generate">
+        <input type="hidden" name="class_id" value="{{.SelectedClass}}">
+        <div class="form-section">
+          <div class="form-row">
+            <div class="form-group fg-180">
+              <label>From Date <span class="req">*</span></label>
+              <input type="date" name="start_date" value="{{.GForm.StartDate}}" required>
+            </div>
+            <div class="form-group fg-180">
+              <label>To Date <span class="req">*</span></label>
+              <input type="date" name="end_date" value="{{.GForm.EndDate}}" required>
+            </div>
+            <div class="form-group fg-140">
+              <label>Start Time <span class="req">*</span></label>
+              <input type="time" name="start_time" value="{{.GForm.StartTime}}" required>
+            </div>
+            <div class="form-group fg-140">
+              <label>End Time <span class="req">*</span></label>
+              <input type="time" name="end_time" value="{{.GForm.EndTime}}" required>
+            </div>
+            <div class="form-group fg-180">
+              <label>Type</label>
+              <select name="session_type">
+                {{range .SessionTypes}}
+                <option value="{{.}}"{{if eq $.GForm.SessionType .}} selected{{end}}>{{.}}</option>
+                {{end}}
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Days of Week <span class="req">*</span></label>
+              <div class="checkbox-row">
+                <label class="checkbox-label"><input type="checkbox" name="day_of_week" value="1"> Mon</label>
+                <label class="checkbox-label"><input type="checkbox" name="day_of_week" value="2"> Tue</label>
+                <label class="checkbox-label"><input type="checkbox" name="day_of_week" value="3"> Wed</label>
+                <label class="checkbox-label"><input type="checkbox" name="day_of_week" value="4"> Thu</label>
+                <label class="checkbox-label"><input type="checkbox" name="day_of_week" value="5"> Fri</label>
+                <label class="checkbox-label"><input type="checkbox" name="day_of_week" value="6"> Sat</label>
+                <label class="checkbox-label"><input type="checkbox" name="day_of_week" value="0"> Sun</label>
+              </div>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group form-group-grow">
+              <label>Notes</label>
+              <input type="text" name="notes" value="{{.GForm.Notes}}" maxlength="255">
+            </div>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">Generate Sessions</button>
+        </div>
+      </form>
+    </div>
+
+    {{end}}{{/* end if SelectedClass */}}
+  </main>
+<style>
+.row-cancelled td { opacity: 0.5; text-decoration: line-through; }
+</style>
+</body>
+</html>{{end}}

@@ -1,0 +1,129 @@
+{{define "admin-subjects"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS-SMS — Subjects</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/admin">Administration</a>
+        <h1>Subjects</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+  <main>
+    <div class="admin-toolbar">
+      <a class="btn-secondary" href="/admin/classes">← Classes</a>
+    </div>
+
+    {{if not .Subjects}}
+      <p class="hint">No subjects on record yet.</p>
+    {{else}}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th class="td-left">Name</th>
+            <th>Field of Ed.</th>
+            <th>Hours</th>
+            <th>VET</th>
+            <th>Module</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Subjects}}
+          <tr>
+            <td>{{.SubjectCode}}</td>
+            <td class="td-left">{{.SubjectName}}</td>
+            <td>{{.FieldOfEducation}}</td>
+            <td>{{.NominalHours}}</td>
+            <td>{{if .VetFlag}}Y{{else}}N{{end}}</td>
+            <td>{{.ModuleFlag}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{end}}
+
+    <div class="form-section form-section--spaced">
+      <h2 class="form-section-title">Add Subject</h2>
+
+      {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
+      {{if .Success}}<p class="form-success">Subject saved.</p>{{end}}
+
+      <form class="admin-form" method="POST" action="/admin/subjects/new">
+        <div class="form-section">
+          <h2 class="form-section-title">Identification</h2>
+          <div class="form-row">
+            <div class="form-group fg-200">
+              <label>Subject Code <span class="req">*</span></label>
+              <input type="text" name="subject_code" value="{{.Form.SubjectCode}}"
+                     maxlength="30" placeholder="e.g. ICTPRG302" required>
+            </div>
+            <div class="form-group form-group-grow">
+              <label>Subject Name <span class="req">*</span></label>
+              <input type="text" name="subject_name" value="{{.Form.SubjectName}}"
+                     maxlength="100" required>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h2 class="form-section-title">Classification</h2>
+          <div class="form-row">
+            <div class="form-group fg-160">
+              <label>Field of Education <span class="req">*</span></label>
+              <input type="text" name="field_of_education" value="{{.Form.FieldOfEducation}}"
+                     maxlength="6" placeholder="e.g. 0299" required>
+              <span class="hint">ASCED code (4–6 chars)</span>
+            </div>
+            <div class="form-group fg-140">
+              <label>Nominal Hours</label>
+              <input type="number" name="nominal_hours" value="{{.Form.NominalHoursStr}}" min="1">
+            </div>
+            <div class="form-group fg-140">
+              <label>Credit Points</label>
+              <input type="number" name="credit_points" value="{{.Form.CreditPointsStr}}" min="1">
+              <span class="hint">HE only</span>
+            </div>
+            <div class="form-group fg-140">
+              <label>Module</label>
+              <select name="module_flag">
+                <option value="N"{{if eq .Form.ModuleFlag "N"}} selected{{end}}>No</option>
+                <option value="Y"{{if eq .Form.ModuleFlag "Y"}} selected{{end}}>Yes</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>&nbsp;</label>
+              <div class="checkbox-row">
+                <label class="checkbox-label">
+                  <input type="checkbox" name="vet_flag"{{if .Form.VetFlag}} checked{{end}}> VET
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">Add Subject</button>
+          <a class="btn-secondary" href="/admin/subjects">Reset</a>
+        </div>
+      </form>
+    </div>
+  </main>
+</body>
+</html>{{end}}

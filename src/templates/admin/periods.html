@@ -1,0 +1,123 @@
+{{define "admin-periods"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS-SMS — Academic Periods</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/admin">Administration</a>
+        <h1>Academic Periods</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+  <main>
+    <div class="admin-toolbar">
+      <a class="btn-secondary" href="/admin/programs">← Programs</a>
+    </div>
+
+    {{if not .Periods}}
+      <p class="hint">No academic periods on record yet.</p>
+    {{else}}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Year</th>
+            <th class="td-left">Name</th>
+            <th>Type</th>
+            <th>Start</th>
+            <th>End</th>
+            <th>Seq</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Periods}}
+          <tr>
+            <td>{{.PeriodCode}}</td>
+            <td>{{.Year}}</td>
+            <td class="td-left">{{.PeriodName}}</td>
+            <td>{{.PeriodType}}</td>
+            <td>{{dateShort .StartDate}}</td>
+            <td>{{dateShort .EndDate}}</td>
+            <td>{{if .SequenceNumber}}{{.SequenceNumber}}{{else}}—{{end}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{end}}
+
+    <div class="form-section form-section--spaced">
+      <h2 class="form-section-title">Add Academic Period</h2>
+
+      {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
+      {{if .Success}}<p class="form-success">Period saved.</p>{{end}}
+
+      <form class="admin-form" method="POST" action="/admin/periods/new">
+        <div class="form-section">
+          <div class="form-row">
+            <div class="form-group fg-200">
+              <label>Period Code <span class="req">*</span></label>
+              <input type="text" name="period_code" value="{{.Form.PeriodCode}}"
+                     maxlength="20" placeholder="e.g. 2025-T1" required>
+            </div>
+            <div class="form-group form-group-grow">
+              <label>Period Name <span class="req">*</span></label>
+              <input type="text" name="period_name" value="{{.Form.PeriodName}}"
+                     maxlength="50" placeholder="e.g. Term 1 2025" required>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group fg-120">
+              <label>Year <span class="req">*</span></label>
+              <input type="number" name="year" value="{{.Form.YearStr}}"
+                     min="2000" max="2099" placeholder="2025" required>
+            </div>
+            <div class="form-group fg-180">
+              <label>Type <span class="req">*</span></label>
+              <select name="period_type" required>
+                <option value="">— select —</option>
+                {{range .PeriodTypes}}
+                <option value="{{.}}"{{if eq $.Form.PeriodType .}} selected{{end}}>{{.}}</option>
+                {{end}}
+              </select>
+            </div>
+            <div class="form-group fg-120">
+              <label>Sequence</label>
+              <input type="number" name="sequence_number" value="{{.Form.SeqNumStr}}"
+                     min="1" placeholder="1">
+              <span class="hint">Order within year</span>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group fg-180">
+              <label>Start Date <span class="req">*</span></label>
+              <input type="date" name="start_date" value="{{.Form.StartDate}}" required>
+            </div>
+            <div class="form-group fg-180">
+              <label>End Date <span class="req">*</span></label>
+              <input type="date" name="end_date" value="{{.Form.EndDate}}" required>
+            </div>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">Add Period</button>
+          <a class="btn-secondary" href="/admin/periods">Reset</a>
+        </div>
+      </form>
+    </div>
+  </main>
+</body>
+</html>{{end}}

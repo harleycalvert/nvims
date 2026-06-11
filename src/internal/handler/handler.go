@@ -104,6 +104,14 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 			"templates/admin/people.html",
 			"templates/admin/person.html",
 			"templates/admin/role_form.html",
+			"templates/admin/programs.html",
+			"templates/admin/classes.html",
+			"templates/admin/faculties.html",
+			"templates/admin/subjects.html",
+			"templates/admin/periods.html",
+			"templates/admin/locations.html",
+			"templates/admin/intake-groups.html",
+			"templates/admin/sessions.html",
 		),
 	)
 	return &Handler{store: st, sessions: sessions, tmpl: tmpl}
@@ -622,6 +630,789 @@ func (h *Handler) render(w http.ResponseWriter, name string, data any) {
 	if err := h.tmpl.ExecuteTemplate(w, name, data); err != nil {
 		log.Printf("render %q: %v", name, err)
 	}
+}
+
+// ── Admin / Programs & Classes ─────────────────────────────────────────────
+
+var programTypes = []string{
+	"Qualification", "Skill Set", "Course in a Package",
+	"Statement of Attainment", "Accredited Course",
+}
+
+type programForm struct {
+	FacultyID            int64
+	ProgramCode          string
+	ProgramName          string
+	ProgramRecognitionID string
+	LevelOfEducation     string
+	FieldOfEducation     string
+	NominalHoursStr      string
+	VetFlag              bool
+	HeFlag               bool
+	AQFLevelStr          string
+	ProgramType          string
+}
+
+func programFormFromPost(r *http.Request) programForm {
+	return programForm{
+		FacultyID:            parseInt64(r.FormValue("faculty_id")),
+		ProgramCode:          strings.TrimSpace(r.FormValue("program_code")),
+		ProgramName:          strings.TrimSpace(r.FormValue("program_name")),
+		ProgramRecognitionID: strings.TrimSpace(r.FormValue("program_recognition_id")),
+		LevelOfEducation:     strings.TrimSpace(r.FormValue("level_of_education")),
+		FieldOfEducation:     strings.TrimSpace(r.FormValue("field_of_education")),
+		NominalHoursStr:      r.FormValue("nominal_hours"),
+		VetFlag:              r.FormValue("vet_flag") == "on",
+		HeFlag:               r.FormValue("he_flag") == "on",
+		AQFLevelStr:          r.FormValue("aqf_level"),
+		ProgramType:          r.FormValue("program_type"),
+	}
+}
+
+func (h *Handler) AdminPrograms(w http.ResponseWriter, r *http.Request) {
+	programs, err := h.store.ListPrograms(r.Context())
+	if err != nil {
+		log.Printf("ListPrograms: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	faculties, err := h.store.ListFaculties(r.Context())
+	if err != nil {
+		log.Printf("ListFaculties: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	user, _ := auth.Current(r)
+	h.render(w, "admin-programs", map[string]any{
+		"Programs":     programs,
+		"Faculties":    faculties,
+		"ProgramTypes": programTypes,
+		"Form":         programForm{VetFlag: true},
+		"Error":        "",
+		"Success":      r.URL.Query().Get("saved") == "1",
+		"User":         user,
+	})
+}
+
+func (h *Handler) AdminProgramCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	user, _ := auth.Current(r)
+	f := programFormFromPost(r)
+
+	nominalHours, nhErr := strconv.Atoi(strings.TrimSpace(f.NominalHoursStr))
+	if f.FacultyID == 0 || f.ProgramCode == "" || f.ProgramName == "" ||
+		f.ProgramRecognitionID == "" || f.LevelOfEducation == "" ||
+		f.FieldOfEducation == "" || nhErr != nil || nominalHours < 0 {
+		programs, _ := h.store.ListPrograms(r.Context())
+		faculties, _ := h.store.ListFaculties(r.Context())
+		h.render(w, "admin-programs", map[string]any{
+			"Programs":     programs,
+			"Faculties":    faculties,
+			"ProgramTypes": programTypes,
+			"Form":         f,
+			"Error":        "Please fill in all required fields.",
+			"User":         user,
+		})
+		return
+	}
+
+	var aqfLevel *int
+	if f.AQFLevelStr != "" {
+		if v, err := strconv.Atoi(f.AQFLevelStr); err == nil && v >= 1 && v <= 10 {
+			aqfLevel = &v
+		}
+	}
+
+	if !f.VetFlag && !f.HeFlag {
+		f.VetFlag = true
+	}
+
+	_, err := h.store.CreateProgram(r.Context(),
+		f.FacultyID, f.ProgramCode, f.ProgramName,
+		f.ProgramRecognitionID, f.LevelOfEducation, f.FieldOfEducation,
+		nominalHours, f.VetFlag, f.HeFlag, aqfLevel, f.ProgramType)
+	if err != nil {
+		log.Printf("CreateProgram: %v", err)
+		programs, _ := h.store.ListPrograms(r.Context())
+		faculties, _ := h.store.ListFaculties(r.Context())
+		h.render(w, "admin-programs", map[string]any{
+			"Programs":     programs,
+			"Faculties":    faculties,
+			"ProgramTypes": programTypes,
+			"Form":         f,
+			"Error":        "Could not save — check the program code is not already in use.",
+			"User":         user,
+		})
+		return
+	}
+	http.Redirect(w, r, "/admin/programs?saved=1", http.StatusSeeOther)
+}
+
+type classForm struct {
+	ClassCode          string
+	AcademicPeriodID   int64
+	DeliveryLocationID int64
+	IntakeGroupID      int64
+	EnrolmentCapStr    string
+}
+
+func (h *Handler) AdminClasses(w http.ResponseWriter, r *http.Request) {
+	classes, err := h.store.ListClasses(r.Context())
+	if err != nil {
+		log.Printf("ListClasses: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	periods, err := h.store.Periods(r.Context())
+	if err != nil {
+		log.Printf("Periods: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	locations, err := h.store.ListDeliveryLocations(r.Context())
+	if err != nil {
+		log.Printf("ListDeliveryLocations: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	intakeGroups, err := h.store.ListIntakeGroups(r.Context())
+	if err != nil {
+		log.Printf("ListIntakeGroups: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	subjects, err := h.store.ListSubjects(r.Context())
+	if err != nil {
+		log.Printf("ListSubjects: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	user, _ := auth.Current(r)
+	h.render(w, "admin-classes", map[string]any{
+		"Classes":      classes,
+		"Periods":      periods,
+		"Locations":    locations,
+		"IntakeGroups": intakeGroups,
+		"Subjects":     subjects,
+		"Form":         classForm{},
+		"Error":        "",
+		"Success":      r.URL.Query().Get("saved") == "1",
+		"User":         user,
+	})
+}
+
+func (h *Handler) AdminClassCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	user, _ := auth.Current(r)
+
+	f := classForm{
+		ClassCode:          strings.TrimSpace(r.FormValue("class_code")),
+		AcademicPeriodID:   parseInt64(r.FormValue("academic_period_id")),
+		DeliveryLocationID: parseInt64(r.FormValue("delivery_location_id")),
+		IntakeGroupID:      parseInt64(r.FormValue("intake_group_id")),
+		EnrolmentCapStr:    strings.TrimSpace(r.FormValue("enrolment_cap")),
+	}
+
+	renderErr := func(msg string) {
+		classes, _ := h.store.ListClasses(r.Context())
+		periods, _ := h.store.Periods(r.Context())
+		locations, _ := h.store.ListDeliveryLocations(r.Context())
+		intakeGroups, _ := h.store.ListIntakeGroups(r.Context())
+		subjects, _ := h.store.ListSubjects(r.Context())
+		h.render(w, "admin-classes", map[string]any{
+			"Classes":      classes,
+			"Periods":      periods,
+			"Locations":    locations,
+			"IntakeGroups": intakeGroups,
+			"Subjects":     subjects,
+			"Form":         f,
+			"Error":        msg,
+			"User":         user,
+		})
+	}
+
+	if f.ClassCode == "" || f.AcademicPeriodID == 0 || f.DeliveryLocationID == 0 {
+		renderErr("Please fill in all required fields.")
+		return
+	}
+
+	var intakeGroupID *int64
+	if f.IntakeGroupID > 0 {
+		intakeGroupID = &f.IntakeGroupID
+	}
+
+	var enrolmentCap *int
+	if f.EnrolmentCapStr != "" {
+		if v, err := strconv.Atoi(f.EnrolmentCapStr); err == nil && v > 0 {
+			enrolmentCap = &v
+		}
+	}
+
+	subjectIDStrs := r.Form["subject_ids"]
+	var classSubjects []store.ClassSubject
+	for _, idStr := range subjectIDStrs {
+		sid := parseInt64(idStr)
+		if sid == 0 {
+			continue
+		}
+		label := strings.TrimSpace(r.FormValue(fmt.Sprintf("label_%d", sid)))
+		if label == "" {
+			label = strings.TrimSpace(r.FormValue(fmt.Sprintf("subj_name_%d", sid)))
+		}
+		classSubjects = append(classSubjects, store.ClassSubject{SubjectID: sid, SubjectLabel: label})
+	}
+
+	_, err := h.store.CreateClass(r.Context(),
+		f.ClassCode, f.AcademicPeriodID, f.DeliveryLocationID,
+		intakeGroupID, enrolmentCap, classSubjects)
+	if err != nil {
+		log.Printf("CreateClass: %v", err)
+		renderErr("Could not save — check the class code is not already in use.")
+		return
+	}
+	http.Redirect(w, r, "/admin/classes?saved=1", http.StatusSeeOther)
+}
+
+// ── Admin / Periods ────────────────────────────────────────────────────────
+
+var periodTypes = []string{"TERM", "SEMESTER", "TRIMESTER", "YEAR", "BLOCK", "ROLLING"}
+
+type periodForm struct {
+	PeriodCode  string
+	PeriodName  string
+	YearStr     string
+	StartDate   string
+	EndDate     string
+	PeriodType  string
+	SeqNumStr   string
+}
+
+func (h *Handler) AdminPeriods(w http.ResponseWriter, r *http.Request) {
+	periods, err := h.store.ListPeriods(r.Context())
+	if err != nil {
+		log.Printf("ListPeriods: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	user, _ := auth.Current(r)
+	h.render(w, "admin-periods", map[string]any{
+		"Periods":     periods,
+		"PeriodTypes": periodTypes,
+		"Form":        periodForm{},
+		"Error":       "",
+		"Success":     r.URL.Query().Get("saved") == "1",
+		"User":        user,
+	})
+}
+
+func (h *Handler) AdminPeriodCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	user, _ := auth.Current(r)
+	f := periodForm{
+		PeriodCode: strings.TrimSpace(r.FormValue("period_code")),
+		PeriodName: strings.TrimSpace(r.FormValue("period_name")),
+		YearStr:    strings.TrimSpace(r.FormValue("year")),
+		StartDate:  r.FormValue("start_date"),
+		EndDate:    r.FormValue("end_date"),
+		PeriodType: r.FormValue("period_type"),
+		SeqNumStr:  strings.TrimSpace(r.FormValue("sequence_number")),
+	}
+
+	year, yearErr := strconv.Atoi(f.YearStr)
+	if f.PeriodCode == "" || f.PeriodName == "" || yearErr != nil ||
+		f.StartDate == "" || f.EndDate == "" || f.PeriodType == "" {
+		periods, _ := h.store.ListPeriods(r.Context())
+		h.render(w, "admin-periods", map[string]any{
+			"Periods": periods, "PeriodTypes": periodTypes,
+			"Form": f, "Error": "Please fill in all required fields.", "User": user,
+		})
+		return
+	}
+
+	var seqNum *int
+	if f.SeqNumStr != "" {
+		if v, err := strconv.Atoi(f.SeqNumStr); err == nil && v > 0 {
+			seqNum = &v
+		}
+	}
+
+	_, err := h.store.CreatePeriod(r.Context(), f.PeriodCode, f.PeriodName, year,
+		f.StartDate, f.EndDate, f.PeriodType, seqNum)
+	if err != nil {
+		log.Printf("CreatePeriod: %v", err)
+		periods, _ := h.store.ListPeriods(r.Context())
+		h.render(w, "admin-periods", map[string]any{
+			"Periods": periods, "PeriodTypes": periodTypes,
+			"Form": f, "Error": "Could not save — check the period code is not already in use.", "User": user,
+		})
+		return
+	}
+	http.Redirect(w, r, "/admin/periods?saved=1", http.StatusSeeOther)
+}
+
+// ── Admin / Delivery Locations ─────────────────────────────────────────────
+
+type locationForm struct {
+	TrainingOrgID    int64
+	LocID            string
+	Name             string
+	Address          string
+	Suburb           string
+	StateCode        string
+	Postcode         string
+	PostcodeOverride string
+}
+
+func (h *Handler) AdminLocations(w http.ResponseWriter, r *http.Request) {
+	locations, err := h.store.ListDeliveryLocations(r.Context())
+	if err != nil {
+		log.Printf("ListDeliveryLocations: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	orgs, err := h.store.ListTrainingOrgs(r.Context())
+	if err != nil {
+		log.Printf("ListTrainingOrgs: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	user, _ := auth.Current(r)
+	h.render(w, "admin-locations", map[string]any{
+		"Locations": locations,
+		"Orgs":      orgs,
+		"States":    auStates,
+		"Form":      locationForm{},
+		"Error":     "",
+		"Success":   r.URL.Query().Get("saved") == "1",
+		"User":      user,
+	})
+}
+
+func (h *Handler) AdminLocationCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	user, _ := auth.Current(r)
+	f := locationForm{
+		TrainingOrgID:    parseInt64(r.FormValue("training_org_id")),
+		LocID:            strings.TrimSpace(r.FormValue("delivery_loc_id")),
+		Name:             strings.TrimSpace(r.FormValue("name")),
+		Address:          strings.TrimSpace(r.FormValue("address")),
+		Suburb:           strings.TrimSpace(r.FormValue("suburb")),
+		StateCode:        r.FormValue("state_code"),
+		Postcode:         strings.TrimSpace(r.FormValue("postcode")),
+		PostcodeOverride: strings.TrimSpace(r.FormValue("postcode_override")),
+	}
+
+	renderErr := func(msg string) {
+		locations, _ := h.store.ListDeliveryLocations(r.Context())
+		orgs, _ := h.store.ListTrainingOrgs(r.Context())
+		h.render(w, "admin-locations", map[string]any{
+			"Locations": locations, "Orgs": orgs, "States": auStates,
+			"Form": f, "Error": msg, "User": user,
+		})
+	}
+
+	if f.TrainingOrgID == 0 || f.LocID == "" || f.Name == "" ||
+		f.Address == "" || f.Suburb == "" || f.StateCode == "" || f.Postcode == "" {
+		renderErr("Please fill in all required fields.")
+		return
+	}
+
+	_, err := h.store.CreateDeliveryLocation(r.Context(),
+		f.TrainingOrgID, f.LocID, f.Name, f.Address,
+		f.Suburb, f.StateCode, f.Postcode, f.PostcodeOverride)
+	if err != nil {
+		log.Printf("CreateDeliveryLocation: %v", err)
+		renderErr("Could not save — check the location ID is not already in use for this organisation.")
+		return
+	}
+	http.Redirect(w, r, "/admin/locations?saved=1", http.StatusSeeOther)
+}
+
+// ── Admin / Intake Groups ──────────────────────────────────────────────────
+
+type intakeGroupForm struct {
+	IntakeID    int64
+	GroupCode   string
+	GroupName   string
+	CapacityStr string
+	Notes       string
+}
+
+func (h *Handler) AdminIntakeGroups(w http.ResponseWriter, r *http.Request) {
+	groups, err := h.store.ListIntakeGroups(r.Context())
+	if err != nil {
+		log.Printf("ListIntakeGroups: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	intakes, err := h.store.ListProgramIntakes(r.Context())
+	if err != nil {
+		log.Printf("ListProgramIntakes: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	user, _ := auth.Current(r)
+	h.render(w, "admin-intake-groups", map[string]any{
+		"Groups":  groups,
+		"Intakes": intakes,
+		"Form":    intakeGroupForm{},
+		"Error":   "",
+		"Success": r.URL.Query().Get("saved") == "1",
+		"User":    user,
+	})
+}
+
+func (h *Handler) AdminIntakeGroupCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	user, _ := auth.Current(r)
+	f := intakeGroupForm{
+		IntakeID:    parseInt64(r.FormValue("intake_id")),
+		GroupCode:   strings.TrimSpace(r.FormValue("group_code")),
+		GroupName:   strings.TrimSpace(r.FormValue("group_name")),
+		CapacityStr: strings.TrimSpace(r.FormValue("capacity")),
+		Notes:       strings.TrimSpace(r.FormValue("notes")),
+	}
+
+	renderErr := func(msg string) {
+		groups, _ := h.store.ListIntakeGroups(r.Context())
+		intakes, _ := h.store.ListProgramIntakes(r.Context())
+		h.render(w, "admin-intake-groups", map[string]any{
+			"Groups": groups, "Intakes": intakes,
+			"Form": f, "Error": msg, "User": user,
+		})
+	}
+
+	if f.IntakeID == 0 || f.GroupCode == "" || f.GroupName == "" {
+		renderErr("Please fill in all required fields.")
+		return
+	}
+
+	var capacity *int
+	if f.CapacityStr != "" {
+		if v, err := strconv.Atoi(f.CapacityStr); err == nil && v > 0 {
+			capacity = &v
+		}
+	}
+
+	_, err := h.store.CreateIntakeGroup(r.Context(), f.IntakeID, f.GroupCode, f.GroupName, capacity, f.Notes)
+	if err != nil {
+		log.Printf("CreateIntakeGroup: %v", err)
+		renderErr("Could not save — check the group code is not already in use for this intake.")
+		return
+	}
+	http.Redirect(w, r, "/admin/intake-groups?saved=1", http.StatusSeeOther)
+}
+
+// ── Admin / Class Sessions ─────────────────────────────────────────────────
+
+var sessionTypes = []string{"Scheduled", "Replacement", "Assessment", "Online", "Other"}
+
+type sessionForm struct {
+	ClassID     int64
+	SessionDate string
+	StartTime   string
+	EndTime     string
+	SessionType string
+	Notes       string
+}
+
+type generateForm struct {
+	ClassID     int64
+	StartDate   string
+	EndDate     string
+	StartTime   string
+	EndTime     string
+	SessionType string
+	DaysOfWeek  []int
+}
+
+func (h *Handler) AdminSessions(w http.ResponseWriter, r *http.Request) {
+	classID := parseInt64(r.URL.Query().Get("class_id"))
+
+	classes, err := h.store.ListClasses(r.Context())
+	if err != nil {
+		log.Printf("ListClasses: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+
+	var sessions []store.SessionListRow
+	if classID > 0 {
+		sessions, err = h.store.ListSessionsForClass(r.Context(), classID)
+		if err != nil {
+			log.Printf("ListSessionsForClass: %v", err)
+		}
+	}
+
+	user, _ := auth.Current(r)
+	h.render(w, "admin-sessions", map[string]any{
+		"Classes":      classes,
+		"Sessions":     sessions,
+		"SelectedClass": classID,
+		"SessionTypes": sessionTypes,
+		"SForm":        sessionForm{ClassID: classID, SessionType: "Scheduled"},
+		"GForm":        generateForm{ClassID: classID, SessionType: "Scheduled"},
+		"Error":        "",
+		"Success":      r.URL.Query().Get("saved") == "1",
+		"Generated":    r.URL.Query().Get("generated"),
+		"User":         user,
+	})
+}
+
+func (h *Handler) AdminSessionCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	classID := parseInt64(r.FormValue("class_id"))
+	sessionDate := r.FormValue("session_date")
+	startTime := r.FormValue("start_time")
+	endTime := r.FormValue("end_time")
+	sessionType := r.FormValue("session_type")
+	notes := strings.TrimSpace(r.FormValue("notes"))
+
+	if classID == 0 || sessionDate == "" || startTime == "" || endTime == "" {
+		http.Redirect(w, r, fmt.Sprintf("/admin/sessions?class_id=%d&error=missing", classID), http.StatusSeeOther)
+		return
+	}
+	if sessionType == "" {
+		sessionType = "Scheduled"
+	}
+
+	_, err := h.store.CreateSession(r.Context(), classID, sessionDate, startTime, endTime, sessionType, notes)
+	if err != nil {
+		log.Printf("CreateSession: %v", err)
+		http.Redirect(w, r, fmt.Sprintf("/admin/sessions?class_id=%d&error=db", classID), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/admin/sessions?class_id=%d&saved=1", classID), http.StatusSeeOther)
+}
+
+func (h *Handler) AdminSessionsGenerate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	classID := parseInt64(r.FormValue("class_id"))
+	startDateStr := r.FormValue("start_date")
+	endDateStr := r.FormValue("end_date")
+	startTime := r.FormValue("start_time")
+	endTime := r.FormValue("end_time")
+	sessionType := r.FormValue("session_type")
+	if sessionType == "" {
+		sessionType = "Scheduled"
+	}
+	notes := strings.TrimSpace(r.FormValue("notes"))
+
+	if classID == 0 || startDateStr == "" || endDateStr == "" || startTime == "" || endTime == "" {
+		http.Redirect(w, r, fmt.Sprintf("/admin/sessions?class_id=%d&error=missing", classID), http.StatusSeeOther)
+		return
+	}
+
+	// Parse selected days of week (0=Sun … 6=Sat)
+	selectedDays := map[int]bool{}
+	for _, ds := range r.Form["day_of_week"] {
+		if d, err := strconv.Atoi(ds); err == nil && d >= 0 && d <= 6 {
+			selectedDays[d] = true
+		}
+	}
+	if len(selectedDays) == 0 {
+		http.Redirect(w, r, fmt.Sprintf("/admin/sessions?class_id=%d&error=missing", classID), http.StatusSeeOther)
+		return
+	}
+
+	startDate, err := time.Parse("2006-01-02", startDateStr)
+	endDate, err2 := time.Parse("2006-01-02", endDateStr)
+	if err != nil || err2 != nil || endDate.Before(startDate) {
+		http.Redirect(w, r, fmt.Sprintf("/admin/sessions?class_id=%d&error=dates", classID), http.StatusSeeOther)
+		return
+	}
+
+	var inputs []store.SessionInput
+	for d := startDate; !d.After(endDate); d = d.AddDate(0, 0, 1) {
+		if selectedDays[int(d.Weekday())] {
+			inputs = append(inputs, store.SessionInput{
+				Date:      d.Format("2006-01-02"),
+				StartTime: startTime,
+				EndTime:   endTime,
+				Type:      sessionType,
+				Notes:     notes,
+			})
+		}
+	}
+
+	inserted := 0
+	if len(inputs) > 0 {
+		inserted, err = h.store.BulkCreateSessions(r.Context(), classID, inputs)
+		if err != nil {
+			log.Printf("BulkCreateSessions: %v", err)
+			http.Redirect(w, r, fmt.Sprintf("/admin/sessions?class_id=%d&error=db", classID), http.StatusSeeOther)
+			return
+		}
+	}
+	http.Redirect(w, r, fmt.Sprintf("/admin/sessions?class_id=%d&generated=%d", classID, inserted), http.StatusSeeOther)
+}
+
+func (h *Handler) AdminFaculties(w http.ResponseWriter, r *http.Request) {
+	faculties, err := h.store.ListFaculties(r.Context())
+	if err != nil {
+		log.Printf("ListFaculties: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	user, _ := auth.Current(r)
+	h.render(w, "admin-faculties", map[string]any{
+		"Faculties": faculties,
+		"Error":     "",
+		"Success":   r.URL.Query().Get("saved") == "1",
+		"User":      user,
+	})
+}
+
+func (h *Handler) AdminFacultyCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	user, _ := auth.Current(r)
+	name := strings.TrimSpace(r.FormValue("faculty_name"))
+
+	if name == "" {
+		faculties, _ := h.store.ListFaculties(r.Context())
+		h.render(w, "admin-faculties", map[string]any{
+			"Faculties":   faculties,
+			"Error":       "Faculty name is required.",
+			"FacultyName": name,
+			"User":        user,
+		})
+		return
+	}
+	_, err := h.store.CreateFaculty(r.Context(), name)
+	if err != nil {
+		log.Printf("CreateFaculty: %v", err)
+		faculties, _ := h.store.ListFaculties(r.Context())
+		h.render(w, "admin-faculties", map[string]any{
+			"Faculties":   faculties,
+			"Error":       "Could not save — check the name is not already in use.",
+			"FacultyName": name,
+			"User":        user,
+		})
+		return
+	}
+	http.Redirect(w, r, "/admin/faculties?saved=1", http.StatusSeeOther)
+}
+
+type subjectForm struct {
+	SubjectCode      string
+	SubjectName      string
+	ModuleFlag       string
+	FieldOfEducation string
+	NominalHoursStr  string
+	VetFlag          bool
+	CreditPointsStr  string
+}
+
+func subjectFormFromPost(r *http.Request) subjectForm {
+	return subjectForm{
+		SubjectCode:      strings.TrimSpace(r.FormValue("subject_code")),
+		SubjectName:      strings.TrimSpace(r.FormValue("subject_name")),
+		ModuleFlag:       r.FormValue("module_flag"),
+		FieldOfEducation: strings.TrimSpace(r.FormValue("field_of_education")),
+		NominalHoursStr:  strings.TrimSpace(r.FormValue("nominal_hours")),
+		VetFlag:          r.FormValue("vet_flag") == "on",
+		CreditPointsStr:  strings.TrimSpace(r.FormValue("credit_points")),
+	}
+}
+
+func (h *Handler) AdminSubjects(w http.ResponseWriter, r *http.Request) {
+	subjects, err := h.store.ListSubjects(r.Context())
+	if err != nil {
+		log.Printf("ListSubjects: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	user, _ := auth.Current(r)
+	h.render(w, "admin-subjects", map[string]any{
+		"Subjects": subjects,
+		"Form":     subjectForm{VetFlag: true, ModuleFlag: "N"},
+		"Error":    "",
+		"Success":  r.URL.Query().Get("saved") == "1",
+		"User":     user,
+	})
+}
+
+func (h *Handler) AdminSubjectCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	user, _ := auth.Current(r)
+	f := subjectFormFromPost(r)
+
+	if f.ModuleFlag != "Y" && f.ModuleFlag != "N" {
+		f.ModuleFlag = "N"
+	}
+
+	if f.SubjectCode == "" || f.SubjectName == "" || f.FieldOfEducation == "" {
+		subjects, _ := h.store.ListSubjects(r.Context())
+		h.render(w, "admin-subjects", map[string]any{
+			"Subjects": subjects,
+			"Form":     f,
+			"Error":    "Please fill in all required fields.",
+			"User":     user,
+		})
+		return
+	}
+
+	var nominalHours *int
+	if f.NominalHoursStr != "" {
+		if v, err := strconv.Atoi(f.NominalHoursStr); err == nil && v > 0 {
+			nominalHours = &v
+		}
+	}
+
+	var creditPoints *int
+	if f.CreditPointsStr != "" {
+		if v, err := strconv.Atoi(f.CreditPointsStr); err == nil && v > 0 {
+			creditPoints = &v
+		}
+	}
+
+	_, err := h.store.CreateSubject(r.Context(),
+		f.SubjectCode, f.SubjectName, f.ModuleFlag, f.FieldOfEducation,
+		nominalHours, f.VetFlag, creditPoints)
+	if err != nil {
+		log.Printf("CreateSubject: %v", err)
+		subjects, _ := h.store.ListSubjects(r.Context())
+		h.render(w, "admin-subjects", map[string]any{
+			"Subjects": subjects,
+			"Form":     f,
+			"Error":    "Could not save — check the subject code is not already in use.",
+			"User":     user,
+		})
+		return
+	}
+	http.Redirect(w, r, "/admin/subjects?saved=1", http.StatusSeeOther)
+}
+
+func parseInt64(s string) int64 {
+	v, _ := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+	return v
 }
 
 func parseIDs(vals []string) []int64 {

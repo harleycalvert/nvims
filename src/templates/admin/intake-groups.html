@@ -1,0 +1,113 @@
+{{define "admin-intake-groups"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS-SMS — Intake Groups</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/admin">Administration</a>
+        <h1>Intake Groups</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+  <main>
+    <div class="admin-toolbar">
+      <a class="btn-secondary" href="/admin/programs">← Programs</a>
+      <a class="btn-secondary" href="/admin/classes">Classes</a>
+    </div>
+
+    {{if not .Groups}}
+      <p class="hint">No intake groups on record yet.</p>
+    {{else}}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="td-left">Intake</th>
+            <th>Code</th>
+            <th class="td-left">Group Name</th>
+            <th>Capacity</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Groups}}
+          <tr>
+            <td class="td-left">{{.IntakeName}}</td>
+            <td>{{.GroupCode}}</td>
+            <td class="td-left">{{.GroupName}}</td>
+            <td>—</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{end}}
+
+    <div class="form-section form-section--spaced">
+      <h2 class="form-section-title">Add Intake Group</h2>
+
+      {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
+      {{if .Success}}<p class="form-success">Intake group saved.</p>{{end}}
+
+      {{if not .Intakes}}
+        <p class="hint">No program intakes found. Create program intakes before adding groups.</p>
+      {{else}}
+      <form class="admin-form" method="POST" action="/admin/intake-groups/new">
+        <div class="form-section">
+          <div class="form-row">
+            <div class="form-group form-group-grow">
+              <label>Program Intake <span class="req">*</span></label>
+              <select name="intake_id" required>
+                <option value="">— select intake —</option>
+                {{range .Intakes}}
+                <option value="{{.ID}}"{{if eq $.Form.IntakeID .ID}} selected{{end}}>
+                  {{.IntakeName}} ({{.IntakeCode}})
+                </option>
+                {{end}}
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group fg-160">
+              <label>Group Code <span class="req">*</span></label>
+              <input type="text" name="group_code" value="{{.Form.GroupCode}}"
+                     maxlength="20" placeholder="e.g. A" required>
+            </div>
+            <div class="form-group form-group-grow">
+              <label>Group Name <span class="req">*</span></label>
+              <input type="text" name="group_name" value="{{.Form.GroupName}}"
+                     maxlength="100" placeholder="e.g. Group A" required>
+            </div>
+            <div class="form-group fg-120">
+              <label>Capacity</label>
+              <input type="number" name="capacity" value="{{.Form.CapacityStr}}" min="1">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group form-group-grow">
+              <label>Notes</label>
+              <input type="text" name="notes" value="{{.Form.Notes}}" maxlength="255">
+            </div>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">Add Group</button>
+          <a class="btn-secondary" href="/admin/intake-groups">Reset</a>
+        </div>
+      </form>
+      {{end}}
+    </div>
+  </main>
+</body>
+</html>{{end}}

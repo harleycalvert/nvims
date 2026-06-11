@@ -1,0 +1,141 @@
+{{define "admin-locations"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS-SMS — Delivery Locations</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/admin">Administration</a>
+        <h1>Delivery Locations</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+  <main>
+    <div class="admin-toolbar">
+      <a class="btn-secondary" href="/admin/classes">← Classes</a>
+    </div>
+
+    {{if not .Locations}}
+      <p class="hint">No delivery locations on record yet.</p>
+    {{else}}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="td-left">Name</th>
+            <th class="td-left">Suburb</th>
+            <th>State</th>
+            <th>Postcode</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Locations}}
+          <tr>
+            <td class="td-left">{{.Name}}</td>
+            <td class="td-left">{{.Suburb}}</td>
+            <td>{{.StateCode}}</td>
+            <td>{{.Postcode}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{end}}
+
+    <div class="form-section form-section--spaced">
+      <h2 class="form-section-title">Add Delivery Location</h2>
+
+      {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
+      {{if .Success}}<p class="form-success">Location saved.</p>{{end}}
+
+      {{if not .Orgs}}
+        <p class="hint">No training organisations found — add one before creating a location.</p>
+      {{else}}
+      <form class="admin-form" method="POST" action="/admin/locations/new">
+        <div class="form-section">
+          <h2 class="form-section-title">Organisation</h2>
+          <div class="form-row">
+            <div class="form-group fg-360">
+              <label>Training Organisation <span class="req">*</span></label>
+              <select name="training_org_id" required>
+                <option value="">— select —</option>
+                {{range .Orgs}}
+                <option value="{{.ID}}"{{if eq $.Form.TrainingOrgID .ID}} selected{{end}}>
+                  {{.Name}} ({{.Code}})
+                </option>
+                {{end}}
+              </select>
+            </div>
+            <div class="form-group fg-200">
+              <label>Location ID <span class="req">*</span></label>
+              <input type="text" name="delivery_loc_id" value="{{.Form.LocID}}"
+                     maxlength="30" placeholder="e.g. CAMPUS-DAN" required>
+              <span class="hint">Unique per organisation</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h2 class="form-section-title">Details</h2>
+          <div class="form-row">
+            <div class="form-group form-group-grow">
+              <label>Name <span class="req">*</span></label>
+              <input type="text" name="name" value="{{.Form.Name}}"
+                     maxlength="100" placeholder="e.g. Dandenong Campus" required>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group form-group-grow">
+              <label>Street Address <span class="req">*</span></label>
+              <input type="text" name="address" value="{{.Form.Address}}" required>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group fg-260">
+              <label>Suburb <span class="req">*</span></label>
+              <input type="text" name="suburb" value="{{.Form.Suburb}}" required>
+            </div>
+            <div class="form-group fg-100">
+              <label>State <span class="req">*</span></label>
+              <select name="state_code" required>
+                <option value="">—</option>
+                {{range .States}}
+                <option value="{{.}}"{{if eq $.Form.StateCode .}} selected{{end}}>{{.}}</option>
+                {{end}}
+              </select>
+            </div>
+            <div class="form-group fg-110">
+              <label>Postcode <span class="req">*</span></label>
+              <input type="text" name="postcode" value="{{.Form.Postcode}}"
+                     pattern="[0-9]{4}" maxlength="4" required>
+            </div>
+            <div class="form-group fg-110">
+              <label>Postcode Override</label>
+              <input type="text" name="postcode_override" value="{{.Form.PostcodeOverride}}"
+                     pattern="[0-9]{4}" maxlength="4">
+              <span class="hint">AVETMISS reporting</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">Add Location</button>
+          <a class="btn-secondary" href="/admin/locations">Reset</a>
+        </div>
+      </form>
+      {{end}}
+    </div>
+  </main>
+</body>
+</html>{{end}}

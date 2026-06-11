@@ -1,0 +1,221 @@
+{{define "admin-classes"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS-SMS — Classes</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/admin">Administration</a>
+        <h1>Classes</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+  <main>
+    <div class="admin-toolbar">
+      <a class="btn-secondary" href="/admin/programs">← Programs</a>
+      <a class="btn-secondary" href="/admin/subjects">Subjects</a>
+      <a class="btn-secondary" href="/admin/locations">Locations</a>
+      <a class="btn-secondary" href="/admin/sessions">Sessions</a>
+    </div>
+
+    {{if not .Classes}}
+      <p class="hint">No classes on record yet.</p>
+    {{else}}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Period</th>
+            <th class="td-left">Location</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Classes}}
+          <tr>
+            <td>{{.ClassCode}}</td>
+            <td>{{.PeriodName}}</td>
+            <td class="td-left">{{.LocationName}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{end}}
+
+    <div class="form-section form-section--spaced">
+      <h2 class="form-section-title">Add Class</h2>
+
+      {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
+      {{if .Success}}<p class="form-success">Class saved.</p>{{end}}
+
+      <form class="admin-form" method="POST" action="/admin/classes/new">
+
+        <div class="form-section">
+          <h2 class="form-section-title">Class Details</h2>
+          <div class="form-row">
+            <div class="form-group fg-260">
+              <label>Class Code <span class="req">*</span></label>
+              <input type="text" name="class_code" value="{{.Form.ClassCode}}"
+                     maxlength="80" placeholder="e.g. ICT30120-DA-2025-T1-A" required>
+            </div>
+            <div class="form-group fg-140">
+              <label>Enrolment Cap</label>
+              <input type="number" name="enrolment_cap" value="{{.Form.EnrolmentCapStr}}" min="1">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group fg-260">
+              <label>Academic Period <span class="req">*</span></label>
+              <select name="academic_period_id" required>
+                <option value="">— select period —</option>
+                {{range .Periods}}
+                <option value="{{.ID}}"{{if eq $.Form.AcademicPeriodID .ID}} selected{{end}}>
+                  {{.Year}} — {{.PeriodName}} ({{.PeriodCode}})
+                </option>
+                {{end}}
+              </select>
+            </div>
+            <div class="form-group fg-260">
+              <label>Delivery Location <span class="req">*</span></label>
+              <select name="delivery_location_id" required>
+                <option value="">— select location —</option>
+                {{range .Locations}}
+                <option value="{{.ID}}"{{if eq $.Form.DeliveryLocationID .ID}} selected{{end}}>{{.Name}}</option>
+                {{end}}
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group fg-360">
+              <label>Intake Group</label>
+              <select name="intake_group_id">
+                <option value="">— none —</option>
+                {{range .IntakeGroups}}
+                <option value="{{.ID}}"{{if eq $.Form.IntakeGroupID .ID}} selected{{end}}>
+                  {{.IntakeName}} / {{.GroupName}} ({{.GroupCode}})
+                </option>
+                {{end}}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h2 class="form-section-title">Subjects</h2>
+          {{if not .Subjects}}
+            <p class="hint">No subjects in the database yet.</p>
+          {{else}}
+          <p class="hint">Check subjects this class delivers. Edit the label if needed.</p>
+          <div class="subjects-scroll">
+            <table class="subjects-pick-table">
+              <thead>
+                <tr>
+                  <th class="col-check"></th>
+                  <th class="col-code">Code</th>
+                  <th class="td-left col-name">Name</th>
+                  <th class="td-left col-label">Class Label</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{range .Subjects}}
+                <tr>
+                  <td class="col-check">
+                    <input type="checkbox" name="subject_ids" value="{{.ID}}"
+                           id="subj-{{.ID}}" onchange="toggleLabel(this)">
+                  </td>
+                  <td>
+                    <label for="subj-{{.ID}}">{{.SubjectCode}}</label>
+                  </td>
+                  <td class="td-left">
+                    <label for="subj-{{.ID}}">{{.SubjectName}}</label>
+                  </td>
+                  <td class="td-left">
+                    <input type="hidden" name="subj_name_{{.ID}}" value="{{.SubjectName}}">
+                    <input type="text" name="label_{{.ID}}" value="{{.SubjectName}}"
+                           class="subj-label-input" disabled
+                           placeholder="Label (defaults to subject name)">
+                  </td>
+                </tr>
+                {{end}}
+              </tbody>
+            </table>
+          </div>
+          {{end}}
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">Add Class</button>
+          <a class="btn-secondary" href="/admin/classes">Reset</a>
+        </div>
+
+      </form>
+    </div>
+  </main>
+<style>
+.subjects-scroll {
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  margin-top: 8px;
+}
+.subjects-pick-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.subjects-pick-table thead th {
+  position: sticky;
+  top: 0;
+  background: #f5f5f5;
+  border-bottom: 1px solid #ddd;
+  padding: 6px 8px;
+  font-weight: 600;
+  text-align: center;
+}
+.subjects-pick-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid #f0f0f0;
+  vertical-align: middle;
+}
+.subjects-pick-table tr:last-child td { border-bottom: none; }
+.col-check { width: 32px; text-align: center; }
+.col-code  { width: 130px; }
+.col-name  { }
+.col-label { width: 240px; }
+.subj-label-input {
+  width: 100%;
+  padding: 3px 6px;
+  font-size: 12px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  box-sizing: border-box;
+}
+.subj-label-input:disabled {
+  background: #f5f5f5;
+  color: #aaa;
+  border-color: #e0e0e0;
+}
+</style>
+<script>
+function toggleLabel(cb) {
+  const row = cb.closest('tr');
+  const inp = row.querySelector('.subj-label-input');
+  if (!inp) return;
+  inp.disabled = !cb.checked;
+}
+</script>
+</body>
+</html>{{end}}

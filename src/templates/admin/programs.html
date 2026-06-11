@@ -1,0 +1,163 @@
+{{define "admin-programs"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS-SMS — Programs</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/admin">Administration</a>
+        <h1>Programs</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+  <main>
+    <div class="admin-toolbar">
+      <a class="btn-secondary" href="/admin/periods">Periods</a>
+      <a class="btn-secondary" href="/admin/faculties">Faculties</a>
+      <a class="btn-secondary" href="/admin/intake-groups">Intake Groups</a>
+      <a class="btn-secondary" href="/admin/classes">Classes →</a>
+    </div>
+
+    {{if not .Programs}}
+      <p class="hint">No programs on record yet.</p>
+    {{else}}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th class="td-left">Name</th>
+            <th>Type</th>
+            <th>Faculty</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Programs}}
+          <tr>
+            <td>{{.ProgramCode}}</td>
+            <td class="td-left">{{.ProgramName}}</td>
+            <td>{{.ProgramType}}</td>
+            <td class="td-left">{{.FacultyName}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{end}}
+
+    <div class="form-section form-section--spaced">
+      <h2 class="form-section-title">Add Program</h2>
+
+      {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
+      {{if .Success}}<p class="form-success">Program saved.</p>{{end}}
+
+      <form class="admin-form" method="POST" action="/admin/programs/new">
+
+        <div class="form-section">
+          <h2 class="form-section-title">Identification</h2>
+          <div class="form-row">
+            <div class="form-group fg-160">
+              <label>Program Code <span class="req">*</span></label>
+              <input type="text" name="program_code" value="{{.Form.ProgramCode}}"
+                     maxlength="10" placeholder="e.g. ICT30120" required>
+            </div>
+            <div class="form-group form-group-grow">
+              <label>Program Name <span class="req">*</span></label>
+              <input type="text" name="program_name" value="{{.Form.ProgramName}}"
+                     maxlength="100" required>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group fg-260">
+              <label>Faculty <span class="req">*</span></label>
+              <select name="faculty_id" required>
+                <option value="">— select faculty —</option>
+                {{range .Faculties}}
+                <option value="{{.ID}}"{{if eq $.Form.FacultyID .ID}} selected{{end}}>{{.Name}}</option>
+                {{end}}
+              </select>
+            </div>
+            <div class="form-group fg-200">
+              <label>Program Type</label>
+              <select name="program_type">
+                <option value="">— none —</option>
+                {{range .ProgramTypes}}
+                <option value="{{.}}"{{if eq $.Form.ProgramType .}} selected{{end}}>{{.}}</option>
+                {{end}}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h2 class="form-section-title">AVETMISS Classification</h2>
+          <div class="form-row">
+            <div class="form-group fg-160">
+              <label>Recognition ID <span class="req">*</span></label>
+              <input type="text" name="program_recognition_id" value="{{.Form.ProgramRecognitionID}}"
+                     maxlength="2" placeholder="e.g. 11" required>
+              <span class="hint">2-char AVETMISS code</span>
+            </div>
+            <div class="form-group fg-160">
+              <label>Level of Education <span class="req">*</span></label>
+              <input type="text" name="level_of_education" value="{{.Form.LevelOfEducation}}"
+                     maxlength="3" placeholder="e.g. 514" required>
+              <span class="hint">3-char AVETMISS code</span>
+            </div>
+            <div class="form-group fg-160">
+              <label>Field of Education <span class="req">*</span></label>
+              <input type="text" name="field_of_education" value="{{.Form.FieldOfEducation}}"
+                     maxlength="4" placeholder="e.g. 0299" required>
+              <span class="hint">4-char ASCED code</span>
+            </div>
+            <div class="form-group fg-140">
+              <label>Nominal Hours <span class="req">*</span></label>
+              <input type="number" name="nominal_hours" value="{{.Form.NominalHoursStr}}"
+                     min="0" required>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h2 class="form-section-title">Flags &amp; Level</h2>
+          <div class="form-row">
+            <div class="form-group fg-120">
+              <label>AQF Level</label>
+              <input type="number" name="aqf_level" value="{{.Form.AQFLevelStr}}"
+                     min="1" max="10" placeholder="1–10">
+            </div>
+            <div class="form-group">
+              <label>&nbsp;</label>
+              <div class="checkbox-row">
+                <label class="checkbox-label">
+                  <input type="checkbox" name="vet_flag"{{if .Form.VetFlag}} checked{{end}}> VET
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" name="he_flag"{{if .Form.HeFlag}} checked{{end}}> HE
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">Add Program</button>
+          <a class="btn-secondary" href="/admin/programs">Reset</a>
+        </div>
+
+      </form>
+    </div>
+  </main>
+</body>
+</html>{{end}}
