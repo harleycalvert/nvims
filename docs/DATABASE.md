@@ -52,7 +52,8 @@ mapping to the AVETMISS NAT reporting files.
 
 ## Scope
 
-The schema covers the full SMS lifecycle:
+The schema covers the full SMS lifecycle for a national RTO/TAFE student management
+system, designed for both VET and Higher Education delivery:
 
 - **People & identity** — students, teachers, support staff, guardians, system users.
 - **Curriculum** — qualifications/courses (programs) and units/modules/subjects.
@@ -63,13 +64,19 @@ The schema covers the full SMS lifecycle:
   teacher double-booking prevention, and configurable per-teacher teaching hour caps
   (annual and optionally per-academic-period for HE/DUAL-sector teachers).
 - **Public holidays** — recurrence rules expanded into concrete observances.
-- **Communications** — email/SMS bulk campaigns, per-recipient delivery logs, and teacher-to-recipient direct messages with automatic sender CC.
+- **Communications** — email/SMS bulk campaigns, per-recipient delivery logs, and
+  teacher-to-recipient direct messages with automatic sender CC.
 - **Compliance** — AVETMISS NAT export sources, program completions, and an audit trail.
 - **Workplan** — annual teacher workplan per VTSA 2024 clause 32.4: Teaching Delivery,
   CAPPS, and Education-Related Duties allocations with an approval workflow.
 - **Timesheet** — fortnightly (or other pay-period) hour records auto-populated from
   sessions; submitted for external payroll processing (hours only, no banking or super
   data).
+- **VCM** — annual Vocational Currency Management document per teacher: credentials,
+  professional development activities, vocational and professional currency point records,
+  and a supervisor approval workflow with spider/radar profiling scores.
+- **Employment services** — Centrelink CRN and job seeker details, plus employment
+  provider registration records for DEWR-funded students.
 
 ---
 
@@ -655,6 +662,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `people`
 
+The central identity spine for every person in the system. Stores all personal details — name, preferred name, date of birth, gender, full address, contact information (email, phone, emergency contact), WWCC number and expiry, and photo URL — regardless of the person's role. Every other person-subtype table (`students`, `teachers`, `staff`) uses `people.id` as its own primary key (shared-PK subtyping), so this table owns the surrogate identity and all role-specific data extends from it. Also referenced by `app_users`, `student_guardians`, `delivery_locations`, `training_orgs`, and any table that stores an address or contact.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -699,6 +708,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT chk_postcode_format CHECK (postcode ~ '^[0-9]{4}$')`
 
 #### `students`
+
+Student-specific demographic and AVETMISS compliance data. Extends `people` via a shared PK (`students.id = people.id`), so deleting a `students` row cascades from `people`. Holds the student number, USI, indigenous status, country of birth, language, prior education and disability flags, highest school level, secondary school, and identity document details. Soft-deletable via `deleted_at`/`deleted_by` to preserve AVETMISS reporting history; uniqueness of `student_number` and `student_email` is enforced on active rows only so a returning student is not blocked by a prior soft-deleted record. Referenced by `student_course_enrollments`, `client_subject_enrolments`, `session_attendance`, `student_guardians`, `student_disabilities`, `student_prior_achievements`, and all other student-centric tables.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -749,6 +760,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `teachers`
 
+Teacher-specific employment and capacity data. Extends `people` via a shared PK (`teachers.id = people.id`). Stores the teacher's sector (`VET`/`HE`/`DUAL`), annual teaching hour cap (`default_max_hours_per_year`), optional per-period hour cap for HE/DUAL teachers (`max_hours_per_period`), employment status, police check status and date, and faculty assignment. The hour caps seed `teacher_yearly_balances` and `teacher_period_allocations` for enforcement by triggers. Referenced by `class_slots`, `session_teachers`, `workplans`, `timesheets`, `teacher_vcms`, and `teacher_currency_activities`.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;people |
@@ -777,6 +790,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `staff`
 
+Support and administrative staff. Extends `people` via a shared PK (`staff.id = people.id`). Holds the staff number, staff email, phone, faculty assignment, and police check status/date. Staff appear as assessors on Learning Access Plans (`learning_access_plans.assessor_id`), support workers on classes (`class_support_staff`), recipients of bulk communications (`message_deliveries`), and audit actors (`app_users`).
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;people |
@@ -796,6 +811,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT uq_staff_email UNIQUE (staff_email)`
 
 #### `app_users`
+
+System login accounts and RBAC roles. Each account links to a person via `person_id` (nullable for service accounts). The `role` column drives access control (`Admin`, `Trainer`, `Compliance`, `Reception`, `SupportStaff`, `System`, `Staff`). Every `*_by` audit column in the schema (e.g. `recorded_by`, `submitted_by`, `deleted_by`, `created_by`) references this table, making it the universal audit actor. Also used as the sender identity for `messages` and `message_campaigns`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -817,6 +834,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `teacher_yearly_balances`
 
+Cached running total of booked teaching hours per teacher per calendar year. Maintained automatically by database triggers (`fn_session_teacher_hours`, `fn_session_change_hours`) when session assignments are created, deleted, or time-edited. `allocated_max_hours` is seeded from `teachers.default_max_hours_per_year` and may be overridden per year. A `CHECK` constraint enforces that `booked_hours` never exceeds `allocated_max_hours`. Also referenced by `vw_workplan_summary` to supply actual teaching hours for CAPPS calculations.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -835,6 +854,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT chk_balance_cap CHECK (booked_hours <= allocated_max_hours)`
 
 #### `teacher_period_allocations`
+
+Per-academic-period hour cap and balance for HE/DUAL teachers who have `teachers.max_hours_per_period` set. Auto-created on the first session booking for the period (via `fn_adjust_teacher_period_balance`). Enforces a secondary per-period cap in addition to the annual cap in `teacher_yearly_balances`. VET-only teachers with `max_hours_per_period IS NULL` never have rows here. References `teachers` and `academic_periods`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -857,6 +878,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT chk_tpa_cap CHECK (booked_hours <= allocated_hours)`
 
 #### `student_guardians`
+
+Guardians and emergency contacts for students. Used as communication targets for students under 18 in bulk campaigns (`message_deliveries.guardian_id`) and as recipients for direct messages (`message_recipients.guardian_id`). `is_primary` marks the primary guardian; `is_emergency_contact` marks who to call in an emergency; `receive_comms` controls whether the guardian receives automated communications. References `students`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -881,6 +904,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `student_disabilities`
 
+Student disability declarations required for AVETMISS NAT00090 reporting. A composite-PK many-to-many join between `students` and `disability_types`; a student may declare multiple disabilities. Setting `students.disability_flag = 'Y'` and having rows here are complementary — the flag is the summary indicator; these rows carry the AVETMISS classification codes.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `student_id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;students |
@@ -894,6 +919,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `student_prior_achievements`
 
+Prior educational achievement declarations required for AVETMISS NAT00100 reporting. A composite-PK many-to-many join between `students` and `prior_educational_achievements`; a student may declare multiple prior achievements. Complements `students.prior_educational_achievement_flag`, which is the AVETMISS summary indicator.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `student_id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;students |
@@ -906,6 +933,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT fk_stud_ach_type FOREIGN KEY (achievement_id) REFERENCES public.prior_educational_achievements (achievement_id) ON DELETE RESTRICT`
 
 #### `australian_states`
+
+Reference list of Australian states and territories. Holds the short state code (e.g. `VIC`), full state name, State Training Authority name, and the two-character numeric AVETMISS state identifier (e.g. `04` for SA) used when generating NAT export files. Referenced widely: by `people`, `students`, `delivery_locations`, `training_orgs`, `holiday_rules`, `holiday_observances`, `employer_workplaces`, and `state_funding_details`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -921,6 +950,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `disability_types`
 
+AVETMISS-coded disability classification lookup. Each row is one disability category code and name from the AVETMISS standard. Referenced by `student_disabilities` to classify a student's declared disabilities.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `disability_id` | `varchar(2)` | no |  | PK |
@@ -931,6 +962,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `PRIMARY KEY (disability_id)`
 
 #### `prior_educational_achievements`
+
+AVETMISS-coded prior educational achievement classification lookup. Each row is one achievement category code and name from the AVETMISS standard. Referenced by `student_prior_achievements`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -943,6 +976,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `highest_school_levels`
 
+AVETMISS-coded school completion level classification lookup. Referenced by `students.highest_school_level_id` to record the highest year of secondary schooling the student completed.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `level_id` | `varchar(2)` | no |  | PK |
@@ -953,6 +988,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `PRIMARY KEY (level_id)`
 
 #### `secondary_schools`
+
+Registry of secondary schools that students may have last attended. Referenced by `students.secondary_school_id`. The `national_school_code` field holds the ACARA school identifier where known.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -968,6 +1005,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `faculties`
 
+Organisational units (faculties or departments) within the training organisation. Programs, teachers, and staff are assigned to a faculty for reporting and workload management purposes. Has no further parent; it is a top-level reference table.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -980,6 +1019,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 ### Curriculum
 
 #### `programs`
+
+Qualifications and courses (AVETMISS NAT00030). Each row is a single nationally-recognised or accredited qualification, skill set, or accredited course. Stores the program code, name, ANZSCO/ANZSIC industry codes, AQF level, field of education, nominal hours, VET/HE flags, total credit points (HE), and program type. Subject membership is defined in `subject_programs`. Owned by a faculty. Referenced by `student_course_enrollments`, `program_completions`, `workplan_entries`, `teacher_vcm_courses`, `message_campaigns`, and the NAT00030 export.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1011,6 +1052,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `subjects`
 
+Units of competency, modules, or subjects (AVETMISS NAT00060). Each row is a single deliverable training unit with its national subject code, name, module flag, field of education, nominal hours (VET), and credit points (HE). Subjects belong to one or more programs via `subject_programs` and may also be enrolled as standalone units in `client_subject_enrolments`. Referenced by `class_subjects`, `workplan_entries`, `teacher_vcm_units`, `teacher_currency_unit_links`, `enrollment_credit_claims`, and the NAT00060 export.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -1031,6 +1074,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `subject_programs`
 
+Many-to-many join between `subjects` and `programs` defining which units belong to which qualification. `is_core` flags mandatory units; `group_code`/`group_title` support unit grouping within a qualification (e.g. elective clusters). The same subject may appear in multiple programs; a program contains many subjects. This table is the curriculum packaging layer — it does not record enrolment or delivery.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `subject_id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;subjects |
@@ -1048,6 +1093,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 ### Enrolment & extensions
 
 #### `student_course_enrollments`
+
+Program-level enrolment record — one row per student per qualification attempt. Records commencement and completion dates, enrollment status, funding state, and optional apprenticeship/traineeship contract identifiers. Anchor for all subject-level enrolments (`client_subject_enrolments.student_course_enrollment_id`) and for enrolment extensions (apprenticeship details, training plans, VSL, HE details, etc.). Soft-deletable to preserve AVETMISS reporting history; a partial unique index prevents two active enrolments in the same program. Referenced by all extension tables and by `state_funding_details`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1078,6 +1125,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `UNIQUE INDEX idx_uq_active_course_enrollment (student_id, program_id) WHERE (enrollment_status IN ('Active', 'Deferred', 'Suspended'))`
 
 #### `client_subject_enrolments`
+
+Subject-level training activity record (AVETMISS NAT00120) — the key operational table for attendance and results tracking. One row per student per subject delivery. `student_course_enrollment_id` is nullable to allow standalone unit enrolments independent of a program. Stores scheduled hours, delivery mode, funding source, national outcome code, optional grade/mark, result status, and finalisation audit fields. The result status (`In Progress` → `Draft` → `Under Review` → `Finalised`) models the result publication workflow. `class_enrollments` links these rows to specific timetabled classes; `session_attendance` is populated for enrolled students via that mapping.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1136,6 +1185,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `apprenticeship_details`
 
+Apprenticeship contract extension for a program enrolment (1:1 shared PK with `student_course_enrollments`). Records the employer, specific workplace, AASN provider, DELTA registration number, TYIMS number, school-based flag, and the sequence of training-plan signature dates. References `employers`, `employer_workplaces`, and `aasn_providers`.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `student_course_enrollment_id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;student_course_enrollments |
@@ -1161,6 +1212,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `traineeship_details`
 
+Traineeship extension for a program enrolment (1:1 shared PK with `student_course_enrollments`). Records worker classification (New Worker or Existing Worker), probation start/end dates, probation clearance status, and STA-approved extension details if the traineeship was extended.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `student_course_enrollment_id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;student_course_enrollments |
@@ -1181,6 +1234,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT chk_extension_logic CHECK ( (has_approved_extension = false) OR (has_approved_extension = true AND extension_approved_date IS NOT NULL AND extension_revised_end_date IS NOT NULL) )`
 
 #### `training_plans`
+
+Training plan extension for a program enrolment (1:1 via unique FK to `student_course_enrollments`). Records the drafted, student-signed, RTO-signed, and fully-executed dates for the formalised training plan document, plus any review date and delivery strategy notes.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1203,6 +1258,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT uq_training_plan_enrollment UNIQUE (student_course_enrollment_id)`
 
 #### `learning_access_plans`
+
+Disability and learning adjustment plans for students. Records the disability type codes declared, required adjustments, resources provided, student consent, and assessing staff member. May be linked to a specific program enrolment or be student-wide (when `student_course_enrollment_id IS NULL`). Progresses through Draft → Active → Under Review → Closed. References `students`, `student_course_enrollments`, and `staff`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1230,6 +1287,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `vet_student_loans`
 
+VET Student Loan (VSL) or VET-FEE-HELP records per census date, linked to a program enrolment. Multiple rows per enrolment are permitted (one per census date). Records the loan type, census date, loan amount, and re-credit details if the loan was refunded. References `student_course_enrollments`.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -1251,6 +1310,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT chk_vsl_amount CHECK (loan_amount >= 0)`
 
 #### `he_enrolment_details`
+
+Higher Education enrolment details extension (1:1 shared PK with `student_course_enrollments`). Records EFTSL, census date, HECS-HELP eligibility, fee type, study load category, mode of attendance, basis for admission, and credit points enrolled. `academic_period_id` links the HE enrolment to the specific semester or trimester.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1278,6 +1339,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `enrollment_credit_claims`
 
+RPL and credit transfer grants within a program enrolment. Each row grants credit for one subject within the enrolment, recording the claim type (RPL or Credit Transfer), grant date, nominal hours deducted, tuition fee adjustment, and evidence document reference. The unique constraint prevents duplicate claims for the same subject within the same enrolment.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -1298,6 +1361,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `state_funding_details`
 
+State-specific funding attributes stored as a flexible `jsonb` payload, keyed by enrolment and state. Captures Skills First (VIC), Smart & Skilled (NSW), or other jurisdiction-specific funding fields without requiring schema changes for each state program. The unique constraint ensures at most one funding record per enrolment per state.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -1315,6 +1380,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 ### RTO infrastructure
 
 #### `training_orgs`
+
+The Registered Training Organisation (AVETMISS NAT00010). Typically a single row per database instance identifying the RTO with its national RTO number, name, type, address, logo URL, and contact details. Referenced by `delivery_locations`, `program_completions`, `avetmiss_submissions`, and the NAT00010 export.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1341,6 +1408,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `delivery_locations`
 
+Campus or delivery site locations (AVETMISS NAT00020). Each location belongs to a `training_org` and has its own NAT delivery location ID, name, and address. Referenced by `classes` (where training is delivered) and `client_subject_enrolments` (where a unit was delivered). Parent of `buildings` → `rooms`.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -1363,6 +1432,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `buildings`
 
+Physical buildings within a delivery location. Groups rooms for timetabling. References `delivery_locations`; parent of `rooms`.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -1376,6 +1447,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT fk_building_parent FOREIGN KEY (delivery_location_id) REFERENCES delivery_locations (id) ON DELETE CASCADE`
 
 #### `rooms`
+
+Classrooms and other spaces within a building. Each room has a capacity, type (Classroom, Lab, Workshop, etc.), and active flag. Referenced by `class_slots` and `class_sessions` for double-booking prevention via exclusion constraints.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1395,6 +1468,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `employers`
 
+Organisations that employ apprentices or trainees. Identified by ABN. Referenced by `apprenticeship_details` via `employer_workplaces`. Parent of `employer_workplaces`.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -1412,6 +1487,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT chk_abn_length CHECK (abn ~ '^[0-9]{11}$')`
 
 #### `employer_workplaces`
+
+Individual workplace sites within an employer's business. The specific workplace is recorded on each `apprenticeship_details` row to identify where an apprentice is working. References `employers` and `australian_states`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1432,6 +1509,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `aasn_providers`
 
+Australian Apprenticeship Support Network providers. Referenced by `apprenticeship_details.aasn_provider_id` to record the AASN body managing the apprenticeship contract.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -1447,6 +1526,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 ### Timetabling
 
 #### `academic_periods`
+
+Terms, semesters, trimesters, years, blocks, or rolling periods with calendar date ranges. The structural container for classes and the scope reference for class slot exclusion constraints (teacher/room double-booking is scoped per period). `period_type` supports `TERM`, `SEMESTER`, `TRIMESTER`, `YEAR`, `BLOCK` (6–8 week intensive), and `ROLLING` (monthly intake). `sequence_number` orders periods within a year for display. Inserting a new academic period triggers `fn_materialise_holidays_for_period` to auto-expand holiday rules for that year.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1471,6 +1552,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `classes`
 
+A delivery instance of a program within an academic period at a delivery location. The central timetabling entity: all of `class_subjects`, `class_enrollments`, `class_slots`, `class_sessions`, `class_support_staff`, and `class_exceptions` attach to a class. `enrolment_cap` optionally limits enrolment. References `academic_periods` and `delivery_locations`. Also targeted by `message_campaigns` for class-level bulk communications.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -1491,6 +1574,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `class_subjects`
 
+Which subjects a class delivers. A class may deliver one or more subjects simultaneously; a subject may be taught across multiple classes. `subject_label` is a display-override for the subject name in the context of this class. References `classes` and `subjects`. Used by the attendance register to list subjects students are attending.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `class_id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;classes |
@@ -1504,6 +1589,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT fk_cl_subject FOREIGN KEY (subject_id) REFERENCES subjects (id) ON DELETE CASCADE`
 
 #### `class_enrollments`
+
+Bridge between the enrolment chain and the timetabling chain. Maps a student's subject enrolment (`client_subject_enrolments`) to a specific class so the student appears on that class's attendance register. `session_attendance` rows are populated for students who have a `class_enrollment` in a class when sessions are taken. References `classes` and `client_subject_enrolments`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1520,6 +1607,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT fk_ce_subject_enrolment FOREIGN KEY (client_subject_enrolment_id) REFERENCES client_subject_enrolments (id) ON DELETE CASCADE`
 
 #### `class_slots`
+
+Recurring weekly template entries for a class. Each row defines one regular teaching slot by weekday, start/end time, assigned teacher, optional room, and the academic period it belongs to. Exclusion constraints on `(academic_period_id, teacher_id, day_of_week, timerange)` and `(academic_period_id, room_id, day_of_week, timerange)` prevent teacher and room double-booking within the same period. Expanded into concrete `class_sessions` by calling `fn_generate_sessions`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1545,6 +1634,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT fk_cs_room FOREIGN KEY (room_id) REFERENCES rooms (id) ON DELETE SET NULL`
 
 #### `class_sessions`
+
+Concrete dated teaching sessions — the authoritative source of truth for teaching hours, attendance, workload, and payroll. Each row carries the actual date, start/end time, room, session type, cancelled flag, and cancel reason. Teacher hour balances (`teacher_yearly_balances`, `teacher_period_allocations`) and timesheet entries are derived from this table via triggers, not from the `class_slots` template. Referenced by `session_teachers`, `session_attendance`, `workplan_entries`, and `timesheet_entries`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1572,6 +1663,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `session_teachers`
 
+Teachers assigned to a session and their role on that session (Lead, Support, Guest, Assessor). Non-Guest roles trigger hour accrual in both `teacher_yearly_balances` and `teacher_period_allocations` via the `fn_session_teacher_hours` trigger. Supports team teaching (multiple non-guest teachers per session each accrue hours). References `class_sessions` and `teachers`.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `session_id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;class_sessions |
@@ -1586,6 +1679,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT chk_session_teacher_role CHECK (role IN ('Lead', 'Support', 'Guest', 'Assessor'))`
 
 #### `session_attendance`
+
+Per-student attendance record for a session. One row per student per session; the unique constraint on `(session_id, student_id)` enforces this. Stores the attendance status, minutes attended, arrival/departure times, break duration, absence reason and acceptability, childcare flag, and optional private notes. The extended fields (arrived_at, departed_at, break_minutes, has_childcare, etc.) support the detailed attendance dialog in the web application. References `class_sessions`, `students`, and `app_users` (recorder).
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1620,6 +1715,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `class_support_staff`
 
+Support staff assigned to a class, optionally scoped to a single student for 1:1 support arrangements. `student_id IS NULL` means class-wide; a non-null `student_id` restricts the assignment to one student (enforced by a partial unique index). Roles include Interpreter, Aide, Note-Taker, Counsellor, Support, and Other. References `classes`, `staff`, and optionally `students`.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -1640,6 +1737,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `class_exceptions`
 
+Per-class no-class dates that `fn_generate_sessions` skips when expanding slots into sessions. Used for class-specific cancellation dates (e.g. excursions, assessment days) beyond the public holidays handled by `holiday_observances`. References `classes`.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -1656,6 +1755,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 ### Holidays
 
 #### `holiday_rules`
+
+Recurrence rule definitions for public holidays. Supports four recurrence types: `ONCE` (fixed single date), `ANNUAL_FIXED` (same day/month each year), `ANNUAL_NTH_DOW` (nth weekday of a month, e.g. second Monday in June), and `ANNUAL_EASTER_OFFSET` (days before/after Easter Sunday). Rules may be state-scoped (`state_code`) or national (`state_code IS NULL`). Expanded into `holiday_observances` by `fn_materialise_holidays`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1681,6 +1782,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `holiday_observances`
 
+Concrete dated holiday entries consumed by `fn_generate_sessions` to skip sessions on public holidays. Populated automatically by `fn_materialise_holidays` when a new academic period is inserted, or manually for one-off dates (where `rule_id IS NULL`). The unique index on `(holiday_date, COALESCE(state_code, '*'), holiday_name)` prevents duplicates.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | yes |  | PK |
@@ -1697,6 +1800,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 ### Communications
 
 #### `message_templates`
+
+Reusable email or SMS content templates. Each template has a unique name, channel (`Email`, `SMS`, or `Both`), optional subject line, HTML body, and plain-text body. Used as the content source when creating a `message_campaign`; the campaign copies the resolved content at creation time so subsequent template edits don't alter sent campaigns.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1718,6 +1823,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT chk_template_channel CHECK (channel IN ('Email', 'SMS', 'Both'))`
 
 #### `message_campaigns`
+
+A bulk send to an audience segment. Stores the resolved message content (copied from the template at creation time), sender identity, audience type (Individual, Class, Program, Cohort, Broadcast, or Guardian), optional class or program targeting, schedule, and send status. Fans out into `message_deliveries` — one row per recipient. References `message_templates`, `app_users`, `classes`, and `programs`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1748,6 +1855,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT chk_campaign_status CHECK (status IN ('Draft', 'Scheduled', 'Sending', 'Sent', 'Failed', 'Cancelled'))`
 
 #### `message_deliveries`
+
+Per-recipient delivery log for a bulk campaign. Exactly one of `student_id`, `guardian_id`, or `staff_id` is non-null (enforced by `num_nonnulls = 1`). Tracks the channel used, address sent to, provider message ID, and per-recipient delivery status (Pending → Sent → Delivered or Failed/Bounced/OptedOut). References `message_campaigns` and the recipient relation.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1780,6 +1889,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `messages`
 
+Individual direct messages composed by a teacher (not bulk campaigns). Progresses through Draft → Sent → Failed. When status transitions to `Sent`, the trigger `trg_cc_sender_on_send` automatically inserts a sender CC row in `message_recipients`. References `app_users` as the sender.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -1801,6 +1912,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT chk_msg_status CHECK (status IN ('Draft', 'Sent', 'Failed'))`
 
 #### `message_recipients`
+
+Per-recipient delivery row for a direct `messages` record. Exactly one of four recipient FKs is non-null (`student_id`, `guardian_id`, `staff_id`, or `teacher_id`; enforced by `num_nonnulls = 1`). `is_cc = true` marks the auto-inserted sender copy added by the trigger. Tracks delivery status, provider message ID, `delivered_at`, and `read_at` for read receipts. References `messages` and the recipient relation.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1837,6 +1950,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `program_completions`
 
+Formal qualification completion and certificate issuance records (AVETMISS NAT00130). One row per student per program (unique constraint). Records the completion date, whether a certificate has been issued (`issued_flag`), and the parchment number once issued. References `students`, `programs`, and `training_orgs`.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -1857,6 +1972,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT fk_pc_program FOREIGN KEY (program_id) REFERENCES programs (id) ON DELETE RESTRICT`
 
 #### `student_progress_reports`
+
+References to externally-stored student progress report documents (e.g. PDFs in cloud storage). `document_url` points to the file; `keywords` (text array) enables tag-based filtering and search. Optionally linked to a specific program enrolment. References `students`, `student_course_enrollments`, and `app_users` (uploader).
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1879,6 +1996,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `student_notes`
 
+Timestamped, typed staff notes on a student — the primary free-text annotation mechanism. Multiple notes per student are allowed. `note_type` categorises the note (General, Pastoral, Academic, Financial, Compliance, LAP, Incident, Communication). `is_private` restricts visibility to the creating user. References `students` and `app_users` (creator, non-null, ON DELETE RESTRICT to preserve authorship).
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -1899,6 +2018,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT chk_note_type CHECK (note_type IN ('General', 'Pastoral', 'Academic', 'Financial', 'Compliance', 'LAP', 'Incident', 'Communication'))`
 
 #### `avetmiss_submissions`
+
+Audit log of AVETMISS NAT collection submissions to the STA/NCVER. Each row records the RTO, reporting year, collection type (Annual, Quarterly, or Activity), submission date, submitting user, and status. `nat_file_paths` is a `jsonb` map of NAT file codes to their storage paths, preserving a record of exactly which file versions were submitted. References `training_orgs` and `app_users`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1923,6 +2044,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `audit_log`
 
+Append-only change trail written by the `fn_audit` trigger for all audited tables. Each row captures the table name, affected record ID, action (`INSERT`/`UPDATE`/`DELETE`), actor (`app_users.id` read from `app.current_user_id` session variable), timestamp, and old/new row data as `jsonb`. Never updated or deleted — the schema and application treat this as an immutable log.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -1943,6 +2066,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 ### Workplan
 
 #### `workplans`
+
+Annual VTSA 2024 clause 32.4 workplan per teacher per calendar year, versioned to allow amendments. Stores the teacher's FTE fraction (`time_fraction`), CAPPS ratio, total contracted hours (`accountable_hours_required`), and agreed overtime. Progresses through Draft → Submitted → Approved. `vw_workplan_summary` joins this table against `workplan_entries` and `teacher_yearly_balances` to compute planned vs actual hour comparisons. References `teachers` and `app_users`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1974,6 +2099,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `workplan_approvals`
 
+Approval step records for a workplan. One row per `approval_role` per workplan (unique constraint); roles are `Teacher` (self-sign) and `LineManager` (manager sign-off). The unique constraint prevents double-approvals for the same role. References `workplans` and `app_users` (approver).
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -1992,6 +2119,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT chk_wa_role CHECK (approval_role IN ('Teacher', 'LineManager'))`
 
 #### `workplan_entries`
+
+Line items on a workplan, categorised as `Teaching Delivery`, `CAPPS`, or `Education Related Duties`. Session-linked entries have a non-null `class_session_id` and `activity_start_date`; manually-entered blocks have those fields NULL. Used by `vw_workplan_summary` to compute planned totals per category. Optional FKs to `subjects`, `programs`, and `academic_periods` provide context for each line item. Referenced by `timesheet_entries.workplan_entry_id` for plan/actual reconciliation.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -2025,6 +2154,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `pay_periods`
 
+Administrator-defined pay periods (fortnightly by default). Each period has a unique start date, end date, human-readable name (e.g. `FN01 2026`), and calendar year. Seeded by an administrator before timesheet generation; no overlapping periods are permitted. Referenced by `timesheets` and `teacher_period_allocations`.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -2041,6 +2172,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT chk_pp_dates CHECK (period_end > period_start)`
 
 #### `timesheets`
+
+One timesheet per teacher per pay period (unique constraint). Aggregates teaching, CAPPS, ERD, and other hours for payroll export. Hours only — no pay rates, banking, or super data. Progresses through Draft → Submitted → Approved → Exported; `chk_ts_export` enforces that `export_format` is set whenever `exported_at` is. `vw_timesheet_summary` provides pre-aggregated totals by category. References `teachers`, `pay_periods`, and `app_users` (submitted/approved by).
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -2071,6 +2204,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `timesheet_entries`
 
+Individual hour-line items on a timesheet, dated by day. Session-linked Teaching Delivery entries (`class_session_id` non-null) are auto-populated by the application from `class_sessions` within the pay period. CAPPS entries are derived from total teaching hours × `workplans.capps_ratio`. ERD and Other entries are manually added. The optional `workplan_entry_id` FK enables plan/actual reconciliation without requiring the link to always be present.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -2097,6 +2232,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `student_employment_services`
 
+Centrelink and employment service details for a student (1:1 shared PK with `students`). Records the student's Centrelink CRN, job seeker ID, participation hours, and participation type. The shared PK means one row at most per student. Parent of `student_employment_registrations`.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `student_id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;students |
@@ -2115,6 +2252,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT chk_ses_participation_type CHECK (participation_type IS NULL OR participation_type IN ('Full-Time','Part-Time'))`
 
 #### `student_employment_registrations`
+
+Employment provider registrations for a student (e.g. jobactive, DES, NDIS Employment). Multiple rows per student are permitted — one per provider registration. Stores the provider name, registration number, start/end dates, status, and notes. References `student_employment_services` via the student ID.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -2138,6 +2277,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 ### VCM
 
 #### `teacher_vcms`
+
+Annual Vocational Currency Management document per teacher, versioned to allow amendments. Acts as the root container for all VCM sub-records (professional qualifications, courses, units, profiling scores) for that teacher and year. Progresses through Draft → Submitted → Approved → Rejected. Records the assigned supervisor and approver. References `teachers` and `app_users`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -2165,6 +2306,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `teacher_vcm_professional_qualifications`
 
+Teacher's own credentials declared in a VCM: TAE qualification, degrees, industry certifications, registrations. Each row is one qualification with its code, title, institution, and approval status (Draft → Pending → Approved → Rejected). Linked to evidence documents via `teacher_document_connections`. References `teacher_vcms`.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -2185,6 +2328,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `teacher_vcm_courses`
 
+Courses the teacher is mapping to deliver in a VCM. Optionally linked to a `programs` record; stores the course code and title for display (allowing free-text where no matching program exists). Container for `teacher_vcm_units`. `sort_order` controls display sequence. References `teacher_vcms` and optionally `programs`.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -2202,6 +2347,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT fk_vcmc_program FOREIGN KEY (program_id) REFERENCES public.programs(id) ON DELETE SET NULL`
 
 #### `teacher_vcm_units`
+
+Units the teacher has currency for within a VCM. Each row records the unit code and title, competency method (one of five defined methods), an optional superseded equivalent unit, description, justification text, and approval status. Multiple rows are allowed per unit (e.g. different competency methods). May be grouped under a `teacher_vcm_courses` row or be standalone. Optionally linked to `subjects` for cross-referencing with the curriculum catalogue.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -2233,6 +2380,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `teacher_documents`
 
+Per-teacher document library: testamurs, transcripts, accreditations, registrations, licences, job cards, and other evidence files. Each row stores the document title, category, optional year, file URL in cloud storage, and original filename. Documents are linked to specific VCM entities via `teacher_document_connections`. References `teachers`.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -2253,6 +2402,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `teacher_document_connections`
 
+Links a teacher document to exactly one VCM entity: a professional qualification, a VCM unit, or a currency activity. The `num_nonnulls(vcm_professional_qual_id, vcm_unit_id, vcm_currency_activity_id) = 1` constraint enforces the single-target rule — one document connection always points to exactly one entity. References `teacher_documents` and the target entity.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -2271,6 +2422,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT chk_tdc_target CHECK (num_nonnulls(vcm_professional_qual_id, vcm_unit_id, vcm_currency_activity_id) = 1)`
 
 #### `teacher_currency_activities`
+
+Vocational and professional currency point records. Each row is one activity (workshop, conference, industry work experience, professional program, etc.) with its type, date, hours, points awarded, approval status, and reflective text fields (`inform_teaching_practice`, `student_benefit`). Professional-currency-specific fields (`domain_name`, `program_type`, `program_name`, etc.) are nullable columns on the same table, avoiding a separate subtype table. Linked to related subjects via `teacher_currency_unit_links` and to evidence documents via `teacher_document_connections`. References `teachers`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -2307,6 +2460,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `teacher_currency_unit_links`
 
+Many-to-many join between currency activities and the subjects they contribute currency for. `unit_code` is always populated; `subject_id` is an optional FK to `subjects` set when the unit exists in the curriculum catalogue (allowing the link even for units not yet in the system). The unique constraint on `(currency_activity_id, unit_code)` prevents duplicate links.
+
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
@@ -2323,6 +2478,8 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 - `CONSTRAINT fk_tcul_subject FOREIGN KEY (subject_id) REFERENCES public.subjects(id) ON DELETE SET NULL`
 
 #### `teacher_vcm_profiling`
+
+Spider/radar-chart dimension scores for a VCM. Composite PK on `(vcm_id, dimension)` allows multiple profiling dimensions per VCM. Each row holds self, supervisor, and business-ideal scores for one dimension, supporting three-way comparison displays. References `teacher_vcms`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
