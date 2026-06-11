@@ -4,14 +4,14 @@
 {{else}}
   <label for="group-select">Group</label>
   <select id="group-select"
-    name="group_code"
+    name="group_id"
     hx-get="/classes"
     hx-trigger="change"
     hx-target="#classes-panel"
-    hx-include="#period-select, #program-select, this">
+    hx-include="#period-select, this">
     <option value="">— select group —</option>
     {{range .Groups}}
-    <option value="{{.GroupCode}}">{{.GroupCode}}</option>
+    <option value="{{.ID}}">{{.GroupCode}} — {{.GroupName}}</option>
     {{end}}
   </select>
 {{end}}

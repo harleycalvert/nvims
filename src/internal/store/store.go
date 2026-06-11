@@ -29,14 +29,15 @@ type Program struct {
 }
 
 type Group struct {
+	ID        int64
 	GroupCode string
+	GroupName string
 }
 
 type Class struct {
-	ID          int64
-	ClassCode   string
-	SubjectCode string
-	SubjectName string
+	ID        int64
+	ClassCode string
+	Label     string // comma-joined subject codes for this cluster
 }
 
 type Session struct {
@@ -127,13 +128,12 @@ func (s *Store) ProgramsForPeriod(ctx context.Context, periodID int64) ([]Progra
 
 func (s *Store) GroupsForProgram(ctx context.Context, periodID, programID int64) ([]Group, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT DISTINCT c.group_code
-		FROM public.classes c
-		JOIN public.class_subjects cs ON cs.class_id = c.id
-		JOIN public.subject_programs sp ON sp.subject_id = cs.subject_id
-		WHERE c.academic_period_id = $1 AND sp.program_id = $2
-		  AND c.group_code IS NOT NULL
-		ORDER BY c.group_code
+		SELECT DISTINCT ig.id, ig.group_code, ig.group_name
+		FROM public.intake_groups ig
+		JOIN public.program_intakes pi ON pi.id = ig.intake_id
+		JOIN public.classes c ON c.intake_group_id = ig.id
+		WHERE c.academic_period_id = $1 AND pi.program_id = $2
+		ORDER BY ig.group_code
 	`, periodID, programID)
 	if err != nil {
 		return nil, err
@@ -143,7 +143,7 @@ func (s *Store) GroupsForProgram(ctx context.Context, periodID, programID int64)
 	var out []Group
 	for rows.Next() {
 		var g Group
-		if err := rows.Scan(&g.GroupCode); err != nil {
+		if err := rows.Scan(&g.ID, &g.GroupCode, &g.GroupName); err != nil {
 			return nil, err
 		}
 		out = append(out, g)
@@ -151,16 +151,17 @@ func (s *Store) GroupsForProgram(ctx context.Context, periodID, programID int64)
 	return out, rows.Err()
 }
 
-func (s *Store) ClassesForGroup(ctx context.Context, periodID, programID int64, groupCode string) ([]Class, error) {
+func (s *Store) ClassesForGroup(ctx context.Context, periodID, groupID int64) ([]Class, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT c.id, c.class_code, s.subject_code, s.subject_name
+		SELECT c.id, c.class_code,
+		       string_agg(s.subject_code, ', ' ORDER BY s.subject_code) AS label
 		FROM public.classes c
 		JOIN public.class_subjects cs ON cs.class_id = c.id
 		JOIN public.subjects s ON s.id = cs.subject_id
-		JOIN public.subject_programs sp ON sp.subject_id = cs.subject_id
-		WHERE c.academic_period_id = $1 AND sp.program_id = $2 AND c.group_code = $3
-		ORDER BY s.subject_name
-	`, periodID, programID, groupCode)
+		WHERE c.academic_period_id = $1 AND c.intake_group_id = $2
+		GROUP BY c.id, c.class_code
+		ORDER BY c.class_code
+	`, periodID, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +170,7 @@ func (s *Store) ClassesForGroup(ctx context.Context, periodID, programID int64, 
 	var out []Class
 	for rows.Next() {
 		var c Class
-		if err := rows.Scan(&c.ID, &c.ClassCode, &c.SubjectCode, &c.SubjectName); err != nil {
+		if err := rows.Scan(&c.ID, &c.ClassCode, &c.Label); err != nil {
 			return nil, err
 		}
 		out = append(out, c)

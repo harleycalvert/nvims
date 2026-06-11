@@ -1,6 +1,9 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.21, 2026-06-11
+-- AVETMISS-compliant SMS schema  --  version 0.22, 2026-06-11
 -- =========================================================================
+-- Changes from v0.21:
+--   1.  program_intakes.intake_name widened varchar(100) → varchar(150) to
+--       accommodate long program names with a term suffix appended.
 -- Changes from v0.20:
 --   1.  duration_years numeric(3,1) added to program_intakes — the calendar
 --       duration of the program in years (e.g. 1.0, 1.5, 2.0). Nullable so
@@ -616,7 +619,7 @@ CREATE TABLE IF NOT EXISTS public.program_intakes (
     id                       bigserial      NOT NULL,
     program_id               bigint         NOT NULL,
     intake_code              varchar(30)    NOT NULL,           -- e.g. 'ICT30120-2025-T1-FT'
-    intake_name              varchar(100)   NOT NULL,           -- e.g. 'Cert III IT — 2025 Term 1 Full-time'
+    intake_name              varchar(150)   NOT NULL,           -- e.g. 'Cert III IT — 2025 Term 1 Full-time'
     start_academic_period_id bigint         NOT NULL,           -- academic period this intake begins
     delivery_location_id     bigint         NOT NULL,
     faculty_id               bigint         NULL,

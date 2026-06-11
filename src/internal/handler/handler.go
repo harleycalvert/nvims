@@ -198,17 +198,16 @@ func (h *Handler) Groups(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) Classes(w http.ResponseWriter, r *http.Request) {
 	periodID, err := strconv.ParseInt(r.URL.Query().Get("period_id"), 10, 64)
-	programID, err2 := strconv.ParseInt(r.URL.Query().Get("program_id"), 10, 64)
-	groupCode := r.URL.Query().Get("group_code")
-	if err != nil || err2 != nil || periodID == 0 || programID == 0 || groupCode == "" {
+	groupID, err2 := strconv.ParseInt(r.URL.Query().Get("group_id"), 10, 64)
+	if err != nil || err2 != nil || periodID == 0 || groupID == 0 {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(`<p class="hint">Select a group to see its classes.</p>`))
 		return
 	}
 
-	classes, err := h.store.ClassesForGroup(r.Context(), periodID, programID, groupCode)
+	classes, err := h.store.ClassesForGroup(r.Context(), periodID, groupID)
 	if err != nil {
-		log.Printf("ClassesForGroup(%d,%d,%s): %v", periodID, programID, groupCode, err)
+		log.Printf("ClassesForGroup(%d,%d): %v", periodID, groupID, err)
 		http.Error(w, "database error", http.StatusInternalServerError)
 		return
 	}

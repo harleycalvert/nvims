@@ -1153,7 +1153,7 @@ A scheduled offering of a program — the concrete instance of when, where, and 
 | `id` | `bigserial` | no |  | PK |
 | `program_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;programs |
 | `intake_code` | `varchar(30)` | no |  | UK |
-| `intake_name` | `varchar(100)` | no |  |  |
+| `intake_name` | `varchar(150)` | no |  |  |
 | `start_academic_period_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;academic_periods |
 | `delivery_location_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;delivery_locations |
 | `faculty_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;faculties |
@@ -2865,4 +2865,4 @@ periodically.
 
 ---
 
-*Generated from `v0.21` (2026-06-11).*
+*Generated from `v0.22` (2026-06-11).*

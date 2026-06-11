@@ -159,12 +159,13 @@ table tbody tr:nth-child(even) td {
 }
 
 /* td overrides must beat even-row striping (higher specificity via !important) */
-td.att-present  { background: #d4edda !important; color: #155724; }
-td.att-online   { background: #cce5ff !important; color: #004085; }
-td.att-notified { background: #fff3cd !important; color: #856404; }
-td.att-excused  { background: #e2d9f3 !important; color: #4a235a; }
-td.att-absent   { background: #f8d7da !important; color: #721c24; }
-td.att-none     { background: #f5f5f5 !important; color: #aaa; }
+/* ── Attendance status (spans in legend/popup) ────────────── */
+td.att-present, .att-present, .btn-att-present    { background: #d4edda !important; color: #155724; }
+td.att-online, .att-online, .btn-att-online       { background: #cce5ff !important; color: #004085; }
+td.att-notified, .att-notified, .btn-att-notified { background: #fff3cd !important; color: #856404; }
+td.att-excused, .att-excused,.btn-att-excused     { background: #e2d9f3 !important; color: #4a235a; }
+td.att-absent, .att-absent, .btn-att-absent       { background: #f8d7da !important; color: #721c24; }
+td.att-none, .att-none,  .btn-att-none            { background: #e0e0e0 !important; color: #888; }
 
 table tbody tr:hover td {
   background: #eef3fb !important;
@@ -187,14 +188,6 @@ table tbody tr:hover td {
   font-weight: 400;
 }
 
-/* ── Attendance status (spans in legend/popup) ────────────── */
-.att-present  { background: #d4edda; color: #155724; }
-.att-online   { background: #cce5ff; color: #004085; }
-.att-notified { background: #fff3cd; color: #856404; }
-.att-excused  { background: #e2d9f3; color: #4a235a; }
-.att-absent   { background: #f8d7da; color: #721c24; }
-.att-none     { background: #f5f5f5; color: #aaa; }
-
 td.att-cell { cursor: pointer; }
 
 td.att-cell:focus,
@@ -214,12 +207,6 @@ td.col-name:focus {
   cursor: pointer;
 }
 
-.btn-att-present  { background: #155724; color: #fff; }
-.btn-att-online   { background: #004085; color: #fff; }
-.btn-att-notified { background: #856404; color: #fff; }
-.btn-att-excused  { background: #4a235a; color: #fff; }
-.btn-att-absent   { background: #721c24; color: #fff; }
-
 /* ── Legend ───────────────────────────────────────────────── */
 .legend {
   align-items: center;
@@ -232,11 +219,17 @@ td.col-name:focus {
 .legend_text {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
   margin-top: 12px;
   flex-wrap: wrap;
   font-size: 12px;
   color: #555;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 /* ── Results table ────────────────────────────────────────── */
@@ -263,21 +256,17 @@ td.res-cell-empty {
   cursor: default;
 }
 
-/* Used on span elements in legend/popup */
-.res-sc-pub   { background: #155724; color: #fff; }
-.res-sc-unpub { background: #d4edda; color: #155724; }
-.res-ns-pub   { background: #721c24; color: #fff; }
-.res-ns-unpub { background: #f8d7da; color: #721c24; }
-.res-ip       { background: #fff3cd; color: #856404; }
-.res-none     { background: #f5f5f5; color: #999; }
-
 /* td overrides must beat even-row striping (higher specificity via !important) */
-td.res-sc-pub   { background: #155724 !important; color: #fff; }
-td.res-sc-unpub { background: #d4edda !important; color: #155724; }
-td.res-ns-pub   { background: #721c24 !important; color: #fff; }
-td.res-ns-unpub { background: #f8d7da !important; color: #721c24; }
-td.res-ip       { background: #fff3cd !important; color: #856404; }
-td.res-none     { background: #f5f5f5 !important; color: #999; }
+/* Used on span elements in legend/popup */
+/* Published: richer pastel  |  Unpublished: soft pastel */
+/* ── Competency colors (dots + bar segments) ──────────────── */
+.res-sc-pub, td.res-sc-pub, .sp-comp-c, .publish-sc-btn, .btn-sc { background: #9ecfac; color: #155724; }
+.res-sc-unpub, td.res-sc-unpub                                     { background: #d4edda; color: #155724; }
+.res-ns-pub, td.res-ns-pub, .sp-comp-nc, .btn-ns                   { background: #f0a3a9; color: #721c24; }
+.res-ns-unpub, td.res-ns-unpub, .sp-comp-nys                       { background: #f8d7da; color: #721c24; }
+.res-ip, td.res-ip, .sp-comp-ip, .btn-ip                           { background: #fff3cd; color: #856404; }
+.res-none, td.res-none, .btn-clear                                  { background: #e0e0e0; color: #888; }
+
 
 /* ── Publish SC column button ─────────────────────────────── */
 .publish-sc-btn {
@@ -286,8 +275,6 @@ td.res-none     { background: #f5f5f5 !important; color: #999; }
   padding: 2px 6px;
   font-size: 10px;
   font-weight: 600;
-  background: #e8f0fe;
-  color: #1a4480;
   border: 1px solid #c5d7f7;
   border-radius: 3px;
   cursor: pointer;
@@ -365,10 +352,8 @@ td.res-none     { background: #f5f5f5 !important; color: #999; }
   text-align: right;
 }
 
-.btn-sc {
+.btn-sc, .btn-ns, .btn-ip {
   padding: 6px 14px;
-  background: #155724;
-  color: #fff;
   border: none;
   border-radius: 4px;
   font-size: 13px;
@@ -376,45 +361,17 @@ td.res-none     { background: #f5f5f5 !important; color: #999; }
   cursor: pointer;
 }
 
-.btn-sc:hover { background: #0f3d19; }
-
-.btn-ns {
-  padding: 6px 14px;
-  background: #721c24;
-  color: #fff;
-  border: none;
-  border-radius: 4px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.btn-ns:hover { background: #4f1319; }
-
-.btn-ip {
-  padding: 6px 14px;
-  background: #856404;
-  color: #fff;
-  border: none;
-  border-radius: 4px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.btn-ip:hover { background: #5e4700; }
+.btn-sc:hover, .btn-ns:hover, .btn-ip:hover { filter: brightness(0.90); }
 
 .btn-clear {
   padding: 6px 12px;
-  background: #f5f5f5;
-  color: #555;
   border: 1px solid #ccc;
   border-radius: 4px;
   font-size: 13px;
   cursor: pointer;
 }
 
-.btn-clear:hover { background: #e8e8e8; }
+.btn-clear:hover { filter: brightness(0.95); }
 
 .btn-publish {
   padding: 6px 14px;
@@ -530,16 +487,20 @@ td.res-none     { background: #f5f5f5 !important; color: #999; }
 
 .sp-charts {
   display: flex;
-  flex-direction: column;
-  gap: 14px;
+  flex-direction: row;
+  gap: 12px;
   margin-left: auto;
-  min-width: 240px;
+  flex-wrap: wrap;
 }
 
 .sp-chart-block {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  background: #f5f5f5;
+  border-radius: 6px;
+  padding: 10px 14px;
+  min-width: 200px;
 }
 
 .sp-chart-title {
@@ -564,25 +525,20 @@ td.res-none     { background: #f5f5f5 !important; color: #999; }
 
 /* ── Legend ───────────────────────────────────────────────── */
 .sp-legend {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  gap: 4px 6px;
+  align-items: center;
   font-size: 11px;
   color: #444;
 }
 
 .sp-dot {
-  display: inline-block;
+  display: block;
   width: 10px;
   height: 10px;
   border-radius: 2px;
-  margin-right: 5px;
-  vertical-align: middle;
   flex-shrink: 0;
 }
 
-/* ── Competency colors (dots + bar segments) ──────────────── */
-.sp-comp-c   { background: #4a7c59; }
-.sp-comp-nc  { background: #c0534f; }
-.sp-comp-ip  { background: #7db3d5; }
-.sp-comp-nys { background: #d0d0d0; }
+
