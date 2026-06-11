@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -276,6 +278,7 @@ func (s *Store) AttendanceGrid(ctx context.Context, classIDs []int64) ([]Session
 
 type AuthUser struct {
 	ID           int64
+	PersonID     int64
 	Username     string
 	FullName     string
 	Role         string
@@ -285,12 +288,12 @@ type AuthUser struct {
 func (s *Store) GetUserByUsername(ctx context.Context, username string) (AuthUser, error) {
 	var u AuthUser
 	err := s.pool.QueryRow(ctx, `
-		SELECT u.id, u.username, u.role, u.password_hash,
+		SELECT u.id, COALESCE(u.person_id, 0), u.username, u.role, u.password_hash,
 		       COALESCE(p.first_given_name || ' ' || p.family_name, u.username)
 		FROM public.app_users u
 		LEFT JOIN public.people p ON p.id = u.person_id
 		WHERE u.username = $1 AND u.is_active = true
-	`, username).Scan(&u.ID, &u.Username, &u.Role, &u.PasswordHash, &u.FullName)
+	`, username).Scan(&u.ID, &u.PersonID, &u.Username, &u.Role, &u.PasswordHash, &u.FullName)
 	return u, err
 }
 
@@ -1011,6 +1014,107 @@ type SessionInput struct {
 	EndTime   string // HH:MM
 	Type      string
 	Notes     string
+}
+
+// ── Timetable ──────────────────────────────────────────────────────────────
+
+type TimetableFilters struct {
+	StaffID   int64
+	StudentID int64
+}
+
+type TimetableSession struct {
+	ID           int64
+	ClassID      int64
+	ClassCode    string
+	SessionDate  time.Time
+	StartTime    time.Time
+	EndTime      time.Time
+	SessionType  string
+	LocationName string
+	Teachers     string
+	ProgramCode  string
+	GroupInfo    string
+	SubjectCodes string
+}
+
+func (s *Store) TimetableRange(ctx context.Context, start, end time.Time, f TimetableFilters) ([]TimetableSession, error) {
+	var extraJoins []string
+	var extraWheres []string
+	args := []any{start, end}
+
+	add := func(v int64) string {
+		args = append(args, v)
+		return fmt.Sprintf("$%d", len(args))
+	}
+
+	if f.StaffID > 0 {
+		extraJoins = append(extraJoins, "JOIN public.session_teachers _st2 ON _st2.session_id = cs.id")
+		extraWheres = append(extraWheres, "_st2.teacher_id = "+add(f.StaffID))
+	}
+
+	if f.StudentID > 0 {
+		extraJoins = append(extraJoins, `JOIN public.class_enrollments _ce ON _ce.class_id = c.id
+			JOIN public.client_subject_enrolments _cse ON _cse.id = _ce.client_subject_enrolment_id`)
+		extraWheres = append(extraWheres, "_cse.student_id = "+add(f.StudentID))
+	}
+
+	joinSQL := strings.Join(extraJoins, "\n")
+	whereSQL := ""
+	if len(extraWheres) > 0 {
+		whereSQL = "AND " + strings.Join(extraWheres, "\n  AND ")
+	}
+
+	q := fmt.Sprintf(`
+		SELECT cs.id, c.id, c.class_code,
+		       cs.session_date, cs.start_time, cs.end_time, cs.session_type,
+		       dl.name,
+		       COALESCE(string_agg(
+		           p.family_name || ', ' || p.first_given_name,
+		           ' · ' ORDER BY p.family_name, p.first_given_name
+		       ), ''),
+		       COALESCE(prog.program_code, ''),
+		       COALESCE(ig.group_code, '') || ' ' || COALESCE(ig.group_name, ''),
+		       (SELECT COALESCE(string_agg(subj.subject_code, ' · ' ORDER BY subj.subject_code), '')
+		        FROM public.class_subjects _cs3
+		        JOIN public.subjects subj ON subj.id = _cs3.subject_id
+		        WHERE _cs3.class_id = c.id)
+		FROM public.class_sessions cs
+		JOIN public.classes c ON c.id = cs.class_id
+		JOIN public.delivery_locations dl ON dl.id = c.delivery_location_id
+		LEFT JOIN public.intake_groups ig ON ig.id = c.intake_group_id
+		LEFT JOIN public.program_intakes pi ON pi.id = ig.intake_id
+		LEFT JOIN public.programs prog ON prog.id = pi.program_id
+		LEFT JOIN public.session_teachers st ON st.session_id = cs.id
+		LEFT JOIN public.teachers t  ON t.id = st.teacher_id
+		LEFT JOIN public.people   p  ON p.id = t.id
+		%s
+		WHERE cs.session_date >= $1 AND cs.session_date < $2
+		  AND NOT cs.cancelled
+		  %s
+		GROUP BY cs.id, c.id, c.class_code,
+		         cs.session_date, cs.start_time, cs.end_time, cs.session_type, dl.name,
+		         prog.program_code, ig.group_code, ig.group_name
+		ORDER BY cs.session_date, cs.start_time, c.class_code
+	`, joinSQL, whereSQL)
+
+	rows, err := s.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TimetableSession
+	for rows.Next() {
+		var ts TimetableSession
+		if err := rows.Scan(&ts.ID, &ts.ClassID, &ts.ClassCode,
+			&ts.SessionDate, &ts.StartTime, &ts.EndTime, &ts.SessionType,
+			&ts.LocationName, &ts.Teachers,
+			&ts.ProgramCode, &ts.GroupInfo, &ts.SubjectCodes); err != nil {
+			return nil, err
+		}
+		out = append(out, ts)
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) ListPeriods(ctx context.Context) ([]PeriodListRow, error) {

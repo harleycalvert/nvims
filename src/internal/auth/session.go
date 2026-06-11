@@ -15,6 +15,7 @@ const sessionTTL = 8 * time.Hour
 // User holds the data stored in a session (read from app_users at login).
 type User struct {
 	ID       int64
+	PersonID int64 // app_users.person_id — 0 if no linked person record
 	Username string
 	FullName string
 	Role     string

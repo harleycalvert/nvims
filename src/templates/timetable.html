@@ -1,0 +1,279 @@
+{{define "timetable"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS-SMS — Timetable</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/timetable.css">
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/">NVIMS-SMS</a>
+        <h1>Timetable</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- Toolbar: views | navigation | date picker | weekends | scope toggle -->
+    <div class="tt-toolbar">
+
+      <div class="tt-views">
+        <a href="{{.WeekViewURL}}"  class="tt-view-btn{{if eq .View "week"}} active{{end}}" data-navlink>Week</a>
+        <a href="{{.ListViewURL}}"  class="tt-view-btn{{if eq .View "list"}} active{{end}}" data-navlink>List</a>
+        <a href="{{.MonthViewURL}}" class="tt-view-btn{{if eq .View "month"}} active{{end}}" data-navlink>Month</a>
+      </div>
+
+      <div class="tt-nav">
+        <a class="tt-nav-btn" href="{{.PrevURL}}" data-navlink>&#8592;</a>
+        <span class="tt-nav-label">{{.PeriodLabel}}</span>
+        <a class="tt-nav-btn tt-nav-today" href="{{.TodayURL}}" data-navlink>Today</a>
+        <a class="tt-nav-btn" href="{{.NextURL}}" data-navlink>&#8594;</a>
+      </div>
+
+      <input type="date" id="tt-datepicker" class="tt-datepicker" value="{{.CurrentDateISO}}">
+
+      {{if ne .View "month"}}
+      <a href="{{.HideWeekendsURL}}" class="tt-ctrl-btn{{if .HideWeekends}} active{{end}}" data-navlink>Weekdays only</a>
+      {{end}}
+
+      {{if .IsDefault}}<a href="{{.ShowAllURL}}" class="tt-ctrl-btn" data-navlink>Show all</a>{{end}}
+      {{if .IsShowAll}}<a href="{{.MySessionsURL}}" class="tt-ctrl-btn active" data-navlink>My sessions</a>{{end}}
+
+    </div>
+
+    <!-- Search bar -->
+    <div class="tt-searchbar">
+      <select id="tt-search-type" class="tt-search-type">
+        <option value="classes">Classes</option>
+        <option value="staff">Staff</option>
+        <option value="programs">Programs</option>
+        <option value="subjects">Subjects</option>
+        <option value="rooms">Rooms</option>
+        <option value="groups">Groups</option>
+      </select>
+      <input type="text" id="tt-search" class="tt-search-input" placeholder="Search…" autocomplete="off">
+    </div>
+
+    <!-- ── Week view ─────────────────────────────────────────── -->
+    {{if eq .View "week"}}
+    <div class="tt-week{{if .HideWeekends}} tt-week-5{{end}}">
+      {{range .Days}}
+      <div class="tt-day{{if .IsToday}} tt-day-today{{end}}">
+        <div class="tt-day-header">
+          <span class="tt-day-name">{{.DayName}}</span>
+          <span class="tt-day-date">{{.DayLabel}}</span>
+        </div>
+        <div class="tt-day-body">
+          {{if not .Sessions}}
+          <p class="tt-empty">—</p>
+          {{else}}
+          {{range .Sessions}}
+          <div class="tt-session {{sessionTypeClass .SessionType}}"
+               data-teachers="{{.Teachers}}"
+               data-program="{{.ProgramCode}}"
+               data-class="{{.ClassCode}}"
+               data-subjects="{{.SubjectCodes}}"
+               data-location="{{.LocationName}}"
+               data-group="{{.GroupInfo}}">
+            <div class="tt-session-time">{{timeShort .StartTime}}–{{timeShort .EndTime}}</div>
+            <div class="tt-session-class">{{.ClassCode}}</div>
+            {{if .LocationName}}<div class="tt-session-meta">{{.LocationName}}</div>{{end}}
+            {{if .Teachers}}<div class="tt-session-meta">{{.Teachers}}</div>{{end}}
+            {{if ne .SessionType "Scheduled"}}<span class="tt-session-type">{{.SessionType}}</span>{{end}}
+          </div>
+          {{end}}
+          <p class="tt-filter-empty" hidden>No matches</p>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+    </div>
+    {{end}}
+
+    <!-- ── List view ─────────────────────────────────────────── -->
+    {{if eq .View "list"}}
+    {{if not .Sessions}}
+    <p class="tt-no-sessions">No sessions this week.</p>
+    {{else}}
+    <div class="table-wrap">
+      <table class="tt-list">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Day</th>
+            <th>Time</th>
+            <th>Class</th>
+            <th>Location</th>
+            <th>Teachers</th>
+            <th>Type</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Sessions}}
+          <tr data-teachers="{{.Teachers}}"
+              data-program="{{.ProgramCode}}"
+              data-class="{{.ClassCode}}"
+              data-subjects="{{.SubjectCodes}}"
+              data-location="{{.LocationName}}"
+              data-group="{{.GroupInfo}}">
+            <td>{{dateShort .SessionDate}}</td>
+            <td>{{dateFull .SessionDate | printf "%.3s"}}</td>
+            <td class="tt-list-time">{{timeShort .StartTime}}–{{timeShort .EndTime}}</td>
+            <td class="tt-list-class">{{.ClassCode}}</td>
+            <td>{{.LocationName}}</td>
+            <td>{{.Teachers}}</td>
+            <td><span class="tt-type-badge {{sessionTypeClass .SessionType}}">{{.SessionType}}</span></td>
+          </tr>
+          {{end}}
+          <tr class="tt-filter-empty" hidden>
+            <td colspan="7" style="text-align:center;color:#888;padding:16px">No matches</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    {{end}}
+    {{end}}
+
+    <!-- ── Month view ────────────────────────────────────────── -->
+    {{if eq .View "month"}}
+    <div class="tt-month">
+      <div class="tt-month-hdr">
+        <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div>
+        <div>Fri</div><div>Sat</div><div>Sun</div>
+      </div>
+      {{range .MonthGrid}}
+      <div class="tt-month-row">
+        {{range .}}
+        <div class="tt-month-cell{{if not .IsThisMonth}} tt-cell-other{{end}}{{if .IsToday}} tt-cell-today{{end}}">
+          <div class="tt-cell-num">{{.DayNum}}</div>
+          <div class="tt-cell-sessions">
+            {{range $i, $s := .Sessions}}
+              {{if lt $i 3}}
+              <div class="tt-chip {{sessionTypeClass $s.SessionType}}"
+                   data-teachers="{{$s.Teachers}}"
+                   data-program="{{$s.ProgramCode}}"
+                   data-class="{{$s.ClassCode}}"
+                   data-subjects="{{$s.SubjectCodes}}"
+                   data-location="{{$s.LocationName}}"
+                   data-group="{{$s.GroupInfo}}">{{timeShort $s.StartTime}} {{$s.ClassCode}}</div>
+              {{end}}
+            {{end}}
+            {{if gt (len .Sessions) 3}}
+            <div class="tt-chip-more">+{{sub (len .Sessions) 3}} more</div>
+            {{end}}
+          </div>
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+    </div>
+    {{end}}
+
+  </main>
+
+  <script>
+  (function() {
+    const typeEl   = document.getElementById('tt-search-type');
+    const searchEl = document.getElementById('tt-search');
+
+    // Restore search state from URL on load.
+    (function initFromURL() {
+      const p = new URLSearchParams(window.location.search);
+      const t = p.get('search_type');
+      const q = p.get('q');
+      if (t) typeEl.value = t;
+      if (q) searchEl.value = q;
+    })();
+
+    const ATTR = {
+      staff:    'teachers',
+      programs: 'program',
+      classes:  'class',
+      subjects: 'subjects',
+      rooms:    'location',
+      groups:   'group',
+    };
+
+    function applyFilter() {
+      const q    = searchEl.value.toLowerCase().trim();
+      const attr = ATTR[typeEl.value] || 'class';
+
+      // Show/hide individual session cards.
+      document.querySelectorAll('[data-class]').forEach(function(el) {
+        el.hidden = q ? !(el.dataset[attr] || '').toLowerCase().includes(q) : false;
+      });
+
+      // Update "no matches" indicators in week view day columns.
+      document.querySelectorAll('.tt-day-body').forEach(function(body) {
+        const cards = Array.from(body.querySelectorAll('[data-class]'));
+        const emptyEl = body.querySelector('.tt-filter-empty');
+        if (!emptyEl || cards.length === 0) return;
+        emptyEl.hidden = !q || cards.some(function(c) { return !c.hidden; });
+      });
+
+      // Update "no matches" row in list view.
+      const listEmpty = document.querySelector('tr.tt-filter-empty');
+      if (listEmpty) {
+        const rows = Array.from(document.querySelectorAll('tr[data-class]'));
+        listEmpty.hidden = !q || rows.some(function(r) { return !r.hidden; });
+      }
+
+      // Propagate search state into all navigation links.
+      document.querySelectorAll('[data-navlink]').forEach(function(a) {
+        try {
+          const url = new URL(a.href, window.location.origin);
+          url.searchParams.delete('search_type');
+          url.searchParams.delete('q');
+          if (q) {
+            url.searchParams.set('search_type', typeEl.value);
+            url.searchParams.set('q', searchEl.value.trim());
+          }
+          a.href = url.toString();
+        } catch(e) {}
+      });
+    }
+
+    searchEl.addEventListener('input', applyFilter);
+    typeEl.addEventListener('change', function() { applyFilter(); searchEl.focus(); });
+
+    // Apply filter on load if URL had search params.
+    if (searchEl.value) applyFilter();
+
+    // Date picker navigation.
+    document.getElementById('tt-datepicker').addEventListener('change', function() {
+      const date = this.value;
+      if (!date) return;
+      const params = new URLSearchParams(window.location.search);
+      const view = params.get('view') || 'week';
+      if (view === 'month') {
+        params.set('month', date.substring(0, 7));
+        params.delete('week');
+      } else {
+        params.set('week', date);
+        params.delete('month');
+      }
+      // Preserve current search state.
+      const q = searchEl.value.trim();
+      if (q) {
+        params.set('search_type', typeEl.value);
+        params.set('q', q);
+      } else {
+        params.delete('search_type');
+        params.delete('q');
+      }
+      window.location.href = '/timetable?' + params.toString();
+    });
+  })();
+  </script>
+</body>
+</html>{{end}}

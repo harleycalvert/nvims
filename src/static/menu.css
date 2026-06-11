@@ -32,6 +32,7 @@
   flex-shrink: 0;
 }
 
+.menu-accent-teal   { background: #0a7a7a; }
 .menu-accent-blue   { background: #1a4480; }
 .menu-accent-green  { background: #155724; }
 .menu-accent-purple { background: #4a235a; }

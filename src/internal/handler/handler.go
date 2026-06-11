@@ -89,6 +89,16 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 	}
 
 	funcs["dateISO"] = func(t time.Time) string { return t.Format("2006-01-02") }
+	funcs["sub"] = func(a, b int) int { return a - b }
+	funcs["sessionTypeClass"] = func(t string) string {
+		switch t {
+		case "Assessment":  return "sess-assessment"
+		case "Online":      return "sess-online"
+		case "Replacement": return "sess-replacement"
+		case "Other":       return "sess-other"
+		default:            return "sess-scheduled"
+		}
+	}
 
 	tmpl := template.Must(
 		template.New("").Funcs(funcs).ParseFiles(
@@ -108,6 +118,7 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 			"templates/admin/classes.html",
 			"templates/admin/faculties.html",
 			"templates/admin/subjects.html",
+			"templates/timetable.html",
 			"templates/admin/periods.html",
 			"templates/admin/locations.html",
 			"templates/admin/intake-groups.html",
@@ -155,7 +166,7 @@ func (h *Handler) LoginPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.store.UpdateLastLogin(r.Context(), u.ID)
-	h.sessions.Create(w, auth.User{ID: u.ID, Username: u.Username, FullName: u.FullName, Role: u.Role})
+	h.sessions.Create(w, auth.User{ID: u.ID, PersonID: u.PersonID, Username: u.Username, FullName: u.FullName, Role: u.Role})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -282,6 +293,226 @@ func (h *Handler) SetAttendance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.render(w, "att-cell", cell)
+}
+
+func (h *Handler) Timetable(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	q := r.URL.Query()
+
+	// ── view / display controls ───────────────────────────────────────────
+	view := q.Get("view")
+	switch view {
+	case "list", "month":
+	default:
+		view = "week"
+	}
+	hideWeekends := q.Get("hide_weekends") == "1"
+
+	showAll := q.Get("all") == "1"
+
+	tf := store.TimetableFilters{}
+
+	// ── role-based default: show only own sessions unless overridden ───────
+	isDefault := false
+	canToggleScope := (user.Role == "teacher" || user.Role == "student") && user.PersonID > 0
+	if !showAll && canToggleScope {
+		switch user.Role {
+		case "teacher":
+			tf.StaffID = user.PersonID
+			isDefault = true
+		case "student":
+			tf.StudentID = user.PersonID
+			isDefault = true
+		}
+	}
+
+	// ── reference date ────────────────────────────────────────────────────
+	today := normaliseDay("")
+	todayISO := today.Format("2006-01-02")
+
+	var refDate time.Time
+	if ms := q.Get("month"); ms != "" {
+		if mt, err := time.Parse("2006-01", ms); err == nil {
+			refDate = time.Date(mt.Year(), mt.Month(), 1, 0, 0, 0, 0, time.UTC)
+		}
+	}
+	if refDate.IsZero() {
+		refDate = normaliseDay(q.Get("week"))
+	}
+	weekStart := mondayOf(refDate)
+	monthStart := time.Date(refDate.Year(), refDate.Month(), 1, 0, 0, 0, 0, time.UTC)
+	weekISO  := weekStart.Format("2006-01-02")
+	monthISO := monthStart.Format("2006-01")
+
+	// ── URL suffix helpers ────────────────────────────────────────────────
+	hwPart := ""
+	if hideWeekends {
+		hwPart = "&hide_weekends=1"
+	}
+	allPart := ""
+	if showAll {
+		allPart = "&all=1"
+	}
+	extras := hwPart + allPart
+
+	hwToggle := "&hide_weekends=1"
+	if hideWeekends {
+		hwToggle = ""
+	}
+
+	showAllURL    := fmt.Sprintf("/timetable?view=%s&week=%s%s&all=1", view, weekISO, hwPart)
+	mySessionsURL := fmt.Sprintf("/timetable?view=%s&week=%s%s", view, weekISO, hwPart)
+	if view == "month" {
+		showAllURL    = fmt.Sprintf("/timetable?view=month&month=%s%s&all=1", monthISO, hwPart)
+		mySessionsURL = fmt.Sprintf("/timetable?view=month&month=%s%s", monthISO, hwPart)
+	}
+
+	// ── assemble common template data ─────────────────────────────────────
+	data := map[string]any{
+		"User":           user,
+		"View":           view,
+		"HideWeekends":   hideWeekends,
+		"TodayISO":       todayISO,
+		"IsDefault":      isDefault,
+		"IsShowAll":      showAll && canToggleScope,
+		"CanToggleScope": canToggleScope,
+		"ShowAllURL":     showAllURL,
+		"MySessionsURL":  mySessionsURL,
+		"WeekViewURL":    fmt.Sprintf("/timetable?view=week&week=%s%s", weekISO, extras),
+		"ListViewURL":    fmt.Sprintf("/timetable?view=list&week=%s%s", weekISO, extras),
+		"MonthViewURL":   fmt.Sprintf("/timetable?view=month&month=%s%s", monthISO, extras),
+		"CurrentWeekISO":  weekISO,
+		"CurrentMonthISO": monthISO,
+	}
+
+	// ── month view ────────────────────────────────────────────────────────
+	if view == "month" {
+		lastDay  := monthStart.AddDate(0, 1, 0).AddDate(0, 0, -1)
+		gridStart := monthStart.AddDate(0, 0, -((int(monthStart.Weekday())+6)%7))
+		gridEnd  := lastDay.AddDate(0, 0, (7-int(lastDay.Weekday()))%7).AddDate(0, 0, 1)
+
+		sessions, err := h.store.TimetableRange(r.Context(), gridStart, gridEnd, tf)
+		if err != nil {
+			log.Printf("TimetableRange: %v", err)
+			http.Error(w, "database error", http.StatusInternalServerError)
+			return
+		}
+		byDay := make(map[string][]store.TimetableSession)
+		for _, s := range sessions {
+			k := s.SessionDate.Format("2006-01-02")
+			byDay[k] = append(byDay[k], s)
+		}
+
+		type monthCell struct {
+			ISO         string
+			DayNum      int
+			IsThisMonth bool
+			IsToday     bool
+			Sessions    []store.TimetableSession
+		}
+		var monthGrid [][]monthCell
+		for d := gridStart; d.Before(gridEnd); d = d.AddDate(0, 0, 7) {
+			var row []monthCell
+			for i := 0; i < 7; i++ {
+				day := d.AddDate(0, 0, i)
+				iso := day.Format("2006-01-02")
+				row = append(row, monthCell{
+					ISO:         iso,
+					DayNum:      day.Day(),
+					IsThisMonth: day.Month() == monthStart.Month(),
+					IsToday:     iso == todayISO,
+					Sessions:    byDay[iso],
+				})
+			}
+			monthGrid = append(monthGrid, row)
+		}
+
+		prevM := monthStart.AddDate(0, -1, 0)
+		nextM := monthStart.AddDate(0, 1, 0)
+		data["PeriodLabel"]    = monthStart.Format("January 2006")
+		data["PrevURL"]        = fmt.Sprintf("/timetable?view=month&month=%s%s", prevM.Format("2006-01"), extras)
+		data["NextURL"]        = fmt.Sprintf("/timetable?view=month&month=%s%s", nextM.Format("2006-01"), extras)
+		data["TodayURL"]       = fmt.Sprintf("/timetable?view=month&month=%s%s", today.Format("2006-01"), extras)
+		data["MonthGrid"]      = monthGrid
+		data["CurrentDateISO"] = monthStart.Format("2006-01-02")
+
+	// ── week / list view ──────────────────────────────────────────────────
+	} else {
+		sessions, err := h.store.TimetableRange(r.Context(), weekStart, weekStart.AddDate(0, 0, 7), tf)
+		if err != nil {
+			log.Printf("TimetableRange: %v", err)
+			http.Error(w, "database error", http.StatusInternalServerError)
+			return
+		}
+		byDay := make(map[string][]store.TimetableSession)
+		for _, s := range sessions {
+			k := s.SessionDate.Format("2006-01-02")
+			byDay[k] = append(byDay[k], s)
+		}
+
+		type ttDay struct {
+			ISO       string
+			DayName   string
+			DayLabel  string
+			IsToday   bool
+			IsWeekend bool
+			Sessions  []store.TimetableSession
+		}
+		allDays := make([]ttDay, 7)
+		for i := 0; i < 7; i++ {
+			d := weekStart.AddDate(0, 0, i)
+			wd := d.Weekday()
+			iso := d.Format("2006-01-02")
+			allDays[i] = ttDay{
+				ISO:       iso,
+				DayName:   d.Format("Monday"),
+				DayLabel:  d.Format("2 Jan"),
+				IsToday:   iso == todayISO,
+				IsWeekend: wd == time.Saturday || wd == time.Sunday,
+				Sessions:  byDay[iso],
+			}
+		}
+		displayDays := allDays[:]
+		if hideWeekends {
+			displayDays = allDays[:5]
+		}
+
+		weekEnd := weekStart.AddDate(0, 0, 6)
+		data["PeriodLabel"]    = weekStart.Format("2 Jan") + " – " + weekEnd.Format("2 Jan 2006")
+		data["PrevURL"]        = fmt.Sprintf("/timetable?view=%s&week=%s%s", view, weekStart.AddDate(0, 0, -7).Format("2006-01-02"), extras)
+		data["NextURL"]        = fmt.Sprintf("/timetable?view=%s&week=%s%s", view, weekStart.AddDate(0, 0, 7).Format("2006-01-02"), extras)
+		data["TodayURL"]       = fmt.Sprintf("/timetable?view=%s&week=%s%s", view, mondayOf(today).Format("2006-01-02"), extras)
+		data["HideWeekendsURL"] = fmt.Sprintf("/timetable?view=%s&week=%s%s%s", view, weekISO, hwToggle, allPart)
+		data["Days"]           = displayDays
+		data["CurrentDateISO"] = weekISO
+
+		if view == "list" {
+			var listSessions []store.TimetableSession
+			for _, d := range allDays {
+				listSessions = append(listSessions, d.Sessions...)
+			}
+			data["Sessions"] = listSessions
+		}
+	}
+
+	h.render(w, "timetable", data)
+}
+
+// normaliseDay parses a YYYY-MM-DD string (or uses today) and returns UTC midnight.
+func normaliseDay(s string) time.Time {
+	if s != "" {
+		if t, err := time.Parse("2006-01-02", s); err == nil {
+			return t.UTC()
+		}
+	}
+	n := time.Now().UTC()
+	return time.Date(n.Year(), n.Month(), n.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+// mondayOf returns midnight-UTC of the Monday of the week containing t.
+func mondayOf(t time.Time) time.Time {
+	offset := (int(t.Weekday()) + 6) % 7 // Mon=0 … Sun=6
+	return t.AddDate(0, 0, -offset)
 }
 
 func (h *Handler) Results(w http.ResponseWriter, r *http.Request) {
