@@ -1,6 +1,12 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.23, 2026-06-11
+-- AVETMISS-compliant SMS schema  --  version 0.24, 2026-06-11
 -- =========================================================================
+-- Changes from v0.23:
+--   1.  police_check_status / police_check_date moved from teachers and staff
+--       to people. Any person (student, teacher, staff, guardian) may be subject
+--       to a police check; storing it on people avoids duplication across role
+--       tables and is consistent with the existing wwcc_number / wwcc_expiry
+--       pattern.
 -- Changes from v0.22:
 --   1.  program_intakes gains graded_assessment boolean NOT NULL DEFAULT false.
 --       When true, the results UI requires a grade value (e.g. P, CR, D, HD)
@@ -29,11 +35,10 @@
 --   1.  people gains wwcc_number text and wwcc_expiry date for Working with
 --       Children Check details. Any person (student, teacher, staff) may hold
 --       a WWCC card; storing it on people avoids duplication across role tables.
---   2.  teachers gains police_check_status text and police_check_date date.
---       Typical values: 'Pending', 'Clear', 'Not Required'. Both nullable so
---       organisations that don't record police checks incur no schema noise.
+--   2.  teachers gains police_check_status text and police_check_date date
+--       (moved to people in v0.24).
 --   3.  staff gains the same police_check_status / police_check_date columns
---       under the same semantics as teachers.
+--       (moved to people in v0.24).
 -- Changes from v0.16:
 --   1.  preferred_contact_method varchar(20) added to people.
 --   2.  is_emergency_contact boolean added to student_guardians: marks a
@@ -258,6 +263,8 @@ CREATE TABLE IF NOT EXISTS public.people (
     preferred_contact_method varchar(20) NULL,
     wwcc_number text NULL,                           -- NEW v18: Working with Children Check
     wwcc_expiry date NULL,
+    police_check_status text NULL,                   -- 'Pending', 'Clear', 'Not Required', or NULL
+    police_check_date date NULL,
     photo_url varchar(2048) NULL,                    -- profile/ID photo
     photo_uploaded_at timestamp with time zone NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
@@ -351,8 +358,6 @@ CREATE TABLE IF NOT EXISTS public.teachers (
     sector public.teacher_sector NOT NULL DEFAULT 'VET',
     default_max_hours_per_year numeric(6,2) NOT NULL DEFAULT 800.00,
     max_hours_per_period numeric(6,2) NULL,       -- NULL = use annual cap only; set for semester/block contracts
-    police_check_status text NULL,                -- NEW v18: 'Pending', 'Clear', 'Not Required', or NULL
-    police_check_date date NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -407,8 +412,6 @@ CREATE TABLE IF NOT EXISTS public.staff (
     staff_number varchar(20) NOT NULL,
     staff_email varchar(100) NOT NULL,
     staff_phone varchar(15) NULL,
-    police_check_status text NULL,               -- NEW v18: 'Pending', 'Clear', 'Not Required', or NULL
-    police_check_date date NULL,
     PRIMARY KEY (id),
     CONSTRAINT fk_staff_people FOREIGN KEY (id) REFERENCES public.people(id) ON DELETE CASCADE,
     CONSTRAINT fk_staff_faculty FOREIGN KEY (faculty_id) REFERENCES public.faculties(id) ON DELETE SET NULL,

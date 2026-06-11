@@ -714,7 +714,7 @@ Every table and column, generated from `v0.19`. **Null** = whether the column ac
 
 #### `people`
 
-The central identity spine for every person in the system. Stores all personal details — name, preferred name, date of birth, gender, full address, contact information (email, phone, emergency contact), WWCC number and expiry, and photo URL — regardless of the person's role. Every other person-subtype table (`students`, `teachers`, `staff`) uses `people.id` as its own primary key (shared-PK subtyping), so this table owns the surrogate identity and all role-specific data extends from it. Also referenced by `app_users`, `student_guardians`, `delivery_locations`, `training_orgs`, and any table that stores an address or contact.
+The central identity spine for every person in the system. Stores all personal details — name, preferred name, date of birth, gender, full address, contact information (email, phone, emergency contact), WWCC number and expiry, police check status and date, and photo URL — regardless of the person's role. Every other person-subtype table (`students`, `teachers`, `staff`) uses `people.id` as its own primary key (shared-PK subtyping), so this table owns the surrogate identity and all role-specific data extends from it. Also referenced by `app_users`, `student_guardians`, `delivery_locations`, `training_orgs`, and any table that stores an address or contact.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -745,6 +745,8 @@ The central identity spine for every person in the system. Stores all personal d
 | `preferred_contact_method` | `varchar(20)` | yes |  |  |
 | `wwcc_number` | `text` | yes |  |  |
 | `wwcc_expiry` | `date` | yes |  |  |
+| `police_check_status` | `text` | yes |  |  |
+| `police_check_date` | `date` | yes |  |  |
 | `photo_url` | `varchar(2048)` | yes |  |  |
 | `photo_uploaded_at` | `timestamp with time zone` | yes |  |  |
 | `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
@@ -812,7 +814,7 @@ Student-specific demographic and AVETMISS compliance data. Extends `people` via 
 
 #### `teachers`
 
-Teacher-specific employment and capacity data. Extends `people` via a shared PK (`teachers.id = people.id`). Stores the teacher's sector (`VET`/`HE`/`DUAL`), annual teaching hour cap (`default_max_hours_per_year`), optional per-period hour cap for HE/DUAL teachers (`max_hours_per_period`), employment status, police check status and date, and faculty assignment. The hour caps seed `teacher_yearly_balances` and `teacher_period_allocations` for enforcement by triggers. Referenced by `class_slots`, `session_teachers`, `workplans`, `timesheets`, `teacher_vcms`, and `teacher_currency_activities`.
+Teacher-specific employment and capacity data. Extends `people` via a shared PK (`teachers.id = people.id`). Stores the teacher's sector (`VET`/`HE`/`DUAL`), annual teaching hour cap (`default_max_hours_per_year`), optional per-period hour cap for HE/DUAL teachers (`max_hours_per_period`), employment status, and faculty assignment. Police check details are stored on `people`. The hour caps seed `teacher_yearly_balances` and `teacher_period_allocations` for enforcement by triggers. Referenced by `class_slots`, `session_teachers`, `workplans`, `timesheets`, `teacher_vcms`, and `teacher_currency_activities`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -825,8 +827,6 @@ Teacher-specific employment and capacity data. Extends `people` via a shared PK 
 | `sector` | `public.teacher_sector` | no | `'VET'` |  |
 | `default_max_hours_per_year` | `numeric(6,2)` | no | `800.00` |  |
 | `max_hours_per_period` | `numeric(6,2)` | yes |  |  |
-| `police_check_status` | `text` | yes |  |  |
-| `police_check_date` | `date` | yes |  |  |
 | `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 | `updated_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 
@@ -842,7 +842,7 @@ Teacher-specific employment and capacity data. Extends `people` via a shared PK 
 
 #### `staff`
 
-Support and administrative staff. Extends `people` via a shared PK (`staff.id = people.id`). Holds the staff number, staff email, phone, faculty assignment, and police check status/date. Staff appear as assessors on Learning Access Plans (`learning_access_plans.assessor_id`), support workers on classes (`class_support_staff`), recipients of bulk communications (`message_deliveries`), and audit actors (`app_users`).
+Support and administrative staff. Extends `people` via a shared PK (`staff.id = people.id`). Holds the staff number, staff email, phone, and faculty assignment. Police check details are stored on `people`. Staff appear as assessors on Learning Access Plans (`learning_access_plans.assessor_id`), support workers on classes (`class_support_staff`), recipients of bulk communications (`message_deliveries`), and audit actors (`app_users`).
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -851,8 +851,6 @@ Support and administrative staff. Extends `people` via a shared PK (`staff.id = 
 | `staff_number` | `varchar(20)` | no |  | UK |
 | `staff_email` | `varchar(100)` | no |  | UK |
 | `staff_phone` | `varchar(15)` | yes |  |  |
-| `police_check_status` | `text` | yes |  |  |
-| `police_check_date` | `date` | yes |  |  |
 
 *Constraints:*
 
