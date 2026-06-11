@@ -597,7 +597,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 
 | Table | Purpose | Key relationships |
 |---|---|---|
-| `program_intakes` | A scheduled offering of a program — the when, where, mode, and duration of a particular intake cohort. `intake_code` is the unique human identifier (e.g. `ICT30120-2025-T1-FT`). `duration_periods` records how many academic periods the program runs. | → `programs`, `academic_periods` (start), `delivery_locations`, `faculties` |
+| `program_intakes` | A scheduled offering of a program — the when, where, mode, and duration of a particular intake cohort. `intake_code` is the unique human identifier (e.g. `ICT30120-2025-T1-FT`). `duration_periods` records how many academic periods the program runs; `duration_years` stores the equivalent calendar duration in years. | → `programs`, `academic_periods` (start), `delivery_locations`, `faculties` |
 | `intake_groups` | Sub-cohorts within an intake that attend classes together. Each group has a short `group_code` and a display `group_name`; optional `capacity` caps enrolments. Students are linked to a group via `student_course_enrollments.intake_group_id`; classes are linked via `classes.intake_group_id`. | → `program_intakes` |
 
 ### Enrolment & extensions
@@ -1146,7 +1146,7 @@ Many-to-many join between `subjects` and `programs` defining which units belong 
 
 #### `program_intakes`
 
-A scheduled offering of a program — the concrete instance of when, where, and how a program is delivered to a cohort of students. One program may have many intakes across different periods, locations, and study modes (e.g. Cert III IT delivered each term, full-time, at the city campus). `intake_code` is the unique human-readable identifier; `duration_periods` records how many academic periods it takes to complete the program on this intake. `start_academic_period_id` is the period the first class is taught. Enrolment window dates are optional and informational. References `programs`, `academic_periods`, `delivery_locations`, and optionally `faculties`.
+A scheduled offering of a program — the concrete instance of when, where, and how a program is delivered to a cohort of students. One program may have many intakes across different periods, locations, and study modes (e.g. Cert III IT delivered each term, full-time, at the city campus). `intake_code` is the unique human-readable identifier; `duration_periods` records how many academic periods it takes to complete the program on this intake; `duration_years` stores the equivalent calendar duration in years (e.g. `1.0`, `1.5`, `2.0`) for display and reporting. `start_academic_period_id` is the period the first class is taught. Enrolment window dates are optional and informational. References `programs`, `academic_periods`, `delivery_locations`, and optionally `faculties`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1159,6 +1159,7 @@ A scheduled offering of a program — the concrete instance of when, where, and 
 | `faculty_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;faculties |
 | `study_mode` | `varchar(10)` | no | `'Full-Time'` |  |
 | `duration_periods` | `smallint` | no |  |  |
+| `duration_years` | `numeric(3,1)` | yes |  |  |
 | `enrolment_open_date` | `date` | yes |  |  |
 | `enrolment_close_date` | `date` | yes |  |  |
 | `status` | `varchar(20)` | no | `'Planned'` |  |
@@ -1176,6 +1177,7 @@ A scheduled offering of a program — the concrete instance of when, where, and 
 - `CONSTRAINT fk_intake_faculty FOREIGN KEY (faculty_id) REFERENCES public.faculties(id) ON DELETE SET NULL`
 - `CONSTRAINT chk_intake_study_mode CHECK (study_mode IN ('Full-Time', 'Part-Time'))`
 - `CONSTRAINT chk_intake_duration CHECK (duration_periods > 0)`
+- `CONSTRAINT chk_intake_duration_years CHECK (duration_years IS NULL OR duration_years > 0)`
 - `CONSTRAINT chk_intake_status CHECK (status IN ('Planned', 'Active', 'Closed', 'Cancelled'))`
 - `CONSTRAINT chk_intake_enrolment_dates CHECK (open IS NULL OR close IS NULL OR close >= open)`
 
@@ -2863,4 +2865,4 @@ periodically.
 
 ---
 
-*Generated from `v0.20` (2026-06-11).*
+*Generated from `v0.21` (2026-06-11).*

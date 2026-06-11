@@ -1,6 +1,10 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.20, 2026-06-11
+-- AVETMISS-compliant SMS schema  --  version 0.21, 2026-06-11
 -- =========================================================================
+-- Changes from v0.20:
+--   1.  duration_years numeric(3,1) added to program_intakes — the calendar
+--       duration of the program in years (e.g. 1.0, 1.5, 2.0). Nullable so
+--       existing rows are unaffected; constrained > 0 when set.
 -- Changes from v0.19:
 --   1.  program_intakes and intake_groups tables added (section 4.5).
 --       A program may be offered as multiple scheduled intakes (one per term,
@@ -618,6 +622,7 @@ CREATE TABLE IF NOT EXISTS public.program_intakes (
     faculty_id               bigint         NULL,
     study_mode               varchar(10)    NOT NULL DEFAULT 'Full-Time',
     duration_periods         smallint       NOT NULL,           -- number of academic periods to complete
+    duration_years           numeric(3,1)   NULL,               -- calendar duration in years (e.g. 1.0, 1.5, 2.0)
     enrolment_open_date      date           NULL,
     enrolment_close_date     date           NULL,
     status                   varchar(20)    NOT NULL DEFAULT 'Planned',
@@ -632,6 +637,7 @@ CREATE TABLE IF NOT EXISTS public.program_intakes (
     CONSTRAINT fk_intake_faculty         FOREIGN KEY (faculty_id)               REFERENCES public.faculties(id)           ON DELETE SET NULL,
     CONSTRAINT chk_intake_study_mode     CHECK (study_mode IN ('Full-Time', 'Part-Time')),
     CONSTRAINT chk_intake_duration       CHECK (duration_periods > 0),
+    CONSTRAINT chk_intake_duration_years CHECK (duration_years IS NULL OR duration_years > 0),
     CONSTRAINT chk_intake_status         CHECK (status IN ('Planned', 'Active', 'Closed', 'Cancelled')),
     CONSTRAINT chk_intake_enrolment_dates CHECK (
         enrolment_open_date IS NULL OR enrolment_close_date IS NULL OR
