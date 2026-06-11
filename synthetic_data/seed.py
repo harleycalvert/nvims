@@ -2,24 +2,25 @@
 """
 seed.py — Populates the nvims-sms PostgreSQL database with synthetic Victorian TAFE data.
 
-Connects directly to the database, inserts in dependency order, and retrieves
-auto-generated PKs via RETURNING id for use in child rows. No explicit IDs are
-provided (except shared-PK subtype tables which inherit people.id).
+Programs, subjects, and class clusters are driven by tafe_data.json.
+Delivery locations match the campuses listed in that file (Dandenong, Frankston, Berwick).
 
 Usage:
-    pip install psycopg2-binary faker
+    pip install psycopg2-binary faker bcrypt
     python synthetic_data/seed.py [--dsn postgresql://localhost/nvims-sms] [--clean]
 
 Options:
-    --dsn    PostgreSQL connection string (default: postgresql://localhost/nvims-sms)
+    --dsn    PostgreSQL connection string (default: see DEFAULT_DSN)
     --clean  TRUNCATE all seeded tables and restart sequences before inserting
 """
 
 import argparse
+import json
 import random
 import sys
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
+from pathlib import Path
 
 import bcrypt
 import psycopg2
@@ -30,11 +31,12 @@ random.seed(42)
 fake = Faker("en_AU")
 Faker.seed(42)
 
-# postgresql://username:password@host:port/database
 DEFAULT_DSN = "postgresql://nvims:jjnhbFC56RDWRTJHBjhb98uibe@localhost:5432/nvims-sms"
-# DEFAULT_DSN = "postgresql://localhost/nvims-sms"
 
-# Reverse-dependency order: children before parents so CASCADE handles FKs.
+SCRIPT_DIR = Path(__file__).parent
+TAFE_DATA  = json.loads((SCRIPT_DIR / "tafe_data.json").read_text())
+
+# Reverse-dependency order: children before parents.
 TRUNCATE_SQL = """
 TRUNCATE
     public.message_recipients, public.messages,
@@ -46,6 +48,7 @@ TRUNCATE
     public.session_teachers, public.class_sessions, public.class_slots,
     public.class_support_staff, public.class_exceptions,
     public.class_subjects, public.classes,
+    public.intake_groups, public.program_intakes,
     public.student_guardians, public.students,
     public.staff, public.teachers, public.app_users, public.people,
     public.subject_programs, public.subjects, public.programs,
@@ -55,7 +58,6 @@ TRUNCATE
 CASCADE
 """
 
-# setval needs only USAGE (not ownership), unlike TRUNCATE RESTART IDENTITY.
 RESET_SEQS_SQL = """
 SELECT setval(seq, 1, false)
 FROM (
@@ -68,6 +70,7 @@ FROM (
         'client_subject_enrolments','student_course_enrollments',
         'teacher_yearly_balances','teacher_period_allocations',
         'class_sessions','class_slots','class_exceptions','classes',
+        'intake_groups','program_intakes',
         'student_guardians','students','app_users','people',
         'subjects','programs','rooms','buildings','delivery_locations',
         'training_orgs','faculties','secondary_schools'
@@ -100,7 +103,7 @@ def many(cur, table, cols, rows):
 
 
 def bulk(cur, table, cols, rows):
-    """INSERT rows where the generated id is not needed (join tables, subtypes)."""
+    """INSERT rows where the generated id is not needed."""
     if not rows:
         return
     psycopg2.extras.execute_values(
@@ -114,17 +117,16 @@ def bulk(cur, table, cols, rows):
 # Synthetic-data helpers
 # ---------------------------------------------------------------------------
 
-DEFAULT_PASSWORD    = "Wattle2025!"
-DEFAULT_PW_HASH     = bcrypt.hashpw(DEFAULT_PASSWORD.encode(), bcrypt.gensalt()).decode()
+DEFAULT_PASSWORD = "Wattle2025!"
+DEFAULT_PW_HASH  = bcrypt.hashpw(DEFAULT_PASSWORD.encode(), bcrypt.gensalt()).decode()
 
-USI_CHARS    = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
-_used_usis   = set()
-_used_emails = set()
+USI_CHARS       = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+_used_usis      = set()
+_used_emails    = set()
 _used_usernames = set()
 
 
 def gen_username(first, last):
-    """Generate a unique first.last username, appending a suffix on collision."""
     base = (
         first.lower().replace(" ", "").replace("-", "").replace("'", "") + "." +
         last.lower().replace(" ", "").replace("-", "").replace("'", "")
@@ -204,6 +206,27 @@ def period_dates(start, end, weekday_iso, count=10):
     return out
 
 
+# AQF level → AVETMISS level_of_education code
+AQF_LEVEL_CODE = {3: "514", 4: "521", 5: "411", 6: "411"}
+
+# Campus suburb → delivery_loc_id code, address, postcode
+CAMPUS_INFO = {
+    "Dandenong": ("DAN-01", "35 McCrae Street",    "3175"),
+    "Frankston":  ("FRK-01", "30 Dandenong Road",   "3199"),
+    "Berwick":    ("BER-01", "25 Education Avenue", "3806"),
+}
+
+# Suburb → short group-code suffix used in intake_groups
+SUBURB_GRP = {"Dandenong": "DAN", "Frankston": "FRK", "Berwick": "BER"}
+
+# "Term N" string → zero-based offset from intake start
+def term_offset(period_label):
+    return int(period_label.split()[-1]) - 1
+
+# 2026 term codes in order, for offset indexing
+TERMS_2026 = ["T1-2026", "T2-2026", "T3-2026", "T4-2026"]
+
+
 # ---------------------------------------------------------------------------
 # Seed
 # ---------------------------------------------------------------------------
@@ -240,17 +263,17 @@ def seed(cur):
         ("Health, Community & Education",),
         ("Trades & Engineering",),
     ])
-    fac_biz, fac_health, fac_trades = fac_ids
+    fac_biz = fac_ids[0]
 
     # ── Secondary schools ─────────────────────────────────────────────────────
     print("secondary_schools...")
     school_ids = many(cur, "secondary_schools",
         ["school_name", "national_school_code", "school_state_code"], [
-        ("Shepparton High School",           "VIC0001", "VIC"),
-        ("Wangaratta High School",           "VIC0002", "VIC"),
-        ("Bendigo Senior Secondary College", "VIC0003", "VIC"),
-        ("Ballarat Clarendon College",       "VIC0004", "VIC"),
-        ("The Geelong College",              "VIC0005", "VIC"),
+        ("Dandenong High School",           "VIC0010", "VIC"),
+        ("Frankston High School",           "VIC0011", "VIC"),
+        ("Berwick College",                 "VIC0012", "VIC"),
+        ("Hallam Senior Secondary College", "VIC0013", "VIC"),
+        ("Cranbourne Secondary College",    "VIC0014", "VIC"),
     ])
 
     # ── Training org ──────────────────────────────────────────────────────────
@@ -260,116 +283,72 @@ def seed(cur):
          "address_first_line", "suburb", "state_code", "postcode",
          "contact_name", "telephone", "email"],
         ("4082", "Wattle Valley Institute of TAFE", "70",
-         "1 Learning Drive", "Shepparton", "VIC", "3630",
+         "35 McCrae Street", "Dandenong", "VIC", "3175",
          "Dr Sarah Brennan", "0358001000", "info@wattlevalley.edu.au"))
 
-    # ── Delivery locations ────────────────────────────────────────────────────
-    loc_ids = many(cur, "delivery_locations",
-        ["training_org_id", "delivery_loc_id", "name",
-         "address", "suburb", "state_code", "postcode"], [
-        (org_id, "SHE-01", "Shepparton Campus",
-         "1 Learning Drive", "Shepparton", "VIC", "3630"),
-        (org_id, "WAN-01", "Wangaratta Campus",
-         "45 Murphy Street", "Wangaratta", "VIC", "3677"),
-    ])
-    loc_shep, loc_wan = loc_ids
-
-    # ── Buildings ─────────────────────────────────────────────────────────────
-    bld_defs = [
-        (loc_shep, "Building A"), (loc_shep, "Building B"),
-        (loc_wan,  "Main Block"), (loc_wan,  "Trade Centre"),
+    # ── Delivery locations — one per campus suburb ────────────────────────────
+    campus_suburbs = ["Dandenong", "Frankston", "Berwick"]
+    loc_rows = [
+        (org_id, CAMPUS_INFO[s][0], f"{s} Campus",
+         CAMPUS_INFO[s][1], s, "VIC", CAMPUS_INFO[s][2])
+        for s in campus_suburbs
     ]
-    bld_ids = many(cur, "buildings",
-        ["delivery_location_id", "building_name"],
-        [(loc, name) for loc, name in bld_defs])
+    loc_id_list = many(cur, "delivery_locations",
+        ["training_org_id", "delivery_loc_id", "name",
+         "address", "suburb", "state_code", "postcode"], loc_rows)
+    loc_by_suburb = dict(zip(campus_suburbs, loc_id_list))
 
-    # ── Rooms ─────────────────────────────────────────────────────────────────
+    # ── Buildings and rooms ───────────────────────────────────────────────────
+    bld_records = []
+    for loc_id, suburb in zip(loc_id_list, campus_suburbs):
+        for bname in ("Building A", "Building B"):
+            bid = one(cur, "buildings",
+                ["delivery_location_id", "building_name"], (loc_id, bname))
+            bld_records.append((bid, suburb, bname))
+
     room_ids = []
-    for bld_id, (_, bname) in zip(bld_ids, bld_defs):
+    for bid, _, _ in bld_records:
         for i in range(1, 4):
-            rtype = ("Workshop" if "Trade" in bname
-                     else random.choice(["Classroom", "Computer Lab", "Seminar Room"]))
+            rtype = random.choice(["Classroom", "Computer Lab", "Seminar Room"])
             room_ids.append(one(cur, "rooms",
                 ["building_id", "room_name", "capacity", "room_type"],
-                (bld_id, f"Room {i:02d}", random.randint(20, 35), rtype)))
+                (bid, f"Room {i:02d}", random.randint(20, 35), rtype)))
 
-    # ── Programs ──────────────────────────────────────────────────────────────
-    print("programs, subjects...")
-    prog_defs = [
-        (fac_biz,   "BSB50120", "Diploma of Business",
-         "11","411","0800",1000,True,False,None,5),
-        (fac_biz,   "BSB40120", "Certificate IV in Business",
-         "11","521","0800", 720,True,False,None,4),
-        (fac_biz,   "BSB30120", "Certificate III in Business",
-         "11","514","0800", 400,True,False,None,3),
-        (fac_health,"CHC52021", "Diploma of Community Services",
-         "11","411","0900",1085,True,False,None,5),
-        (fac_health,"CHC43015", "Certificate IV in Ageing Support",
-         "11","521","0900", 720,True,False,None,4),
-        (fac_health,"CHC33015", "Certificate III in Individual Support",
-         "11","514","0900", 993,True,False,None,3),
-        (fac_trades,"MEM30319", "Certificate III in Engineering",
-         "11","514","0300", 740,True,False,None,3),
-        (fac_trades,"ICT50220", "Diploma of Information Technology",
-         "11","411","0200", 960,True,False,None,5),
+    # ── Programs — from tafe_data.json ───────────────────────────────────────
+    print("programs, subjects, subject_programs...")
+    prog_ids  = {}   # program_code → db id
+    for p in TAFE_DATA:
+        nominal_hours = sum(s["nominal_hours"] for s in p["subjects"])
+        pid = one(cur, "programs",
+            ["faculty_id", "program_code", "program_name",
+             "program_recognition_id", "level_of_education", "field_of_education",
+             "nominal_hours", "vet_flag", "he_flag", "credit_points", "aqf_level"],
+            (fac_biz, p["program_code"], p["program_name"],
+             "11", AQF_LEVEL_CODE[p["aqf_level"]], "0200",
+             nominal_hours, True, False, None, p["aqf_level"]))
+        prog_ids[p["program_code"]] = pid
+
+    # ── Subjects — deduplicated across all programs ───────────────────────────
+    subj_by_code = {}   # subject_code → db id
+    subj_nom_hrs = {}   # subject_code → nominal_hours
+    for p in TAFE_DATA:
+        for s in p["subjects"]:
+            if s["subject_code"] not in subj_by_code:
+                sid = one(cur, "subjects",
+                    ["subject_code", "subject_name", "module_flag",
+                     "field_of_education", "nominal_hours", "vet_flag"],
+                    (s["subject_code"], s["subject_name"], "N",
+                     "0200", s["nominal_hours"], True))
+                subj_by_code[s["subject_code"]] = sid
+            subj_nom_hrs[s["subject_code"]] = s["nominal_hours"]
+
+    # ── subject_programs ─────────────────────────────────────────────────────
+    sp_pairs = [
+        (subj_by_code[s["subject_code"]], prog_ids[p["program_code"]])
+        for p in TAFE_DATA
+        for s in p["subjects"]
     ]
-    prog_ids = many(cur, "programs",
-        ["faculty_id","program_code","program_name","program_recognition_id",
-         "level_of_education","field_of_education","nominal_hours",
-         "vet_flag","he_flag","credit_points","aqf_level"],
-        [tuple(p) for p in prog_defs])
-    prog_by_code = {p[1]: pid for p, pid in zip(prog_defs, prog_ids)}
-
-    # ── Subjects ──────────────────────────────────────────────────────────────
-    subj_defs = [
-        ("BSBOPS501","Manage business resources",                          "N","0800",60,True),
-        ("BSBOPS502","Manage business operational plans",                  "N","0800",60,True),
-        ("BSBCRT511","Develop critical thinking in others",                "N","0800",60,True),
-        ("BSBPEF501","Manage personal and professional development",       "N","0800",60,True),
-        ("BSBLDR523","Lead and manage effective workplace relationships",   "N","0800",60,True),
-        ("BSBXCM401","Apply communication strategies in the workplace",    "N","0800",60,True),
-        ("BSBFIN401","Report on financial activity",                       "N","0800",60,True),
-        ("BSBOPS201","Work effectively in business environments",          "N","0800",40,True),
-        ("CHCCCS040","Support independence and wellbeing",                 "N","0900",60,True),
-        ("CHCCCS041","Recognise healthy body systems",                     "N","0900",60,True),
-        ("CHCCCS042","Support community participation and inclusion",      "N","0900",60,True),
-        ("CHCCOM005","Communicate and work in health or community services","N","0900",80,True),
-        ("CHCLEG001","Work legally and ethically",                         "N","0900",40,True),
-        ("HLTWHS002","Follow safe work practices for direct client care",  "N","0900",20,True),
-        ("CHCDIV001","Work with diverse people",                           "N","0900",40,True),
-        ("CHCMHS011","Assess and promote social, emotional and physical wellbeing",
-                                                                           "N","0900",100,True),
-        ("MEM18001B","Use hand tools",                                     "N","0300",40,True),
-        ("MEM18002B","Use power tools and hand-held operations",           "N","0300",40,True),
-        ("MEM12023A","Perform engineering measurements",                   "N","0300",40,True),
-        ("MEM13003B","Work safely",                                        "N","0300",20,True),
-        ("MEM14004A","Plan a complete activity",                           "N","0300",40,True),
-        ("ICTICT517","Match ICT needs with the strategic direction of the organisation",
-                                                                           "N","0200",60,True),
-        ("ICTSAS524","Develop, implement and evaluate an incident response plan",
-                                                                           "N","0200",60,True),
-        ("BSBPJT521","Manage projects",                                    "N","0200",80,True),
-    ]
-    subj_ids = many(cur, "subjects",
-        ["subject_code","subject_name","module_flag",
-         "field_of_education","nominal_hours","vet_flag"],
-        [tuple(s) for s in subj_defs])
-    subj_by_code = {s[0]: sid for s, sid in zip(subj_defs, subj_ids)}
-    subj_nom_hrs = {s[0]: s[4] for s in subj_defs}
-
-    PROG_SUBJS = {
-        "BSB50120": ["BSBOPS501","BSBOPS502","BSBCRT511","BSBPEF501","BSBLDR523"],
-        "BSB40120": ["BSBOPS502","BSBCRT511","BSBXCM401","BSBFIN401","BSBPEF501"],
-        "BSB30120": ["BSBXCM401","BSBFIN401","BSBOPS201"],
-        "CHC52021": ["CHCCCS040","CHCCCS041","CHCCOM005","CHCLEG001","CHCDIV001","CHCMHS011"],
-        "CHC43015": ["CHCCCS040","CHCCCS041","CHCCCS042","CHCCOM005","HLTWHS002","CHCDIV001"],
-        "CHC33015": ["CHCCCS040","CHCCOM005","HLTWHS002","CHCDIV001","CHCLEG001"],
-        "MEM30319": ["MEM18001B","MEM18002B","MEM12023A","MEM13003B","MEM14004A"],
-        "ICT50220": ["ICTICT517","ICTSAS524","BSBPJT521"],
-    }
-    sp_pairs = list({(subj_by_code[sc], prog_by_code[pc])
-                     for pc, scs in PROG_SUBJS.items() for sc in scs})
-    bulk(cur, "subject_programs", ["subject_id","program_id"], sp_pairs)
+    bulk(cur, "subject_programs", ["subject_id", "program_id"], sp_pairs)
 
     # ── Academic periods ──────────────────────────────────────────────────────
     print("academic_periods...")
@@ -405,9 +384,6 @@ def seed(cur):
                 p.get("wwcc_number"), p.get("wwcc_expiry"))
 
     all_persons = teacher_persons + staff_persons + student_persons
-
-    # Assign photo URLs (cycling 18 images) and WWCC to every person.
-    # Teachers and staff always get WWCC; ~15% of students do.
     for idx, p in enumerate(all_persons):
         p["photo_url"] = PHOTO_URLS[idx % 18]
         p["photo_uploaded_at"] = datetime(
@@ -438,7 +414,6 @@ def seed(cur):
     student_pids = all_person_ids[N_TEACHERS + N_STAFF:]
 
     # ── App users ─────────────────────────────────────────────────────────────
-    # All seeded users get DEFAULT_PASSWORD ("Wattle2025!") as their initial password.
     STAFF_ROLES = ["Compliance", "Reception", "Staff"]
     admin_uid = one(cur, "app_users",
         ["person_id","username","password_hash","role"],
@@ -449,18 +424,16 @@ def seed(cur):
         [(pid, gen_username(p["first"], p["last"]), DEFAULT_PW_HASH, "Trainer")
          for pid, p in zip(teacher_pids, teacher_persons)])
 
-    staff_uids = many(cur, "app_users",
+    many(cur, "app_users",
         ["person_id","username","password_hash","role"],
         [(pid, gen_username(p["first"], p["last"]), DEFAULT_PW_HASH, STAFF_ROLES[i])
          for i, (pid, p) in enumerate(zip(staff_pids, staff_persons))])
 
-    # pid → app_user_id for all teachers
     teacher_uid_map = {pid: uid for pid, uid in zip(teacher_pids, trainer_uids)}
 
-    # ── Teachers (shared PK = people.id) ─────────────────────────────────────
-    FAC_CYCLE = [fac_biz]*4 + [fac_health]*4 + [fac_trades]*4
-    EMP_CYCLE = (["Full-Time"]*3 + ["Part-Time"]) * 3
-    PC_CYCLE  = ["Clear"]*8 + ["Pending"]*2 + ["Not Required"]*2
+    # ── Teachers ──────────────────────────────────────────────────────────────
+    EMP_CYCLE = (["Full-Time"] * 3 + ["Part-Time"]) * 3
+    PC_CYCLE  = ["Clear"] * 8 + ["Pending"] * 2 + ["Not Required"] * 2
     teachers = []
     for i, (pid, p) in enumerate(zip(teacher_pids, teacher_persons)):
         emp   = EMP_CYCLE[i]
@@ -470,7 +443,7 @@ def seed(cur):
         pcd   = (date(random.randint(2022, 2024), random.randint(1, 12),
                       random.randint(1, 28))
                  if pcs in ("Clear", "Pending") else None)
-        teachers.append(dict(pid=pid, fac=FAC_CYCLE[i], email=p["email"],
+        teachers.append(dict(pid=pid, fac=fac_biz, email=p["email"],
                              phone=p["mobile"], emp=emp, max_h=max_h, tf=tf,
                              pcs=pcs, pcd=pcd))
     bulk(cur, "teachers",
@@ -481,7 +454,7 @@ def seed(cur):
           t["emp"], "VET", t["max_h"], t["pcs"], t["pcd"])
          for i, t in enumerate(teachers)])
 
-    # ── Staff (shared PK = people.id) ────────────────────────────────────────
+    # ── Staff ─────────────────────────────────────────────────────────────────
     STAFF_PC = [
         ("Clear",        date(2023, 5, 10)),
         ("Clear",        date(2022, 8, 22)),
@@ -494,11 +467,11 @@ def seed(cur):
           STAFF_PC[i][0], STAFF_PC[i][1])
          for i, (pid, p) in enumerate(zip(staff_pids, staff_persons))])
 
-    # ── Students (shared PK = people.id) ─────────────────────────────────────
+    # ── Students ──────────────────────────────────────────────────────────────
     students = []
     for i, (pid, p) in enumerate(zip(student_pids, student_persons)):
-        lvl       = random.choice(["10","11","12"])
-        yr_school = random.randint(2010, 2023) if lvl in ("11","12") else None
+        lvl       = random.choice(["10", "11", "12"])
+        yr_school = random.randint(2010, 2023) if lvl in ("11", "12") else None
         school_fk = random.choice(school_ids) if random.random() < 0.7 else None
         students.append(dict(pid=pid, email=p["email"],
             number=f"S{10000+i:05d}", usi=gen_usi(),
@@ -522,103 +495,119 @@ def seed(cur):
           "Parent", True, rand_phone(), None)
          for s in students[:15]])
 
-    # ── Classes ───────────────────────────────────────────────────────────────
-    # Each class = one subject for one cohort group.
-    # GROUP_CFG: (period_code, prog_code, group_code, loc_id, cap)
-    # For each entry, N_SUBJS subject-level classes are created (one per subject).
+    # ── Program intakes ───────────────────────────────────────────────────────
+    # One intake per program, all starting T1-2026.
+    print("program_intakes, intake_groups...")
+    intake_start = periods["T1-2026"]
+
+    # intake_info[prog_code] = {id, groups: {suburb: group_id}}
+    intake_info = {}
+    for p in TAFE_DATA:
+        pc        = p["program_code"]
+        intake_id = one(cur, "program_intakes",
+            ["program_id", "intake_code", "intake_name",
+             "start_academic_period_id", "delivery_location_id",
+             "faculty_id", "study_mode",
+             "duration_periods", "duration_years",
+             "enrolment_open_date", "enrolment_close_date", "status"],
+            (prog_ids[pc],
+             f"{pc}-2026-T1",
+             f"{p['program_name']} — 2026 Term 1",
+             intake_start["id"],
+             loc_by_suburb[p["suburb"][0]],
+             fac_biz,
+             "Full-Time",
+             p["duration_periods"],
+             p["duration_years"],
+             date(2025, 11, 1),
+             date(2025, 12, 19),
+             "Active"))
+
+        groups = {}
+        for suburb in p["suburb"]:
+            grp_id = one(cur, "intake_groups",
+                ["intake_id", "group_code", "group_name", "capacity"],
+                (intake_id, SUBURB_GRP[suburb],
+                 f"{suburb} Group",
+                 random.randint(18, 25)))
+            groups[suburb] = grp_id
+
+        intake_info[pc] = {"id": intake_id, "groups": groups}
+
+    # ── Classes — one per (cluster, suburb) where created=True ───────────────
     print("classes, class_subjects, class_slots...")
 
-    N_SUBJS = 3   # number of subjects per group to create classes for
+    weekday_counter    = defaultdict(int)   # (period_code, prog_code, suburb) → next weekday
+    period_day_teacher = defaultdict(int)   # (period_code, weekday) → next teacher index
+    period_day_room    = defaultdict(int)   # (period_code, weekday) → next room index
 
-    # Weekday allocated per subject index within a group (0→Mon, 1→Wed, 2→Thu)
-    SUBJ_WEEKDAY = [1, 3, 4]
+    # classes_list: metadata dict for every created class row
+    classes_list = []
 
-    GROUP_CFG = [
-        # T1-2025
-        ("T1-2025","BSB50120","G1",loc_shep,25),
-        ("T1-2025","BSB50120","G2",loc_shep,22),
-        ("T1-2025","BSB50120","G3",loc_wan, 20),
-        ("T1-2025","CHC43015","G1",loc_shep,20),
-        ("T1-2025","CHC43015","G2",loc_shep,18),
-        ("T1-2025","CHC43015","G3",loc_wan, 20),
-        # T3-2025
-        ("T3-2025","BSB40120","G1",loc_shep,25),
-        ("T3-2025","BSB40120","G2",loc_shep,22),
-        ("T3-2025","BSB40120","G3",loc_wan, 20),
-        ("T3-2025","CHC52021","G1",loc_wan, 20),
-        ("T3-2025","CHC52021","G2",loc_wan, 18),
-        ("T3-2025","CHC52021","G3",loc_shep,20),
-        # T1-2026
-        ("T1-2026","MEM30319","G1",loc_wan, 16),
-        ("T1-2026","MEM30319","G2",loc_wan, 14),
-        ("T1-2026","ICT50220","G1",loc_shep,22),
-        ("T1-2026","ICT50220","G2",loc_shep,20),
-        ("T1-2026","ICT50220","G3",loc_shep,18),
-        # T3-2026
-        ("T3-2026","BSB30120","G1",loc_shep,25),
-        ("T3-2026","BSB30120","G2",loc_shep,22),
-        ("T3-2026","BSB30120","G3",loc_wan, 20),
-        ("T3-2026","CHC33015","G1",loc_wan, 20),
-        ("T3-2026","CHC33015","G2",loc_wan, 18),
-        ("T3-2026","CHC33015","G3",loc_shep,20),
+    for p in TAFE_DATA:
+        pc = p["program_code"]
+        for cluster in p["class_subjects"]:
+            if not cluster["created"]:
+                continue
+            offset      = term_offset(cluster["period_code"])
+            period_code = TERMS_2026[offset]
+            period      = periods[period_code]
+
+            for suburb, grp_id in intake_info[pc]["groups"].items():
+                loc_id  = loc_by_suburb[suburb]
+                wk_key  = (period_code, pc, suburb)
+                weekday = (weekday_counter[wk_key] % 5) + 1
+                weekday_counter[wk_key] += 1
+
+                slug       = cluster["cluster"][:20].replace(" ", "_")
+                class_code = f"{pc}-2026T{offset+1}-{SUBURB_GRP[suburb]}-{slug}"
+
+                cid = one(cur, "classes",
+                    ["class_code", "intake_group_id", "academic_period_id",
+                     "delivery_location_id", "enrolment_cap"],
+                    (class_code, grp_id, period["id"], loc_id,
+                     random.randint(18, 25)))
+
+                classes_list.append(dict(
+                    id=cid, prog_code=pc, suburb=suburb,
+                    period_code=period_code, period_id=period["id"],
+                    loc_id=loc_id, p_start=period["start"], p_end=period["end"],
+                    weekday=weekday, subjects=cluster["subjects"],
+                    grp_id=grp_id,
+                ))
+
+    # class_subjects join: one row per (class, subject) in the cluster
+    cs_rows = [
+        (c["id"], subj_by_code[sc], sc)
+        for c in classes_list
+        for sc in c["subjects"]
     ]
-
-    # Build flat list of individual subject-classes
-    classes = []
-    for pc, prog_code, grp, loc_id, cap in GROUP_CFG:
-        p = periods[pc]
-        subj_codes = PROG_SUBJS[prog_code][:N_SUBJS]
-        for si, sc in enumerate(subj_codes):
-            cid = one(cur, "classes",
-                ["class_code","group_code","academic_period_id",
-                 "delivery_location_id","enrolment_cap"],
-                (f"{prog_code}-{pc}-{grp}-{sc}", grp,
-                 p["id"], loc_id, cap))
-            classes.append(dict(id=cid, pc=pc, prog_code=prog_code, grp=grp,
-                                subj_code=sc, subj_idx=si,
-                                period_id=p["id"], loc_id=loc_id,
-                                p_start=p["start"], p_end=p["end"]))
-
-    # Each class has exactly one subject
-    bulk(cur, "class_subjects", ["class_id","subject_id","subject_label"],
-        [(c["id"], subj_by_code[c["subj_code"]], c["subj_code"])
-         for c in classes])
+    bulk(cur, "class_subjects", ["class_id", "subject_id", "subject_label"], cs_rows)
 
     # ── Class slots ───────────────────────────────────────────────────────────
-    # Subject index → weekday (Mon/Wed/Thu). Within a period+weekday, each
-    # class must use a different teacher (no_teacher_double_booking EXCLUDE)
-    # and a different room (no_room_session_double_booking EXCLUDE).
-    period_day_room    = defaultdict(int)        # (pc, weekday) -> next room offset
-    period_day_teacher = defaultdict(int)        # (pc, weekday) -> next teacher offset
     slots = []
-    for c in classes:
-        weekday = SUBJ_WEEKDAY[c["subj_idx"]]
-        key = (c["pc"], weekday)
-
-        r_off   = period_day_room[key]    % len(room_ids)
-        t_off   = period_day_teacher[key] % N_TEACHERS
+    for c in classes_list:
+        key   = (c["period_code"], c["weekday"])
+        r_off = period_day_room[key]    % len(room_ids)
+        t_off = period_day_teacher[key] % N_TEACHERS
         period_day_room[key]    += 1
         period_day_teacher[key] += 1
 
-        room_id = room_ids[r_off]
-        teacher = teachers[t_off]
         slot_id = one(cur, "class_slots",
             ["class_id","academic_period_id","room_id","teacher_id",
              "day_of_week","start_time","end_time"],
-            (c["id"], c["period_id"], room_id, teacher["pid"],
-             weekday, SLOT_START, SLOT_END))
+            (c["id"], c["period_id"], room_ids[r_off], teachers[t_off]["pid"],
+             c["weekday"], SLOT_START, SLOT_END))
         slots.append(dict(id=slot_id, class_id=c["id"],
-                         teacher_pid=teacher["pid"],
-                         room_id=room_id, weekday=weekday))
+                         teacher_pid=teachers[t_off]["pid"],
+                         room_id=room_ids[r_off], weekday=c["weekday"]))
 
     # ── Class sessions + session teachers ─────────────────────────────────────
-    # Insert sessions individually to collect ids; batch session_teachers at end.
-    # The fn_session_teacher_hours trigger auto-populates teacher_yearly_balances.
     print("class_sessions, session_teachers...")
     teacher_year_hours = defaultdict(float)
-    all_sessions = []   # (session_id, class_id, teacher_pid, cancelled)
+    all_sessions = []
 
-    for sl, c in zip(slots, classes):
+    for sl, c in zip(slots, classes_list):
         for sdate in period_dates(c["p_start"], c["p_end"], sl["weekday"]):
             cancelled = random.random() < 0.05
             sid = one(cur, "class_sessions",
@@ -630,29 +619,34 @@ def seed(cur):
             if not cancelled:
                 teacher_year_hours[(sl["teacher_pid"], sdate.year)] += SESSION_HOURS
 
-    # session_teachers triggers update teacher_yearly_balances automatically
     bulk(cur, "session_teachers", ["session_id","teacher_id","role"],
         [(sid, tpid, "Lead") for sid, _, tpid, _ in all_sessions])
 
     # ── Session attendance ────────────────────────────────────────────────────
-    # Each student is assigned to one (period, program, group); they attend all
-    # subject-classes within that group.
     print("session_attendance...")
-    group_keys = [(pc, prog, grp) for pc, prog, grp, *_ in GROUP_CFG]
-    class_lookup = defaultdict(list)  # (pc, prog, grp) -> [class dict, ...]
-    for c in classes:
-        class_lookup[(c["pc"], c["prog_code"], c["grp"])].append(c)
 
-    student_group = {}   # student_pid -> (pc, prog, grp)
-    for i, s in enumerate(students):
-        student_group[s["pid"]] = group_keys[i % len(group_keys)]
+    # group_class_lookup: (prog_code, suburb) → [class dict, ...]
+    group_class_lookup = defaultdict(list)
+    for c in classes_list:
+        group_class_lookup[(c["prog_code"], c["suburb"])].append(c)
+
+    # Only assign students to groups that actually have classes
+    group_keys = [
+        (p["program_code"], suburb)
+        for p in TAFE_DATA
+        for suburb in p["suburb"]
+        if group_class_lookup[(p["program_code"], suburb)]
+    ]
+
+    student_group = {s["pid"]: group_keys[i % len(group_keys)]
+                     for i, s in enumerate(students)}
 
     class_student_map = defaultdict(list)
     for s in students:
-        for c in class_lookup[student_group[s["pid"]]]:
+        for c in group_class_lookup[student_group[s["pid"]]]:
             class_student_map[c["id"]].append(s["pid"])
 
-    att_statuses = ["Present"]*7 + ["Absent-Notified"]*2 + ["Online", "Excused"]
+    att_statuses = ["Present"] * 7 + ["Absent-Notified"] * 2 + ["Online", "Excused"]
     att_rows = []
     for sid, cls_id, _, cancelled in all_sessions:
         if cancelled:
@@ -664,32 +658,45 @@ def seed(cur):
         ["session_id","student_id","status",
          "minutes_attended","notes","recorded_by"], att_rows)
 
-    # ── Course enrolments ─────────────────────────────────────────────────────
-    # Each student gets one SCE for their program, then one CSE + CE per
-    # subject-class in their assigned group.
+    # ── Enrolments ────────────────────────────────────────────────────────────
+    # Each student gets one SCE (linked to their intake group), then one CSE
+    # per unique subject across all classes in their group, plus a
+    # class_enrollment linking each class to the relevant CSE.
     print("enrolments...")
     ce_rows   = []
     cse_count = 0
+
     for s in students:
-        pc, prog_code, grp = student_group[s["pid"]]
-        group_classes = class_lookup[(pc, prog_code, grp)]
+        prog_code, suburb = student_group[s["pid"]]
+        group_classes     = group_class_lookup[(prog_code, suburb)]
         if not group_classes:
             continue
-        c0 = group_classes[0]
+
+        grp_id = intake_info[prog_code]["groups"][suburb]
+        c0     = group_classes[0]
+
         sce_id = one(cur, "student_course_enrollments",
             ["student_id","program_id","enrollment_status",
-             "commencement_date","commencing_program_id","funding_state_code"],
-            (s["pid"], prog_by_code[prog_code], "Active",
-             c0["p_start"], "4", "VIC"))
+             "commencement_date","commencing_program_id","funding_state_code",
+             "intake_group_id"],
+            (s["pid"], prog_ids[prog_code], "Active",
+             c0["p_start"], "4", "VIC", grp_id))
+
+        # enrolled_subjs: subject_code → cse_id (deduplicated across clusters)
+        enrolled_subjs = {}
         for c in group_classes:
-            cse_id = one(cur, "client_subject_enrolments",
-                ["student_id","student_course_enrollment_id","subject_id",
-                 "delivery_location_id","activity_start_date","activity_end_date",
-                 "scheduled_hours","funding_source_national","outcome_id_national"],
-                (s["pid"], sce_id, subj_by_code[c["subj_code"]], c["loc_id"],
-                 c["p_start"], c["p_end"], subj_nom_hrs[c["subj_code"]], "11", "70"))
-            cse_count += 1
-            ce_rows.append((c["id"], cse_id))
+            for sc in c["subjects"]:
+                if sc not in enrolled_subjs:
+                    cse_id = one(cur, "client_subject_enrolments",
+                        ["student_id","student_course_enrollment_id","subject_id",
+                         "delivery_location_id","activity_start_date","activity_end_date",
+                         "scheduled_hours","funding_source_national","outcome_id_national"],
+                        (s["pid"], sce_id, subj_by_code[sc], c["loc_id"],
+                         c["p_start"], c["p_end"],
+                         subj_nom_hrs[sc], "11", "70"))
+                    enrolled_subjs[sc] = cse_id
+                    cse_count += 1
+                ce_rows.append((c["id"], enrolled_subjs[sc]))
 
     bulk(cur, "class_enrollments",
         ["class_id","client_subject_enrolment_id"], ce_rows)
@@ -711,17 +718,17 @@ def seed(cur):
             bulk(cur, "workplan_entries",
                 ["workplan_id","entry_type","activity_name","total_hours"],
                 [(wp_id, et, nm, h) for et, nm, h in [
-                    ("Teaching Delivery",        "Teaching sessions",       teach_h),
-                    ("CAPPS",                    "CAPPS preparation",       capps_h),
+                    ("Teaching Delivery",        "Teaching sessions",        teach_h),
+                    ("CAPPS",                    "CAPPS preparation",        capps_h),
                     ("Education Related Duties", "Education related duties", erd_h),
                 ] if h > 0])
 
     # ── Pay periods (fortnightly: 2025-01 to 2026-06) ─────────────────────────
     print("pay_periods, timesheets, timesheet_entries...")
     pp_defs = []
-    fn_date  = date(2025, 1, 6)   # first Monday of 2025
-    fn_end   = date(2026, 6, 26)
-    fn_num   = 1
+    fn_date = date(2025, 1, 6)
+    fn_end  = date(2026, 6, 26)
+    fn_num  = 1
     while fn_date <= fn_end:
         pend = fn_date + timedelta(days=13)
         pp_defs.append((fn_date, pend, f"FN{fn_num:02d} {fn_date.year}", fn_date.year))
@@ -735,7 +742,6 @@ def seed(cur):
     pay_periods = [{"id": pid, "start": d[0], "end": d[1], "year": d[3]}
                    for pid, d in zip(pp_ids, pp_defs)]
 
-    # First pay period of each (year, quarter) → one timesheet per teacher
     quarter_pp = {}
     for pp in pay_periods:
         key = (pp["year"], (pp["start"].month - 1) // 3 + 1)
@@ -748,10 +754,10 @@ def seed(cur):
             status  = ("Exported" if year == 2025
                        else "Approved" if qtr <= 2
                        else "Draft")
-            sub_by  = uid    if status != "Draft" else None
+            sub_by  = uid       if status != "Draft" else None
             sub_at  = "2025-06-01 00:00:00+00" if status != "Draft" else None
-            app_by  = admin_uid if status in ("Approved","Exported") else None
-            app_at  = "2025-06-02 00:00:00+00" if status in ("Approved","Exported") else None
+            app_by  = admin_uid if status in ("Approved", "Exported") else None
+            app_at  = "2025-06-02 00:00:00+00" if status in ("Approved", "Exported") else None
             exp_at  = "2025-06-03 00:00:00+00" if status == "Exported" else None
             exp_fmt = "PDF" if status == "Exported" else None
             ts_id = one(cur, "timesheets",
@@ -761,7 +767,7 @@ def seed(cur):
                  "exported_at","export_format"],
                 (t["pid"], pp["id"], status,
                  sub_by, sub_at, app_by, app_at, exp_at, exp_fmt))
-            teach_pp = round(t["max_h"] / 26 * 0.6,  2)
+            teach_pp = round(t["max_h"] / 26 * 0.60, 2)
             capps_pp = round(teach_pp * 0.75,          2)
             erd_pp   = round(t["max_h"] / 26 * 0.15, 2)
             edate    = pp["start"] + timedelta(days=1)
@@ -774,16 +780,18 @@ def seed(cur):
                 ] if h > 0])
 
     # ── Summary ───────────────────────────────────────────────────────────────
+    n_prog     = len(TAFE_DATA)
+    n_subj     = len(subj_by_code)
     n_sessions = len(all_sessions)
     n_att      = len(att_rows)
     n_wps      = N_TEACHERS * 2
     n_ts       = N_TEACHERS * len(quarter_pp)
     print()
+    print(f"  {n_prog} programs  {n_subj} subjects")
     print(f"  {N_TEACHERS} teachers  {N_STAFF} staff  {N_STUDENTS} students")
-    print(f"  {len(classes)} classes  {n_sessions} sessions  {n_att} attendance records")
+    print(f"  {len(classes_list)} classes  {n_sessions} sessions  {n_att} attendance records")
     print(f"  {N_STUDENTS} course enrolments  {cse_count} subject enrolments")
-    print(f"  {len(pay_periods)} pay periods  {n_ts} timesheets")
-    print(f"  {n_wps} workplans")
+    print(f"  {len(pay_periods)} pay periods  {n_ts} timesheets  {n_wps} workplans")
     print(f"  teacher_yearly_balances populated automatically by trigger")
 
 
@@ -794,7 +802,7 @@ def seed(cur):
 def main():
     ap = argparse.ArgumentParser(description="Seed nvims-sms with synthetic data")
     ap.add_argument("--dsn",   default=DEFAULT_DSN,
-                    help="PostgreSQL DSN (default: postgresql://localhost/nvims-sms)")
+                    help="PostgreSQL DSN")
     ap.add_argument("--clean", action="store_true",
                     help="TRUNCATE seeded tables and restart sequences first")
     args = ap.parse_args()
