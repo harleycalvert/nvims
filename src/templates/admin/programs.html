@@ -6,6 +6,7 @@
   <title>NVIMS-SMS — Programs</title>
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/sessions.css">
 </head>
 <body>
   <header>
@@ -21,143 +22,213 @@
       <span class="header-role">{{.User.Role}}</span>
     </div>
   </header>
-  <main>
-    <div class="admin-toolbar">
+
+  <main class="sessions-main">
+
+    <div class="sess-toolbar">
       <a class="btn-secondary" href="/admin/periods">Periods</a>
       <a class="btn-secondary" href="/admin/faculties">Faculties</a>
       <a class="btn-secondary" href="/admin/intake-groups">Intake Groups</a>
       <a class="btn-secondary" href="/admin/classes">Classes →</a>
     </div>
 
-    {{if not .Programs}}
-      <p class="hint">No programs on record yet.</p>
-    {{else}}
     <div class="table-wrap">
-      <table>
+      <table class="sessions-table" id="programs-table">
         <thead>
           <tr>
             <th>Code</th>
             <th class="td-left">Name</th>
-            <th>Type</th>
             <th>Faculty</th>
+            <th>Type</th>
+            <th title="AVETMISS Recognition ID">Recog</th>
+            <th title="AVETMISS Level of Education">Level</th>
+            <th title="ASCED Field of Education">Field</th>
+            <th title="Nominal hours">Hours</th>
+            <th title="AQF Level">AQF</th>
+            <th title="VET flag">VET</th>
+            <th title="Higher Education flag">HE</th>
+            <th></th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="programs-tbody">
           {{range .Programs}}
-          <tr>
-            <td>{{.ProgramCode}}</td>
-            <td class="td-left">{{.ProgramName}}</td>
-            <td>{{.ProgramType}}</td>
-            <td class="td-left">{{.FacultyName}}</td>
+          <tr class="sess-row" data-id="{{.ID}}">
+            <td><input class="sess-input pp-code" type="text" name="program_code"
+                       value="{{.ProgramCode}}" maxlength="10"></td>
+            <td><input class="sess-input pp-name" type="text" name="program_name"
+                       value="{{.ProgramName}}" maxlength="100"></td>
+            <td>
+              <select class="sess-input pp-fac" name="faculty_id">
+                {{$fid := .FacultyID}}
+                {{range $.Faculties}}
+                <option value="{{.ID}}"{{if eq .ID $fid}} selected{{end}}>{{.Name}}</option>
+                {{end}}
+              </select>
+            </td>
+            <td>
+              <select class="sess-input pp-type" name="program_type">
+                <option value="">— none —</option>
+                {{$pt := .ProgramType}}
+                {{range $.ProgramTypes}}
+                <option value="{{.}}"{{if eq . $pt}} selected{{end}}>{{.}}</option>
+                {{end}}
+              </select>
+            </td>
+            <td><input class="sess-input pp-recog" type="text" name="program_recognition_id"
+                       value="{{.ProgramRecognitionID}}" maxlength="2"></td>
+            <td><input class="sess-input pp-level" type="text" name="level_of_education"
+                       value="{{.LevelOfEducation}}" maxlength="3"></td>
+            <td><input class="sess-input pp-field" type="text" name="field_of_education"
+                       value="{{.FieldOfEducation}}" maxlength="4"></td>
+            <td><input class="sess-input pp-hours" type="number" name="nominal_hours"
+                       value="{{.NominalHours}}" min="0"></td>
+            <td><input class="sess-input pp-aqf" type="number" name="aqf_level"
+                       value="{{if .AQFLevel}}{{.AQFLevel}}{{end}}" min="1" max="10" placeholder="—"></td>
+            <td class="pp-flag"><input type="checkbox" name="vet_flag"{{if .VetFlag}} checked{{end}}></td>
+            <td class="pp-flag"><input type="checkbox" name="he_flag"{{if .HeFlag}} checked{{end}}></td>
+            <td class="sess-actions">
+              <span class="sess-status"></span>
+              <button class="btn-danger-sm pp-delete" type="button" title="Delete">✕</button>
+            </td>
           </tr>
           {{end}}
         </tbody>
       </table>
     </div>
-    {{end}}
 
-    <div class="form-section form-section--spaced">
-      <h2 class="form-section-title">Add Program</h2>
-
-      {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
-      {{if .Success}}<p class="form-success">Program saved.</p>{{end}}
-
-      <form class="admin-form" method="POST" action="/admin/programs/new">
-
-        <div class="form-section">
-          <h2 class="form-section-title">Identification</h2>
-          <div class="form-row">
-            <div class="form-group fg-160">
-              <label>Program Code <span class="req">*</span></label>
-              <input type="text" name="program_code" value="{{.Form.ProgramCode}}"
-                     maxlength="10" placeholder="e.g. ICT30120" required>
-            </div>
-            <div class="form-group form-group-grow">
-              <label>Program Name <span class="req">*</span></label>
-              <input type="text" name="program_name" value="{{.Form.ProgramName}}"
-                     maxlength="100" required>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group fg-260">
-              <label>Faculty <span class="req">*</span></label>
-              <select name="faculty_id" required>
-                <option value="">— select faculty —</option>
-                {{range .Faculties}}
-                <option value="{{.ID}}"{{if eq $.Form.FacultyID .ID}} selected{{end}}>{{.Name}}</option>
-                {{end}}
-              </select>
-            </div>
-            <div class="form-group fg-200">
-              <label>Program Type</label>
-              <select name="program_type">
-                <option value="">— none —</option>
-                {{range .ProgramTypes}}
-                <option value="{{.}}"{{if eq $.Form.ProgramType .}} selected{{end}}>{{.}}</option>
-                {{end}}
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-section">
-          <h2 class="form-section-title">AVETMISS Classification</h2>
-          <div class="form-row">
-            <div class="form-group fg-160">
-              <label>Recognition ID <span class="req">*</span></label>
-              <input type="text" name="program_recognition_id" value="{{.Form.ProgramRecognitionID}}"
-                     maxlength="2" placeholder="e.g. 11" required>
-              <span class="hint">2-char AVETMISS code</span>
-            </div>
-            <div class="form-group fg-160">
-              <label>Level of Education <span class="req">*</span></label>
-              <input type="text" name="level_of_education" value="{{.Form.LevelOfEducation}}"
-                     maxlength="3" placeholder="e.g. 514" required>
-              <span class="hint">3-char AVETMISS code</span>
-            </div>
-            <div class="form-group fg-160">
-              <label>Field of Education <span class="req">*</span></label>
-              <input type="text" name="field_of_education" value="{{.Form.FieldOfEducation}}"
-                     maxlength="4" placeholder="e.g. 0299" required>
-              <span class="hint">4-char ASCED code</span>
-            </div>
-            <div class="form-group fg-140">
-              <label>Nominal Hours <span class="req">*</span></label>
-              <input type="number" name="nominal_hours" value="{{.Form.NominalHoursStr}}"
-                     min="0" required>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-section">
-          <h2 class="form-section-title">Flags &amp; Level</h2>
-          <div class="form-row">
-            <div class="form-group fg-120">
-              <label>AQF Level</label>
-              <input type="number" name="aqf_level" value="{{.Form.AQFLevelStr}}"
-                     min="1" max="10" placeholder="1–10">
-            </div>
-            <div class="form-group">
-              <label>&nbsp;</label>
-              <div class="checkbox-row">
-                <label class="checkbox-label">
-                  <input type="checkbox" name="vet_flag"{{if .Form.VetFlag}} checked{{end}}> VET
-                </label>
-                <label class="checkbox-label">
-                  <input type="checkbox" name="he_flag"{{if .Form.HeFlag}} checked{{end}}> HE
-                </label>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-actions">
-          <button type="submit" class="btn-primary">Add Program</button>
-          <a class="btn-secondary" href="/admin/programs">Reset</a>
-        </div>
-
-      </form>
+    <div class="sess-add-bar">
+      <button class="btn-primary btn-sm" id="btn-add-program" type="button">+ Add Program</button>
     </div>
+
   </main>
+
+<script>
+(function () {
+  const programTypes = [{{range $i,$t := .ProgramTypes}}{{if $i}},{{end}}"{{$t}}"{{end}}];
+  const faculties    = [{{range $i,$f := .Faculties}}{{if $i}},{{end}}{"id":{{$f.ID}},"name":{{printf "%q" $f.Name}}}{{end}}];
+
+  function typeOptions(selected) {
+    return '<option value="">— none —</option>' +
+      programTypes.map(t =>
+        `<option value="${t}"${t === selected ? ' selected' : ''}>${t}</option>`
+      ).join('');
+  }
+
+  function facultyOptions(selectedID) {
+    return faculties.map(f =>
+      `<option value="${f.id}"${f.id === selectedID ? ' selected' : ''}>${f.name}</option>`
+    ).join('');
+  }
+
+  function setStatus(tr, state) {
+    const el = tr.querySelector('.sess-status');
+    el.className = 'sess-status sess-status-' + state;
+    el.textContent = state === 'saving' ? '…' : state === 'saved' ? '✓' : state === 'error' ? '!' : '';
+    if (state === 'saved') setTimeout(() => { el.textContent = ''; el.className = 'sess-status'; }, 1500);
+  }
+
+  function collectFields(tr) {
+    return {
+      program_code:          tr.querySelector('[name=program_code]').value.trim(),
+      program_name:          tr.querySelector('[name=program_name]').value.trim(),
+      faculty_id:            tr.querySelector('[name=faculty_id]').value,
+      program_type:          tr.querySelector('[name=program_type]').value,
+      program_recognition_id: tr.querySelector('[name=program_recognition_id]').value.trim(),
+      level_of_education:    tr.querySelector('[name=level_of_education]').value.trim(),
+      field_of_education:    tr.querySelector('[name=field_of_education]').value.trim(),
+      nominal_hours:         tr.querySelector('[name=nominal_hours]').value.trim(),
+      aqf_level:             tr.querySelector('[name=aqf_level]').value.trim(),
+      vet_flag:              tr.querySelector('[name=vet_flag]').checked ? '1' : '0',
+      he_flag:               tr.querySelector('[name=he_flag]').checked  ? '1' : '0',
+    };
+  }
+
+  function isComplete(f) {
+    return f.program_code && f.program_name && f.faculty_id &&
+           f.program_recognition_id && f.level_of_education &&
+           f.field_of_education && f.nominal_hours;
+  }
+
+  async function saveRow(tr) {
+    const id = tr.dataset.id;
+    const f  = collectFields(tr);
+    if (!isComplete(f)) return;
+
+    setStatus(tr, 'saving');
+    const url  = id === 'new' ? '/admin/programs/new' : `/admin/programs/${id}`;
+    const body = new URLSearchParams(f);
+    try {
+      const res = await fetch(url, { method: 'POST', body });
+      if (!res.ok) { setStatus(tr, 'error'); return; }
+      if (id === 'new') { location.reload(); return; }
+      setStatus(tr, 'saved');
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  async function deleteRow(tr) {
+    const id = tr.dataset.id;
+    if (id === 'new') { tr.remove(); return; }
+    if (!confirm('Delete this program?')) return;
+    setStatus(tr, 'saving');
+    try {
+      const res = await fetch(`/admin/programs/${id}/delete`, { method: 'POST' });
+      if (!res.ok) { setStatus(tr, 'error'); return; }
+      tr.remove();
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  function attachRowListeners(tr) {
+    ['program_code','program_name','program_recognition_id',
+     'level_of_education','field_of_education','nominal_hours','aqf_level'].forEach(name => {
+      tr.querySelector(`[name=${name}]`)?.addEventListener('blur', () => saveRow(tr));
+    });
+    ['faculty_id','program_type'].forEach(name => {
+      tr.querySelector(`[name=${name}]`)?.addEventListener('change', () => saveRow(tr));
+    });
+    ['vet_flag','he_flag'].forEach(name => {
+      tr.querySelector(`[name=${name}]`)?.addEventListener('change', () => saveRow(tr));
+    });
+    tr.querySelector('.pp-delete')?.addEventListener('click', () => deleteRow(tr));
+  }
+
+  document.querySelectorAll('#programs-tbody .sess-row').forEach(attachRowListeners);
+
+  document.getElementById('btn-add-program')?.addEventListener('click', () => {
+    const tbody = document.getElementById('programs-tbody');
+    tbody.querySelector('.sess-new')?.remove();
+
+    const defaultFacID = faculties.length === 1 ? faculties[0].id : 0;
+    const tr = document.createElement('tr');
+    tr.className = 'sess-row sess-new';
+    tr.dataset.id = 'new';
+    tr.innerHTML = `
+      <td><input class="sess-input pp-code" type="text" name="program_code"
+                 placeholder="e.g. ICT30120" maxlength="10"></td>
+      <td><input class="sess-input pp-name" type="text" name="program_name"
+                 placeholder="Program name" maxlength="100"></td>
+      <td><select class="sess-input pp-fac" name="faculty_id">${facultyOptions(defaultFacID)}</select></td>
+      <td><select class="sess-input pp-type" name="program_type">${typeOptions('')}</select></td>
+      <td><input class="sess-input pp-recog" type="text" name="program_recognition_id"
+                 placeholder="11" maxlength="2"></td>
+      <td><input class="sess-input pp-level" type="text" name="level_of_education"
+                 placeholder="514" maxlength="3"></td>
+      <td><input class="sess-input pp-field" type="text" name="field_of_education"
+                 placeholder="0200" maxlength="4"></td>
+      <td><input class="sess-input pp-hours" type="number" name="nominal_hours"
+                 placeholder="0" min="0"></td>
+      <td><input class="sess-input pp-aqf" type="number" name="aqf_level"
+                 placeholder="—" min="1" max="10"></td>
+      <td class="pp-flag"><input type="checkbox" name="vet_flag" checked></td>
+      <td class="pp-flag"><input type="checkbox" name="he_flag"></td>
+      <td class="sess-actions">
+        <span class="sess-status"></span>
+        <button class="btn-danger-sm pp-delete" type="button" title="Remove">✕</button>
+      </td>`;
+    tbody.appendChild(tr);
+    attachRowListeners(tr);
+    tr.querySelector('[name=program_code]').focus();
+  });
+})();
+</script>
 </body>
 </html>{{end}}

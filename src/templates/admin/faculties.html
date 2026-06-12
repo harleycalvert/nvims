@@ -6,6 +6,7 @@
   <title>NVIMS-SMS — Faculties</title>
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/sessions.css">
 </head>
 <body>
   <header>
@@ -21,54 +22,106 @@
       <span class="header-role">{{.User.Role}}</span>
     </div>
   </header>
-  <main>
-    <div class="admin-toolbar">
+
+  <main class="sessions-main">
+
+    <div class="sess-toolbar">
       <a class="btn-secondary" href="/admin/programs">← Programs</a>
     </div>
 
-    {{if not .Faculties}}
-      <p class="hint">No faculties on record yet.</p>
-    {{else}}
     <div class="table-wrap">
-      <table>
+      <table class="sessions-table" id="faculties-table">
         <thead>
           <tr>
             <th class="td-left">Faculty Name</th>
+            <th></th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="faculties-tbody">
           {{range .Faculties}}
-          <tr>
-            <td class="td-left">{{.Name}}</td>
+          <tr class="sess-row" data-id="{{.ID}}">
+            <td><input class="sess-input" type="text" name="faculty_name"
+                       value="{{.Name}}" maxlength="100" style="width:100%;min-width:240px"></td>
+            <td class="sess-actions">
+              <span class="sess-status"></span>
+              <button class="btn-danger-sm fac-delete" type="button" title="Delete">✕</button>
+            </td>
           </tr>
           {{end}}
         </tbody>
       </table>
     </div>
-    {{end}}
 
-    <div class="form-section form-section--spaced">
-      <h2 class="form-section-title">Add Faculty</h2>
-
-      {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
-      {{if .Success}}<p class="form-success">Faculty saved.</p>{{end}}
-
-      <form class="admin-form" method="POST" action="/admin/faculties/new">
-        <div class="form-section">
-          <div class="form-row">
-            <div class="form-group form-group-grow">
-              <label>Faculty Name <span class="req">*</span></label>
-              <input type="text" name="faculty_name" value="{{.FacultyName}}"
-                     maxlength="100" required autofocus>
-            </div>
-          </div>
-        </div>
-        <div class="form-actions">
-          <button type="submit" class="btn-primary">Add Faculty</button>
-          <a class="btn-secondary" href="/admin/faculties">Reset</a>
-        </div>
-      </form>
+    <div class="sess-add-bar">
+      <button class="btn-primary btn-sm" id="btn-add-faculty" type="button">+ Add Faculty</button>
     </div>
+
   </main>
+
+<script>
+(function () {
+  function setStatus(tr, state) {
+    const el = tr.querySelector('.sess-status');
+    el.className = 'sess-status sess-status-' + state;
+    el.textContent = state === 'saving' ? '…' : state === 'saved' ? '✓' : state === 'error' ? '!' : '';
+    if (state === 'saved') setTimeout(() => { el.textContent = ''; el.className = 'sess-status'; }, 1500);
+  }
+
+  async function saveRow(tr) {
+    const id   = tr.dataset.id;
+    const name = tr.querySelector('[name=faculty_name]').value.trim();
+    if (!name) return;
+
+    setStatus(tr, 'saving');
+    const url  = id === 'new' ? '/admin/faculties/new' : `/admin/faculties/${id}`;
+    const body = new URLSearchParams({ faculty_name: name });
+    try {
+      const res = await fetch(url, { method: 'POST', body });
+      if (!res.ok) { setStatus(tr, 'error'); return; }
+      if (id === 'new') { location.reload(); return; }
+      setStatus(tr, 'saved');
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  async function deleteRow(tr) {
+    const id = tr.dataset.id;
+    if (id === 'new') { tr.remove(); return; }
+    if (!confirm('Delete this faculty?')) return;
+    setStatus(tr, 'saving');
+    try {
+      const res = await fetch(`/admin/faculties/${id}/delete`, { method: 'POST' });
+      if (!res.ok) { setStatus(tr, 'error'); return; }
+      tr.remove();
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  function attachRowListeners(tr) {
+    tr.querySelector('[name=faculty_name]')?.addEventListener('blur', () => saveRow(tr));
+    tr.querySelector('.fac-delete')?.addEventListener('click', () => deleteRow(tr));
+  }
+
+  document.querySelectorAll('#faculties-tbody .sess-row').forEach(attachRowListeners);
+
+  document.getElementById('btn-add-faculty')?.addEventListener('click', () => {
+    const tbody = document.getElementById('faculties-tbody');
+    tbody.querySelector('.sess-new')?.remove();
+
+    const tr = document.createElement('tr');
+    tr.className = 'sess-row sess-new';
+    tr.dataset.id = 'new';
+    tr.innerHTML = `
+      <td><input class="sess-input" type="text" name="faculty_name"
+                 placeholder="Faculty name" maxlength="100"
+                 style="width:100%;min-width:240px"></td>
+      <td class="sess-actions">
+        <span class="sess-status"></span>
+        <button class="btn-danger-sm fac-delete" type="button" title="Remove">✕</button>
+      </td>`;
+    tbody.appendChild(tr);
+    attachRowListeners(tr);
+    tr.querySelector('[name=faculty_name]').focus();
+  });
+})();
+</script>
 </body>
 </html>{{end}}

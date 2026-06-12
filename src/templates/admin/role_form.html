@@ -60,16 +60,23 @@
           </div>
         </div>
 
-        {{if eq .RoleType "teacher"}}
+        {{if or (eq .RoleType "teacher") (eq .RoleType "staff")}}
         <div class="form-row">
           <div class="form-group fg-220">
             <label>Employment Status <span class="req">*</span></label>
-            <select name="employment_status" required>
+            <select name="employment_status" id="employment-status" required>
               <option value="">— select —</option>
               <option value="Full-Time"{{if eq .Role.EmploymentStatus "Full-Time"}} selected{{end}}>Full-Time</option>
               <option value="Part-Time"{{if eq .Role.EmploymentStatus "Part-Time"}} selected{{end}}>Part-Time</option>
               <option value="Casual"{{if eq .Role.EmploymentStatus "Casual"}} selected{{end}}>Casual</option>
             </select>
+          </div>
+          <div class="form-group fg-160">
+            <label>FTE <span class="form-hint">Full-Time Equivalent</span></label>
+            <input type="number" name="fte" id="fte-input"
+                   min="0.01" max="0.99" step="0.01"
+                   value="{{printf "%.2f" .Role.FTE}}"
+                   placeholder="—">
           </div>
         </div>
         {{end}}
@@ -82,5 +89,41 @@
       </div>
     </form>
   </main>
+
+<script>
+(function () {
+  const empSelect = document.getElementById('employment-status');
+  const fteInput  = document.getElementById('fte-input');
+  if (!empSelect || !fteInput) return;
+
+  function updateFTE() {
+    const v = empSelect.value;
+    if (v === 'Full-Time') {
+      fteInput.value = '1.00';
+      fteInput.readOnly = true;
+      fteInput.classList.add('input-readonly');
+    } else if (v === 'Casual') {
+      fteInput.value = '0.00';
+      fteInput.readOnly = true;
+      fteInput.classList.add('input-readonly');
+    } else if (v === 'Part-Time') {
+      fteInput.readOnly = false;
+      fteInput.classList.remove('input-readonly');
+      /* only suggest default if value was auto-set or blank */
+      if (!fteInput.value || fteInput.value === '0.00' || fteInput.value === '1.00') {
+        fteInput.value = '0.50';
+      }
+      fteInput.select();
+    } else {
+      fteInput.value = '';
+      fteInput.readOnly = true;
+      fteInput.classList.add('input-readonly');
+    }
+  }
+
+  empSelect.addEventListener('change', updateFTE);
+  updateFTE(); /* run on load to handle pre-populated edit state */
+})();
+</script>
 </body>
 </html>{{end}}

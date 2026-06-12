@@ -2,7 +2,7 @@
 
 PostgreSQL schema for a national, potentially AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.24`: its entities, relationships, business rules, and the
+describes the design of `v0.25`: its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -814,7 +814,7 @@ Student-specific demographic and AVETMISS compliance data. Extends `people` via 
 
 #### `teachers`
 
-Teacher-specific employment and capacity data. Extends `people` via a shared PK (`teachers.id = people.id`). Stores the teacher's sector (`VET`/`HE`/`DUAL`), FTE (Full-Time Equivalent, 0.00–1.00), annual teaching hour cap (`default_max_hours_per_year`), optional per-period hour cap for HE/DUAL teachers (`max_hours_per_period`), employment status, and faculty assignment. Police check details are stored on `people`. The hour caps seed `teacher_yearly_balances` and `teacher_period_allocations` for enforcement by triggers. Availability by day of week is stored in `teacher_availability`. Referenced by `class_slots`, `session_teachers`, `workplans`, `timesheets`, `teacher_vccs`, and `teacher_currency_activities`.
+Teacher-specific employment and capacity data. Extends `people` via a shared PK (`teachers.id = people.id`). Stores the teacher's sector (`VET`/`HE`/`DUAL`), employment status, FTE (Full-Time Equivalent — Casual = 0.00, Full-Time = 1.00, Part-Time = 0.01–0.99), annual teaching hour cap (`default_max_hours_per_year`), optional per-period hour cap for HE/DUAL teachers (`max_hours_per_period`), and faculty assignment. Police check details are stored on `people`. The hour caps seed `teacher_yearly_balances` and `teacher_period_allocations` for enforcement by triggers. Availability by day of week is stored in `teacher_availability`. Referenced by `class_slots`, `session_teachers`, `workplans`, `timesheets`, `teacher_vccs`, and `teacher_currency_activities`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -824,7 +824,7 @@ Teacher-specific employment and capacity data. Extends `people` via a shared PK 
 | `teacher_email` | `varchar(100)` | no |  | UK |
 | `teacher_phone` | `varchar(15)` | yes |  |  |
 | `employment_status` | `public.employment_type` | no | `'Casual'` |  |
-| `fte` | `numeric(3,2)` | no | `1.00` |  |
+| `fte` | `numeric(3,2)` | no | `0.00` |  |
 | `sector` | `public.teacher_sector` | no | `'VET'` |  |
 | `default_max_hours_per_year` | `numeric(6,2)` | no | `800.00` |  |
 | `max_hours_per_period` | `numeric(6,2)` | yes |  |  |
@@ -840,11 +840,11 @@ Teacher-specific employment and capacity data. Extends `people` via a shared PK 
 - `CONSTRAINT uq_teachers_email UNIQUE (teacher_email)`
 - `CONSTRAINT chk_teacher_max_hours CHECK (default_max_hours_per_year > 0)`
 - `CONSTRAINT chk_teacher_period_hours CHECK (max_hours_per_period IS NULL OR max_hours_per_period > 0)`
-- `CONSTRAINT chk_teacher_fte CHECK (fte >= 0.00 AND fte <= 1.00)`
+- `CONSTRAINT chk_teacher_fte CHECK ((employment_status='Casual' AND fte=0.00) OR (employment_status='Full-Time' AND fte=1.00) OR (employment_status='Part-Time' AND fte>0.00 AND fte<1.00))`
 
 #### `staff`
 
-Support and administrative staff. Extends `people` via a shared PK (`staff.id = people.id`). Holds the staff number, staff email, phone, FTE (Full-Time Equivalent, 0.00–1.00), and faculty assignment. Police check details are stored on `people`. Availability by day of week is stored in `staff_availability`. Staff appear as assessors on Learning Access Plans (`learning_access_plans.assessor_id`), support workers on classes (`class_support_staff`), recipients of bulk communications (`message_deliveries`), and audit actors (`app_users`).
+Support and administrative staff. Extends `people` via a shared PK (`staff.id = people.id`). Holds the staff number, staff email, phone, employment status, FTE (Full-Time Equivalent), and faculty assignment. FTE is constrained by employment status: Casual = 0.00, Full-Time = 1.00, Part-Time = 0.01–0.99. Police check details are stored on `people`. Availability by day of week is stored in `staff_availability`. Staff appear as assessors on Learning Access Plans (`learning_access_plans.assessor_id`), support workers on classes (`class_support_staff`), recipients of bulk communications (`message_deliveries`), and audit actors (`app_users`).
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -853,6 +853,7 @@ Support and administrative staff. Extends `people` via a shared PK (`staff.id = 
 | `staff_number` | `varchar(20)` | no |  | UK |
 | `staff_email` | `varchar(100)` | no |  | UK |
 | `staff_phone` | `varchar(15)` | yes |  |  |
+| `employment_status` | `public.employment_type` | no | `'Full-Time'` |  |
 | `fte` | `numeric(3,2)` | no | `1.00` |  |
 
 *Constraints:*
@@ -862,7 +863,7 @@ Support and administrative staff. Extends `people` via a shared PK (`staff.id = 
 - `CONSTRAINT fk_staff_faculty FOREIGN KEY (faculty_id) REFERENCES public.faculties(id) ON DELETE SET NULL`
 - `CONSTRAINT uq_staff_number UNIQUE (staff_number)`
 - `CONSTRAINT uq_staff_email UNIQUE (staff_email)`
-- `CONSTRAINT chk_staff_fte CHECK (fte >= 0.00 AND fte <= 1.00)`
+- `CONSTRAINT chk_staff_fte CHECK ((employment_status='Casual' AND fte=0.00) OR (employment_status='Full-Time' AND fte=1.00) OR (employment_status='Part-Time' AND fte>0.00 AND fte<1.00))`
 
 #### `staff_availability`
 

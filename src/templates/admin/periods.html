@@ -6,6 +6,7 @@
   <title>NVIMS-SMS — Academic Periods</title>
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/sessions.css">
 </head>
 <body>
   <header>
@@ -21,16 +22,15 @@
       <span class="header-role">{{.User.Role}}</span>
     </div>
   </header>
-  <main>
-    <div class="admin-toolbar">
+
+  <main class="sessions-main">
+
+    <div class="sess-toolbar">
       <a class="btn-secondary" href="/admin/programs">← Programs</a>
     </div>
 
-    {{if not .Periods}}
-      <p class="hint">No academic periods on record yet.</p>
-    {{else}}
     <div class="table-wrap">
-      <table>
+      <table class="sessions-table" id="periods-table">
         <thead>
           <tr>
             <th>Code</th>
@@ -40,84 +40,152 @@
             <th>Start</th>
             <th>End</th>
             <th>Seq</th>
+            <th></th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="periods-tbody">
           {{range .Periods}}
-          <tr>
-            <td>{{.PeriodCode}}</td>
-            <td>{{.Year}}</td>
-            <td class="td-left">{{.PeriodName}}</td>
-            <td>{{.PeriodType}}</td>
-            <td>{{dateShort .StartDate}}</td>
-            <td>{{dateShort .EndDate}}</td>
-            <td>{{if .SequenceNumber}}{{.SequenceNumber}}{{else}}—{{end}}</td>
+          <tr class="sess-row" data-id="{{.ID}}">
+            <td><input class="sess-input pi-code" type="text" name="period_code"
+                       value="{{.PeriodCode}}" maxlength="20"></td>
+            <td><input class="sess-input pi-year" type="number" name="year"
+                       value="{{.Year}}" min="2000" max="2099"></td>
+            <td><input class="sess-input pi-name" type="text" name="period_name"
+                       value="{{.PeriodName}}" maxlength="50"></td>
+            <td>
+              <select class="sess-input pi-type" name="period_type">
+                {{$pt := .PeriodType}}
+                {{range $.PeriodTypes}}
+                <option value="{{.}}"{{if eq . $pt}} selected{{end}}>{{.}}</option>
+                {{end}}
+              </select>
+            </td>
+            <td><input class="sess-input pi-date" type="date" name="start_date"
+                       value="{{dateISO .StartDate}}"></td>
+            <td><input class="sess-input pi-date" type="date" name="end_date"
+                       value="{{dateISO .EndDate}}"></td>
+            <td><input class="sess-input pi-seq" type="number" name="sequence_number"
+                       value="{{if .SequenceNumber}}{{.SequenceNumber}}{{end}}"
+                       min="1" placeholder="—"></td>
+            <td class="sess-actions">
+              <span class="sess-status"></span>
+              <button class="btn-danger-sm pi-delete" type="button" title="Delete">✕</button>
+            </td>
           </tr>
           {{end}}
         </tbody>
       </table>
     </div>
-    {{end}}
 
-    <div class="form-section form-section--spaced">
-      <h2 class="form-section-title">Add Academic Period</h2>
-
-      {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
-      {{if .Success}}<p class="form-success">Period saved.</p>{{end}}
-
-      <form class="admin-form" method="POST" action="/admin/periods/new">
-        <div class="form-section">
-          <div class="form-row">
-            <div class="form-group fg-200">
-              <label>Period Code <span class="req">*</span></label>
-              <input type="text" name="period_code" value="{{.Form.PeriodCode}}"
-                     maxlength="20" placeholder="e.g. 2025-T1" required>
-            </div>
-            <div class="form-group form-group-grow">
-              <label>Period Name <span class="req">*</span></label>
-              <input type="text" name="period_name" value="{{.Form.PeriodName}}"
-                     maxlength="50" placeholder="e.g. Term 1 2025" required>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group fg-120">
-              <label>Year <span class="req">*</span></label>
-              <input type="number" name="year" value="{{.Form.YearStr}}"
-                     min="2000" max="2099" placeholder="2025" required>
-            </div>
-            <div class="form-group fg-180">
-              <label>Type <span class="req">*</span></label>
-              <select name="period_type" required>
-                <option value="">— select —</option>
-                {{range .PeriodTypes}}
-                <option value="{{.}}"{{if eq $.Form.PeriodType .}} selected{{end}}>{{.}}</option>
-                {{end}}
-              </select>
-            </div>
-            <div class="form-group fg-120">
-              <label>Sequence</label>
-              <input type="number" name="sequence_number" value="{{.Form.SeqNumStr}}"
-                     min="1" placeholder="1">
-              <span class="hint">Order within year</span>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group fg-180">
-              <label>Start Date <span class="req">*</span></label>
-              <input type="date" name="start_date" value="{{.Form.StartDate}}" required>
-            </div>
-            <div class="form-group fg-180">
-              <label>End Date <span class="req">*</span></label>
-              <input type="date" name="end_date" value="{{.Form.EndDate}}" required>
-            </div>
-          </div>
-        </div>
-        <div class="form-actions">
-          <button type="submit" class="btn-primary">Add Period</button>
-          <a class="btn-secondary" href="/admin/periods">Reset</a>
-        </div>
-      </form>
+    <div class="sess-add-bar">
+      <button class="btn-primary btn-sm" id="btn-add-period" type="button">+ Add Period</button>
     </div>
+
   </main>
+
+<script>
+(function () {
+  const periodTypes = [{{range $i,$t := .PeriodTypes}}{{if $i}},{{end}}"{{$t}}"{{end}}];
+
+  function typeOptions(selected) {
+    return '<option value="">— type —</option>' +
+      periodTypes.map(t =>
+        `<option value="${t}"${t === selected ? ' selected' : ''}>${t}</option>`
+      ).join('');
+  }
+
+  function setStatus(tr, state) {
+    const el = tr.querySelector('.sess-status');
+    el.className = 'sess-status sess-status-' + state;
+    el.textContent = state === 'saving' ? '…' : state === 'saved' ? '✓' : state === 'error' ? '!' : '';
+    if (state === 'saved') setTimeout(() => { el.textContent = ''; el.className = 'sess-status'; }, 1500);
+  }
+
+  function collectFields(tr) {
+    return {
+      period_code:     tr.querySelector('[name=period_code]').value.trim(),
+      period_name:     tr.querySelector('[name=period_name]').value.trim(),
+      year:            tr.querySelector('[name=year]').value.trim(),
+      start_date:      tr.querySelector('[name=start_date]').value,
+      end_date:        tr.querySelector('[name=end_date]').value,
+      period_type:     tr.querySelector('[name=period_type]').value,
+      sequence_number: tr.querySelector('[name=sequence_number]').value.trim(),
+    };
+  }
+
+  function isComplete(f) {
+    return f.period_code && f.period_name && f.year &&
+           f.start_date && f.end_date && f.period_type;
+  }
+
+  async function saveRow(tr) {
+    const id = tr.dataset.id;
+    const f  = collectFields(tr);
+    if (!isComplete(f)) return;
+
+    setStatus(tr, 'saving');
+    const url  = id === 'new' ? '/admin/periods/new' : `/admin/periods/${id}`;
+    const body = new URLSearchParams(f);
+    try {
+      const res = await fetch(url, { method: 'POST', body });
+      if (!res.ok) { setStatus(tr, 'error'); return; }
+      if (id === 'new') { location.reload(); return; }
+      setStatus(tr, 'saved');
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  async function deleteRow(tr) {
+    const id = tr.dataset.id;
+    if (id === 'new') { tr.remove(); return; }
+    if (!confirm('Delete this period?')) return;
+    setStatus(tr, 'saving');
+    try {
+      const res = await fetch(`/admin/periods/${id}/delete`, { method: 'POST' });
+      if (!res.ok) { setStatus(tr, 'error'); return; }
+      tr.remove();
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  function attachRowListeners(tr) {
+    ['period_code', 'period_name', 'year', 'sequence_number'].forEach(name => {
+      tr.querySelector(`[name=${name}]`)?.addEventListener('blur', () => saveRow(tr));
+    });
+    ['period_type', 'start_date', 'end_date'].forEach(name => {
+      tr.querySelector(`[name=${name}]`)?.addEventListener('change', () => saveRow(tr));
+    });
+    tr.querySelector('.pi-delete')?.addEventListener('click', () => deleteRow(tr));
+  }
+
+  document.querySelectorAll('#periods-tbody .sess-row').forEach(attachRowListeners);
+
+  document.getElementById('btn-add-period')?.addEventListener('click', () => {
+    const tbody = document.getElementById('periods-tbody');
+    tbody.querySelector('.sess-new')?.remove();
+
+    const tr = document.createElement('tr');
+    tr.className = 'sess-row sess-new';
+    tr.dataset.id = 'new';
+    tr.innerHTML = `
+      <td><input class="sess-input pi-code" type="text" name="period_code"
+                 placeholder="e.g. T1-2026" maxlength="20"></td>
+      <td><input class="sess-input pi-year" type="number" name="year"
+                 placeholder="2026" min="2000" max="2099"></td>
+      <td><input class="sess-input pi-name" type="text" name="period_name"
+                 placeholder="e.g. Term 1 2026" maxlength="50"></td>
+      <td><select class="sess-input pi-type" name="period_type">${typeOptions('')}</select></td>
+      <td><input class="sess-input pi-date" type="date" name="start_date"></td>
+      <td><input class="sess-input pi-date" type="date" name="end_date"></td>
+      <td><input class="sess-input pi-seq" type="number" name="sequence_number"
+                 min="1" placeholder="—"></td>
+      <td class="sess-actions">
+        <span class="sess-status"></span>
+        <button class="btn-danger-sm pi-delete" type="button" title="Remove">✕</button>
+      </td>`;
+    tbody.appendChild(tr);
+    attachRowListeners(tr);
+    tr.querySelector('[name=period_code]').focus();
+  });
+})();
+</script>
 </body>
 </html>{{end}}

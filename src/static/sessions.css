@@ -70,6 +70,12 @@
   margin-top: 10px;
 }
 
+/* ── Table wrapper ────────────────────────────────────────────── */
+.table-wrap {
+  overflow-x: auto;
+  width: 100%;
+}
+
 /* ── Editable sessions table ──────────────────────────────────── */
 .sessions-table {
   width: 100%;
@@ -206,6 +212,33 @@
 
 .muted { color: #bbb; }
 .hidden { display: none !important; }
+
+/* ── Period table column widths ───────────────────────────────── */
+.pi-code { width: 120px; }
+.pi-year { width: 70px;  }
+.pi-name { width: 100%; min-width: 160px; }
+.pi-type { width: 130px; }
+.pi-date { width: 140px; }
+.pi-seq  { width: 60px;  }
+
+/* ── Program table column widths ──────────────────────────────── */
+.pp-code  { width: 110px; }
+.pp-name  { width: 100%; min-width: 180px; }
+.pp-fac   { width: 160px; }
+.pp-type  { width: 160px; }
+.pp-recog { width: 68px;  }
+.pp-level { width: 68px;  }
+.pp-field { width: 68px;  }
+.pp-hours { width: 68px;  }
+.pp-aqf   { width: 52px;  }
+.pp-flag  { width: 36px; text-align: center; }
+
+/* ── Intake Group table column widths ────────────────────────── */
+.ig-intake { width: auto; min-width: 160px; }
+.ig-code   { width: 80px;  }
+.ig-name   { width: 100%; min-width: 160px; }
+.ig-cap    { width: 70px;  }
+.ig-notes  { width: 200px; }
 
 /* ── Autofill row ─────────────────────────────────────────────── */
 .sess-autofill-cell {

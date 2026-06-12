@@ -795,33 +795,37 @@ func (s *Store) AddStudentRole(ctx context.Context, personID int64, studentNumbe
 	return err
 }
 
-func (s *Store) AddTeacherRole(ctx context.Context, personID int64, teacherNumber, teacherEmail, employmentStatus string) error {
+func (s *Store) AddTeacherRole(ctx context.Context, personID int64, teacherNumber, teacherEmail, employmentStatus string, fte float64) error {
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO public.teachers (id, teacher_number, teacher_email, employment_status)
-		VALUES ($1, $2, $3, $4::public.employment_type)
+		INSERT INTO public.teachers (id, teacher_number, teacher_email, employment_status, fte)
+		VALUES ($1, $2, $3, $4::public.employment_type, $5)
 		ON CONFLICT (id) DO UPDATE SET
 		    teacher_number    = EXCLUDED.teacher_number,
 		    teacher_email     = EXCLUDED.teacher_email,
-		    employment_status = EXCLUDED.employment_status
-	`, personID, teacherNumber, teacherEmail, employmentStatus)
+		    employment_status = EXCLUDED.employment_status,
+		    fte               = EXCLUDED.fte
+	`, personID, teacherNumber, teacherEmail, employmentStatus, fte)
 	return err
 }
 
-func (s *Store) AddStaffRole(ctx context.Context, personID int64, staffNumber, staffEmail string) error {
+func (s *Store) AddStaffRole(ctx context.Context, personID int64, staffNumber, staffEmail, employmentStatus string, fte float64) error {
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO public.staff (id, staff_number, staff_email)
-		VALUES ($1, $2, $3)
+		INSERT INTO public.staff (id, staff_number, staff_email, employment_status, fte)
+		VALUES ($1, $2, $3, $4::public.employment_type, $5)
 		ON CONFLICT (id) DO UPDATE SET
-		    staff_number = EXCLUDED.staff_number,
-		    staff_email  = EXCLUDED.staff_email
-	`, personID, staffNumber, staffEmail)
+		    staff_number      = EXCLUDED.staff_number,
+		    staff_email       = EXCLUDED.staff_email,
+		    employment_status = EXCLUDED.employment_status,
+		    fte               = EXCLUDED.fte
+	`, personID, staffNumber, staffEmail, employmentStatus, fte)
 	return err
 }
 
 type RoleDetail struct {
 	Number           string
 	Email            string
-	EmploymentStatus string // teacher only
+	EmploymentStatus string
+	FTE              float64
 }
 
 func (s *Store) GetRoleDetail(ctx context.Context, personID int64, roleType string) (RoleDetail, error) {
@@ -836,14 +840,15 @@ func (s *Store) GetRoleDetail(ctx context.Context, personID int64, roleType stri
 	case "teacher":
 		err = s.pool.QueryRow(ctx, `
 			SELECT COALESCE(teacher_number,''), COALESCE(teacher_email,''),
-			       COALESCE(employment_status::text,'')
+			       COALESCE(employment_status::text,''), fte
 			FROM public.teachers WHERE id = $1
-		`, personID).Scan(&d.Number, &d.Email, &d.EmploymentStatus)
+		`, personID).Scan(&d.Number, &d.Email, &d.EmploymentStatus, &d.FTE)
 	case "staff":
 		err = s.pool.QueryRow(ctx, `
-			SELECT COALESCE(staff_number,''), COALESCE(staff_email,'')
+			SELECT COALESCE(staff_number,''), COALESCE(staff_email,''),
+			       COALESCE(employment_status::text,''), fte
 			FROM public.staff WHERE id = $1
-		`, personID).Scan(&d.Number, &d.Email)
+		`, personID).Scan(&d.Number, &d.Email, &d.EmploymentStatus, &d.FTE)
 	}
 	return d, err
 }
@@ -971,9 +976,12 @@ type DeliveryLocationRow struct {
 
 type IntakeGroupRow struct {
 	ID         int64
+	IntakeID   int64
 	IntakeName string
 	GroupCode  string
 	GroupName  string
+	Capacity   int
+	Notes      string
 }
 
 type SubjectRow struct {
@@ -987,11 +995,19 @@ type SubjectRow struct {
 }
 
 type ProgramListRow struct {
-	ID          int64
-	ProgramCode string
-	ProgramName string
-	FacultyName string
-	ProgramType string
+	ID                   int64
+	ProgramCode          string
+	ProgramName          string
+	FacultyID            int64
+	FacultyName          string
+	ProgramType          string
+	ProgramRecognitionID string
+	LevelOfEducation     string
+	FieldOfEducation     string
+	NominalHours         int
+	VetFlag              bool
+	HeFlag               bool
+	AQFLevel             int // 0 means NULL
 }
 
 type ClassListRow struct {
@@ -1025,7 +1041,10 @@ func (s *Store) ListFaculties(ctx context.Context) ([]FacultyRow, error) {
 
 func (s *Store) ListPrograms(ctx context.Context) ([]ProgramListRow, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT p.id, p.program_code, p.program_name, f.faculty_name, COALESCE(p.program_type,'')
+		SELECT p.id, p.program_code, p.program_name, p.faculty_id, f.faculty_name,
+		       COALESCE(p.program_type,''), p.program_recognition_id,
+		       p.level_of_education, p.field_of_education, p.nominal_hours,
+		       p.vet_flag, p.he_flag, COALESCE(p.aqf_level, 0)
 		FROM public.programs p
 		JOIN public.faculties f ON f.id = p.faculty_id
 		ORDER BY p.program_code
@@ -1037,12 +1056,33 @@ func (s *Store) ListPrograms(ctx context.Context) ([]ProgramListRow, error) {
 	var out []ProgramListRow
 	for rows.Next() {
 		var r ProgramListRow
-		if err := rows.Scan(&r.ID, &r.ProgramCode, &r.ProgramName, &r.FacultyName, &r.ProgramType); err != nil {
+		if err := rows.Scan(&r.ID, &r.ProgramCode, &r.ProgramName, &r.FacultyID, &r.FacultyName,
+			&r.ProgramType, &r.ProgramRecognitionID, &r.LevelOfEducation,
+			&r.FieldOfEducation, &r.NominalHours, &r.VetFlag, &r.HeFlag, &r.AQFLevel); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) UpdateProgram(ctx context.Context, id, facultyID int64, programCode, programName, programRecognitionID, levelOfEducation, fieldOfEducation string, nominalHours int, vetFlag, heFlag bool, aqfLevel *int, programType string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.programs
+		SET faculty_id=$2, program_code=$3, program_name=$4,
+		    program_recognition_id=$5, level_of_education=$6, field_of_education=$7,
+		    nominal_hours=$8, vet_flag=$9, he_flag=$10,
+		    aqf_level=$11, program_type=NULLIF($12,'')
+		WHERE id=$1
+	`, id, facultyID, programCode, programName,
+		programRecognitionID, levelOfEducation, fieldOfEducation,
+		nominalHours, vetFlag, heFlag, aqfLevel, programType)
+	return err
+}
+
+func (s *Store) DeleteProgram(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM public.programs WHERE id=$1`, id)
+	return err
 }
 
 func (s *Store) CreateProgram(ctx context.Context, facultyID int64, programCode, programName, programRecognitionID, levelOfEducation, fieldOfEducation string, nominalHours int, vetFlag, heFlag bool, aqfLevel *int, programType string) (int64, error) {
@@ -1082,7 +1122,8 @@ func (s *Store) ListDeliveryLocations(ctx context.Context) ([]DeliveryLocationRo
 
 func (s *Store) ListIntakeGroups(ctx context.Context) ([]IntakeGroupRow, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT ig.id, pi.intake_name, ig.group_code, ig.group_name
+		SELECT ig.id, ig.intake_id, pi.intake_name, ig.group_code, ig.group_name,
+		       COALESCE(ig.capacity,0), COALESCE(ig.notes,'')
 		FROM public.intake_groups ig
 		JOIN public.program_intakes pi ON pi.id = ig.intake_id
 		ORDER BY pi.intake_name, ig.group_code
@@ -1094,7 +1135,7 @@ func (s *Store) ListIntakeGroups(ctx context.Context) ([]IntakeGroupRow, error) 
 	var out []IntakeGroupRow
 	for rows.Next() {
 		var r IntakeGroupRow
-		if err := rows.Scan(&r.ID, &r.IntakeName, &r.GroupCode, &r.GroupName); err != nil {
+		if err := rows.Scan(&r.ID, &r.IntakeID, &r.IntakeName, &r.GroupCode, &r.GroupName, &r.Capacity, &r.Notes); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -1357,6 +1398,22 @@ func (s *Store) CreatePeriod(ctx context.Context, periodCode, periodName string,
 	return id, err
 }
 
+func (s *Store) UpdatePeriod(ctx context.Context, id int64, periodCode, periodName string, year int, startDate, endDate, periodType string, seqNum *int) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.academic_periods
+		SET period_code=$2, period_name=$3, year=$4,
+		    start_date=$5::date, end_date=$6::date,
+		    period_type=$7, sequence_number=$8
+		WHERE id=$1
+	`, id, periodCode, periodName, year, startDate, endDate, periodType, seqNum)
+	return err
+}
+
+func (s *Store) DeletePeriod(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM public.academic_periods WHERE id=$1`, id)
+	return err
+}
+
 func (s *Store) ListTrainingOrgs(ctx context.Context) ([]TrainingOrgRow, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, training_org_id, training_org_name
@@ -1408,6 +1465,20 @@ func (s *Store) ListProgramIntakes(ctx context.Context) ([]ProgramIntakeRow, err
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) UpdateIntakeGroup(ctx context.Context, id, intakeID int64, groupCode, groupName string, capacity *int, notes string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.intake_groups
+		SET intake_id=$2, group_code=$3, group_name=$4, capacity=$5, notes=NULLIF($6,'')
+		WHERE id=$1
+	`, id, intakeID, groupCode, groupName, capacity, notes)
+	return err
+}
+
+func (s *Store) DeleteIntakeGroup(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM public.intake_groups WHERE id=$1`, id)
+	return err
 }
 
 func (s *Store) CreateIntakeGroup(ctx context.Context, intakeID int64, groupCode, groupName string, capacity *int, notes string) (int64, error) {
@@ -1598,6 +1669,16 @@ func (s *Store) CreateFaculty(ctx context.Context, name string) (int64, error) {
 		INSERT INTO public.faculties (faculty_name) VALUES ($1) RETURNING id
 	`, name).Scan(&id)
 	return id, err
+}
+
+func (s *Store) UpdateFaculty(ctx context.Context, id int64, name string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE public.faculties SET faculty_name=$2 WHERE id=$1`, id, name)
+	return err
+}
+
+func (s *Store) DeleteFaculty(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM public.faculties WHERE id=$1`, id)
+	return err
 }
 
 func (s *Store) CreateSubject(ctx context.Context, subjectCode, subjectName, moduleFlag, fieldOfEducation string, nominalHours *int, vetFlag bool, creditPoints *int) (int64, error) {

@@ -6,6 +6,7 @@
   <title>NVIMS-SMS — Intake Groups</title>
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/sessions.css">
 </head>
 <body>
   <header>
@@ -21,93 +22,157 @@
       <span class="header-role">{{.User.Role}}</span>
     </div>
   </header>
-  <main>
-    <div class="admin-toolbar">
+
+  <main class="sessions-main">
+
+    <div class="sess-toolbar">
       <a class="btn-secondary" href="/admin/programs">← Programs</a>
-      <a class="btn-secondary" href="/admin/classes">Classes</a>
+      <a class="btn-secondary" href="/admin/classes">Classes →</a>
     </div>
 
-    {{if not .Groups}}
-      <p class="hint">No intake groups on record yet.</p>
-    {{else}}
     <div class="table-wrap">
-      <table>
+      <table class="sessions-table" id="groups-table">
         <thead>
           <tr>
-            <th class="td-left">Intake</th>
+            <th>Intake</th>
             <th>Code</th>
             <th class="td-left">Group Name</th>
             <th>Capacity</th>
+            <th class="td-left">Notes</th>
+            <th></th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="groups-tbody">
           {{range .Groups}}
-          <tr>
-            <td class="td-left">{{.IntakeName}}</td>
-            <td>{{.GroupCode}}</td>
-            <td class="td-left">{{.GroupName}}</td>
-            <td>—</td>
+          <tr class="sess-row" data-id="{{.ID}}">
+            <td>
+              <select class="sess-input ig-intake" name="intake_id">
+                {{$iid := .IntakeID}}
+                {{range $.Intakes}}
+                <option value="{{.ID}}"{{if eq .ID $iid}} selected{{end}}>{{.IntakeName}}</option>
+                {{end}}
+              </select>
+            </td>
+            <td><input class="sess-input ig-code" type="text" name="group_code"
+                       value="{{.GroupCode}}" maxlength="20"></td>
+            <td><input class="sess-input ig-name" type="text" name="group_name"
+                       value="{{.GroupName}}" maxlength="100"></td>
+            <td><input class="sess-input ig-cap" type="number" name="capacity"
+                       value="{{if .Capacity}}{{.Capacity}}{{end}}" min="1" placeholder="—"></td>
+            <td><input class="sess-input ig-notes" type="text" name="notes"
+                       value="{{.Notes}}" maxlength="255"></td>
+            <td class="sess-actions">
+              <span class="sess-status"></span>
+              <button class="btn-danger-sm ig-delete" type="button" title="Delete">✕</button>
+            </td>
           </tr>
           {{end}}
         </tbody>
       </table>
     </div>
-    {{end}}
 
-    <div class="form-section form-section--spaced">
-      <h2 class="form-section-title">Add Intake Group</h2>
-
-      {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
-      {{if .Success}}<p class="form-success">Intake group saved.</p>{{end}}
-
-      {{if not .Intakes}}
-        <p class="hint">No program intakes found. Create program intakes before adding groups.</p>
-      {{else}}
-      <form class="admin-form" method="POST" action="/admin/intake-groups/new">
-        <div class="form-section">
-          <div class="form-row">
-            <div class="form-group form-group-grow">
-              <label>Program Intake <span class="req">*</span></label>
-              <select name="intake_id" required>
-                <option value="">— select intake —</option>
-                {{range .Intakes}}
-                <option value="{{.ID}}"{{if eq $.Form.IntakeID .ID}} selected{{end}}>
-                  {{.IntakeName}} ({{.IntakeCode}})
-                </option>
-                {{end}}
-              </select>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group fg-160">
-              <label>Group Code <span class="req">*</span></label>
-              <input type="text" name="group_code" value="{{.Form.GroupCode}}"
-                     maxlength="20" placeholder="e.g. A" required>
-            </div>
-            <div class="form-group form-group-grow">
-              <label>Group Name <span class="req">*</span></label>
-              <input type="text" name="group_name" value="{{.Form.GroupName}}"
-                     maxlength="100" placeholder="e.g. Group A" required>
-            </div>
-            <div class="form-group fg-120">
-              <label>Capacity</label>
-              <input type="number" name="capacity" value="{{.Form.CapacityStr}}" min="1">
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group form-group-grow">
-              <label>Notes</label>
-              <input type="text" name="notes" value="{{.Form.Notes}}" maxlength="255">
-            </div>
-          </div>
-        </div>
-        <div class="form-actions">
-          <button type="submit" class="btn-primary">Add Group</button>
-          <a class="btn-secondary" href="/admin/intake-groups">Reset</a>
-        </div>
-      </form>
-      {{end}}
+    <div class="sess-add-bar">
+      <button class="btn-primary btn-sm" id="btn-add-group" type="button">+ Add Group</button>
     </div>
+
   </main>
+
+<script>
+(function () {
+  const intakes = [{{range $i,$t := .Intakes}}{{if $i}},{{end}}{"id":{{$t.ID}},"name":{{printf "%q" $t.IntakeName}}}{{end}}];
+
+  function intakeOptions(selectedID) {
+    return intakes.map(t =>
+      `<option value="${t.id}"${t.id === selectedID ? ' selected' : ''}>${t.name}</option>`
+    ).join('');
+  }
+
+  function setStatus(tr, state) {
+    const el = tr.querySelector('.sess-status');
+    el.className = 'sess-status sess-status-' + state;
+    el.textContent = state === 'saving' ? '…' : state === 'saved' ? '✓' : state === 'error' ? '!' : '';
+    if (state === 'saved') setTimeout(() => { el.textContent = ''; el.className = 'sess-status'; }, 1500);
+  }
+
+  function collectFields(tr) {
+    return {
+      intake_id:  tr.querySelector('[name=intake_id]').value,
+      group_code: tr.querySelector('[name=group_code]').value.trim(),
+      group_name: tr.querySelector('[name=group_name]').value.trim(),
+      capacity:   tr.querySelector('[name=capacity]').value.trim(),
+      notes:      tr.querySelector('[name=notes]').value.trim(),
+    };
+  }
+
+  function isComplete(f) {
+    return f.intake_id && f.group_code && f.group_name;
+  }
+
+  async function saveRow(tr) {
+    const id = tr.dataset.id;
+    const f  = collectFields(tr);
+    if (!isComplete(f)) return;
+
+    setStatus(tr, 'saving');
+    const url  = id === 'new' ? '/admin/intake-groups/new' : `/admin/intake-groups/${id}`;
+    const body = new URLSearchParams(f);
+    try {
+      const res = await fetch(url, { method: 'POST', body });
+      if (!res.ok) { setStatus(tr, 'error'); return; }
+      if (id === 'new') { location.reload(); return; }
+      setStatus(tr, 'saved');
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  async function deleteRow(tr) {
+    const id = tr.dataset.id;
+    if (id === 'new') { tr.remove(); return; }
+    if (!confirm('Delete this intake group?')) return;
+    setStatus(tr, 'saving');
+    try {
+      const res = await fetch(`/admin/intake-groups/${id}/delete`, { method: 'POST' });
+      if (!res.ok) { setStatus(tr, 'error'); return; }
+      tr.remove();
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  function attachRowListeners(tr) {
+    tr.querySelector('[name=intake_id]')?.addEventListener('change', () => saveRow(tr));
+    ['group_code','group_name','capacity','notes'].forEach(name => {
+      tr.querySelector(`[name=${name}]`)?.addEventListener('blur', () => saveRow(tr));
+    });
+    tr.querySelector('.ig-delete')?.addEventListener('click', () => deleteRow(tr));
+  }
+
+  document.querySelectorAll('#groups-tbody .sess-row').forEach(attachRowListeners);
+
+  document.getElementById('btn-add-group')?.addEventListener('click', () => {
+    const tbody = document.getElementById('groups-tbody');
+    tbody.querySelector('.sess-new')?.remove();
+
+    const defaultIntakeID = intakes.length === 1 ? intakes[0].id : 0;
+    const tr = document.createElement('tr');
+    tr.className = 'sess-row sess-new';
+    tr.dataset.id = 'new';
+    tr.innerHTML = `
+      <td><select class="sess-input ig-intake" name="intake_id">${intakeOptions(defaultIntakeID)}</select></td>
+      <td><input class="sess-input ig-code" type="text" name="group_code"
+                 placeholder="e.g. A" maxlength="20"></td>
+      <td><input class="sess-input ig-name" type="text" name="group_name"
+                 placeholder="e.g. Group A" maxlength="100"></td>
+      <td><input class="sess-input ig-cap" type="number" name="capacity"
+                 placeholder="—" min="1"></td>
+      <td><input class="sess-input ig-notes" type="text" name="notes"
+                 placeholder="Optional notes" maxlength="255"></td>
+      <td class="sess-actions">
+        <span class="sess-status"></span>
+        <button class="btn-danger-sm ig-delete" type="button" title="Remove">✕</button>
+      </td>`;
+    tbody.appendChild(tr);
+    attachRowListeners(tr);
+    tr.querySelector('[name=group_code]').focus();
+  });
+})();
+</script>
 </body>
 </html>{{end}}

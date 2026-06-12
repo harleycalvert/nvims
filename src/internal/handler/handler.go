@@ -830,6 +830,8 @@ func (h *Handler) AdminRoleAdd(w http.ResponseWriter, r *http.Request) {
 	roleType := r.FormValue("role_type")
 	number := strings.TrimSpace(r.FormValue("number"))
 	email := strings.TrimSpace(r.FormValue("email"))
+	empStatus := r.FormValue("employment_status")
+	fte, _ := strconv.ParseFloat(r.FormValue("fte"), 64)
 	user, _ := auth.Current(r)
 
 	var roleErr error
@@ -837,10 +839,9 @@ func (h *Handler) AdminRoleAdd(w http.ResponseWriter, r *http.Request) {
 	case "student":
 		roleErr = h.store.AddStudentRole(r.Context(), id, number, email)
 	case "teacher":
-		roleErr = h.store.AddTeacherRole(r.Context(), id, number, email,
-			r.FormValue("employment_status"))
+		roleErr = h.store.AddTeacherRole(r.Context(), id, number, email, empStatus, fte)
 	case "staff":
-		roleErr = h.store.AddStaffRole(r.Context(), id, number, email)
+		roleErr = h.store.AddStaffRole(r.Context(), id, number, email, empStatus, fte)
 	default:
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -851,7 +852,8 @@ func (h *Handler) AdminRoleAdd(w http.ResponseWriter, r *http.Request) {
 		person, _ := h.store.GetPerson(r.Context(), id)
 		role := store.RoleDetail{
 			Number: number, Email: email,
-			EmploymentStatus: r.FormValue("employment_status"),
+			EmploymentStatus: empStatus,
+			FTE:              fte,
 		}
 		h.render(w, "admin-role-form", map[string]any{
 			"Person": person, "RoleType": roleType,
@@ -951,26 +953,15 @@ func (h *Handler) AdminPrograms(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) AdminProgramCreate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
 		return
 	}
-	user, _ := auth.Current(r)
 	f := programFormFromPost(r)
-
 	nominalHours, nhErr := strconv.Atoi(strings.TrimSpace(f.NominalHoursStr))
 	if f.FacultyID == 0 || f.ProgramCode == "" || f.ProgramName == "" ||
 		f.ProgramRecognitionID == "" || f.LevelOfEducation == "" ||
 		f.FieldOfEducation == "" || nhErr != nil || nominalHours < 0 {
-		programs, _ := h.store.ListPrograms(r.Context())
-		faculties, _ := h.store.ListFaculties(r.Context())
-		h.render(w, "admin-programs", map[string]any{
-			"Programs":     programs,
-			"Faculties":    faculties,
-			"ProgramTypes": programTypes,
-			"Form":         f,
-			"Error":        "Please fill in all required fields.",
-			"User":         user,
-		})
+		http.Error(w, `{"error":"missing required fields"}`, http.StatusBadRequest)
 		return
 	}
 
@@ -980,7 +971,6 @@ func (h *Handler) AdminProgramCreate(w http.ResponseWriter, r *http.Request) {
 			aqfLevel = &v
 		}
 	}
-
 	if !f.VetFlag && !f.HeFlag {
 		f.VetFlag = true
 	}
@@ -991,19 +981,63 @@ func (h *Handler) AdminProgramCreate(w http.ResponseWriter, r *http.Request) {
 		nominalHours, f.VetFlag, f.HeFlag, aqfLevel, f.ProgramType)
 	if err != nil {
 		log.Printf("CreateProgram: %v", err)
-		programs, _ := h.store.ListPrograms(r.Context())
-		faculties, _ := h.store.ListFaculties(r.Context())
-		h.render(w, "admin-programs", map[string]any{
-			"Programs":     programs,
-			"Faculties":    faculties,
-			"ProgramTypes": programTypes,
-			"Form":         f,
-			"Error":        "Could not save — check the program code is not already in use.",
-			"User":         user,
-		})
+		http.Error(w, `{"error":"could not save — program code may already be in use"}`, http.StatusConflict)
 		return
 	}
-	http.Redirect(w, r, "/admin/programs?saved=1", http.StatusSeeOther)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminProgramUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	f := programFormFromPost(r)
+	nominalHours, nhErr := strconv.Atoi(strings.TrimSpace(f.NominalHoursStr))
+	if f.FacultyID == 0 || f.ProgramCode == "" || f.ProgramName == "" ||
+		f.ProgramRecognitionID == "" || f.LevelOfEducation == "" ||
+		f.FieldOfEducation == "" || nhErr != nil || nominalHours < 0 {
+		http.Error(w, `{"error":"missing required fields"}`, http.StatusBadRequest)
+		return
+	}
+
+	var aqfLevel *int
+	if f.AQFLevelStr != "" {
+		if v, err := strconv.Atoi(f.AQFLevelStr); err == nil && v >= 1 && v <= 10 {
+			aqfLevel = &v
+		}
+	}
+
+	if err := h.store.UpdateProgram(r.Context(), id, f.FacultyID,
+		f.ProgramCode, f.ProgramName,
+		f.ProgramRecognitionID, f.LevelOfEducation, f.FieldOfEducation,
+		nominalHours, f.VetFlag, f.HeFlag, aqfLevel, f.ProgramType); err != nil {
+		log.Printf("UpdateProgram(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminProgramDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	if err := h.store.DeleteProgram(r.Context(), id); err != nil {
+		log.Printf("DeleteProgram(%d): %v", id, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type classForm struct {
@@ -1168,50 +1202,96 @@ func (h *Handler) AdminPeriods(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) AdminPeriodCreate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
 		return
 	}
-	user, _ := auth.Current(r)
-	f := periodForm{
-		PeriodCode: strings.TrimSpace(r.FormValue("period_code")),
-		PeriodName: strings.TrimSpace(r.FormValue("period_name")),
-		YearStr:    strings.TrimSpace(r.FormValue("year")),
-		StartDate:  r.FormValue("start_date"),
-		EndDate:    r.FormValue("end_date"),
-		PeriodType: r.FormValue("period_type"),
-		SeqNumStr:  strings.TrimSpace(r.FormValue("sequence_number")),
-	}
+	periodCode := strings.TrimSpace(r.FormValue("period_code"))
+	periodName := strings.TrimSpace(r.FormValue("period_name"))
+	yearStr    := strings.TrimSpace(r.FormValue("year"))
+	startDate  := r.FormValue("start_date")
+	endDate    := r.FormValue("end_date")
+	periodType := r.FormValue("period_type")
+	seqStr     := strings.TrimSpace(r.FormValue("sequence_number"))
 
-	year, yearErr := strconv.Atoi(f.YearStr)
-	if f.PeriodCode == "" || f.PeriodName == "" || yearErr != nil ||
-		f.StartDate == "" || f.EndDate == "" || f.PeriodType == "" {
-		periods, _ := h.store.ListPeriods(r.Context())
-		h.render(w, "admin-periods", map[string]any{
-			"Periods": periods, "PeriodTypes": periodTypes,
-			"Form": f, "Error": "Please fill in all required fields.", "User": user,
-		})
+	year, yearErr := strconv.Atoi(yearStr)
+	if periodCode == "" || periodName == "" || yearErr != nil ||
+		startDate == "" || endDate == "" || periodType == "" {
+		http.Error(w, `{"error":"missing required fields"}`, http.StatusBadRequest)
 		return
 	}
 
 	var seqNum *int
-	if f.SeqNumStr != "" {
-		if v, err := strconv.Atoi(f.SeqNumStr); err == nil && v > 0 {
+	if seqStr != "" {
+		if v, err := strconv.Atoi(seqStr); err == nil && v > 0 {
 			seqNum = &v
 		}
 	}
 
-	_, err := h.store.CreatePeriod(r.Context(), f.PeriodCode, f.PeriodName, year,
-		f.StartDate, f.EndDate, f.PeriodType, seqNum)
+	_, err := h.store.CreatePeriod(r.Context(), periodCode, periodName, year,
+		startDate, endDate, periodType, seqNum)
 	if err != nil {
 		log.Printf("CreatePeriod: %v", err)
-		periods, _ := h.store.ListPeriods(r.Context())
-		h.render(w, "admin-periods", map[string]any{
-			"Periods": periods, "PeriodTypes": periodTypes,
-			"Form": f, "Error": "Could not save — check the period code is not already in use.", "User": user,
-		})
+		http.Error(w, `{"error":"could not save — period code may already be in use"}`, http.StatusConflict)
 		return
 	}
-	http.Redirect(w, r, "/admin/periods?saved=1", http.StatusSeeOther)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminPeriodUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	periodCode := strings.TrimSpace(r.FormValue("period_code"))
+	periodName := strings.TrimSpace(r.FormValue("period_name"))
+	yearStr    := strings.TrimSpace(r.FormValue("year"))
+	startDate  := r.FormValue("start_date")
+	endDate    := r.FormValue("end_date")
+	periodType := r.FormValue("period_type")
+	seqStr     := strings.TrimSpace(r.FormValue("sequence_number"))
+
+	year, yearErr := strconv.Atoi(yearStr)
+	if periodCode == "" || periodName == "" || yearErr != nil ||
+		startDate == "" || endDate == "" || periodType == "" {
+		http.Error(w, `{"error":"missing required fields"}`, http.StatusBadRequest)
+		return
+	}
+
+	var seqNum *int
+	if seqStr != "" {
+		if v, err := strconv.Atoi(seqStr); err == nil && v > 0 {
+			seqNum = &v
+		}
+	}
+
+	if err := h.store.UpdatePeriod(r.Context(), id, periodCode, periodName, year,
+		startDate, endDate, periodType, seqNum); err != nil {
+		log.Printf("UpdatePeriod(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminPeriodDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	if err := h.store.DeletePeriod(r.Context(), id); err != nil {
+		log.Printf("DeletePeriod(%d): %v", id, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ── Admin / Delivery Locations ─────────────────────────────────────────────
@@ -1322,55 +1402,85 @@ func (h *Handler) AdminIntakeGroups(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "admin-intake-groups", map[string]any{
 		"Groups":  groups,
 		"Intakes": intakes,
-		"Form":    intakeGroupForm{},
-		"Error":   "",
-		"Success": r.URL.Query().Get("saved") == "1",
 		"User":    user,
 	})
 }
 
+func intakeGroupCapacity(r *http.Request) *int {
+	s := strings.TrimSpace(r.FormValue("capacity"))
+	if s == "" {
+		return nil
+	}
+	if v, err := strconv.Atoi(s); err == nil && v > 0 {
+		return &v
+	}
+	return nil
+}
+
 func (h *Handler) AdminIntakeGroupCreate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
 		return
 	}
-	user, _ := auth.Current(r)
-	f := intakeGroupForm{
-		IntakeID:    parseInt64(r.FormValue("intake_id")),
-		GroupCode:   strings.TrimSpace(r.FormValue("group_code")),
-		GroupName:   strings.TrimSpace(r.FormValue("group_name")),
-		CapacityStr: strings.TrimSpace(r.FormValue("capacity")),
-		Notes:       strings.TrimSpace(r.FormValue("notes")),
-	}
+	intakeID := parseInt64(r.FormValue("intake_id"))
+	groupCode := strings.TrimSpace(r.FormValue("group_code"))
+	groupName := strings.TrimSpace(r.FormValue("group_name"))
+	notes := strings.TrimSpace(r.FormValue("notes"))
 
-	renderErr := func(msg string) {
-		groups, _ := h.store.ListIntakeGroups(r.Context())
-		intakes, _ := h.store.ListProgramIntakes(r.Context())
-		h.render(w, "admin-intake-groups", map[string]any{
-			"Groups": groups, "Intakes": intakes,
-			"Form": f, "Error": msg, "User": user,
-		})
-	}
-
-	if f.IntakeID == 0 || f.GroupCode == "" || f.GroupName == "" {
-		renderErr("Please fill in all required fields.")
+	if intakeID == 0 || groupCode == "" || groupName == "" {
+		http.Error(w, `{"error":"intake, code and name are required"}`, http.StatusBadRequest)
 		return
 	}
-
-	var capacity *int
-	if f.CapacityStr != "" {
-		if v, err := strconv.Atoi(f.CapacityStr); err == nil && v > 0 {
-			capacity = &v
-		}
-	}
-
-	_, err := h.store.CreateIntakeGroup(r.Context(), f.IntakeID, f.GroupCode, f.GroupName, capacity, f.Notes)
+	_, err := h.store.CreateIntakeGroup(r.Context(), intakeID, groupCode, groupName, intakeGroupCapacity(r), notes)
 	if err != nil {
 		log.Printf("CreateIntakeGroup: %v", err)
-		renderErr("Could not save — check the group code is not already in use for this intake.")
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/admin/intake-groups?saved=1", http.StatusSeeOther)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminIntakeGroupUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	intakeID := parseInt64(r.FormValue("intake_id"))
+	groupCode := strings.TrimSpace(r.FormValue("group_code"))
+	groupName := strings.TrimSpace(r.FormValue("group_name"))
+	notes := strings.TrimSpace(r.FormValue("notes"))
+
+	if intakeID == 0 || groupCode == "" || groupName == "" {
+		http.Error(w, `{"error":"intake, code and name are required"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.UpdateIntakeGroup(r.Context(), id, intakeID, groupCode, groupName, intakeGroupCapacity(r), notes); err != nil {
+		log.Printf("UpdateIntakeGroup(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminIntakeGroupDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	if err := h.store.DeleteIntakeGroup(r.Context(), id); err != nil {
+		log.Printf("DeleteIntakeGroup(%d): %v", id, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ── Admin / Class Sessions ─────────────────────────────────────────────────
@@ -1740,35 +1850,60 @@ func (h *Handler) AdminFaculties(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) AdminFacultyCreate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
 		return
 	}
-	user, _ := auth.Current(r)
 	name := strings.TrimSpace(r.FormValue("faculty_name"))
-
 	if name == "" {
-		faculties, _ := h.store.ListFaculties(r.Context())
-		h.render(w, "admin-faculties", map[string]any{
-			"Faculties":   faculties,
-			"Error":       "Faculty name is required.",
-			"FacultyName": name,
-			"User":        user,
-		})
+		http.Error(w, `{"error":"faculty name is required"}`, http.StatusBadRequest)
 		return
 	}
 	_, err := h.store.CreateFaculty(r.Context(), name)
 	if err != nil {
 		log.Printf("CreateFaculty: %v", err)
-		faculties, _ := h.store.ListFaculties(r.Context())
-		h.render(w, "admin-faculties", map[string]any{
-			"Faculties":   faculties,
-			"Error":       "Could not save — check the name is not already in use.",
-			"FacultyName": name,
-			"User":        user,
-		})
+		http.Error(w, `{"error":"could not save — name may already be in use"}`, http.StatusConflict)
 		return
 	}
-	http.Redirect(w, r, "/admin/faculties?saved=1", http.StatusSeeOther)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminFacultyUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("faculty_name"))
+	if name == "" {
+		http.Error(w, `{"error":"faculty name is required"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.UpdateFaculty(r.Context(), id, name); err != nil {
+		log.Printf("UpdateFaculty(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminFacultyDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	if err := h.store.DeleteFaculty(r.Context(), id); err != nil {
+		log.Printf("DeleteFaculty(%d): %v", id, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type subjectForm struct {
