@@ -233,6 +233,21 @@
 .pp-aqf   { width: 52px;  }
 .pp-flag  { width: 36px; text-align: center; }
 
+/* ── Subject table column widths ─────────────────────────────── */
+.sb-code    { width: 120px; }
+.sb-name    { width: 100%; min-width: 180px; }
+.sb-field   { width: 68px;  }
+.sb-hours   { width: 68px;  }
+.sb-credits { width: 68px;  }
+.sb-mod     { width: 80px;  }
+
+/* ── Class table column widths ────────────────────────────────── */
+.cl-code     { min-width: 180px; }
+.cl-period   { width: auto; min-width: 140px; }
+.cl-location { width: auto; min-width: 120px; }
+.cl-group    { width: auto; min-width: 140px; }
+.cl-cap      { width: 70px; }
+
 /* ── Intake Group table column widths ────────────────────────── */
 .ig-intake { width: auto; min-width: 160px; }
 .ig-code   { width: 80px;  }

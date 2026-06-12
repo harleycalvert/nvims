@@ -6,6 +6,7 @@
   <title>NVIMS-SMS — Classes</title>
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/sessions.css">
 </head>
 <body>
   <header>
@@ -21,201 +22,202 @@
       <span class="header-role">{{.User.Role}}</span>
     </div>
   </header>
-  <main>
-    <div class="admin-toolbar">
+
+  <main class="sessions-main">
+
+    <div class="sess-toolbar">
       <a class="btn-secondary" href="/admin/programs">← Programs</a>
       <a class="btn-secondary" href="/admin/subjects">Subjects</a>
       <a class="btn-secondary" href="/admin/locations">Locations</a>
-      <a class="btn-secondary" href="/admin/sessions">Sessions</a>
+      <a class="btn-secondary" href="/admin/sessions">Sessions →</a>
     </div>
 
-    {{if not .Classes}}
-      <p class="hint">No classes on record yet.</p>
-    {{else}}
     <div class="table-wrap">
-      <table>
+      <table class="sessions-table" id="classes-table">
         <thead>
           <tr>
-            <th>Code</th>
+            <th class="td-left">Code</th>
             <th>Period</th>
-            <th class="td-left">Location</th>
+            <th>Location</th>
+            <th>Intake Group</th>
+            <th title="Enrolment cap">Cap</th>
+            <th></th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="classes-tbody">
           {{range .Classes}}
-          <tr>
-            <td>{{.ClassCode}}</td>
-            <td>{{.PeriodName}}</td>
-            <td class="td-left">{{.LocationName}}</td>
+          <tr class="sess-row" data-id="{{.ID}}">
+            <td><input class="sess-input cl-code" type="text" name="class_code"
+                       value="{{.ClassCode}}" maxlength="80"></td>
+            <td>
+              <select class="sess-input cl-period" name="academic_period_id">
+                {{$pid := .AcademicPeriodID}}
+                {{range $.Periods}}
+                <option value="{{.ID}}"{{if eq .ID $pid}} selected{{end}}>
+                  {{- .Year}} — {{.PeriodName -}}
+                </option>
+                {{end}}
+              </select>
+            </td>
+            <td>
+              <select class="sess-input cl-location" name="delivery_location_id">
+                {{$lid := .DeliveryLocationID}}
+                {{range $.Locations}}
+                <option value="{{.ID}}"{{if eq .ID $lid}} selected{{end}}>{{.Name}}</option>
+                {{end}}
+              </select>
+            </td>
+            <td>
+              <select class="sess-input cl-group" name="intake_group_id">
+                <option value="0"{{if eq .IntakeGroupID 0}} selected{{end}}>— none —</option>
+                {{$gid := .IntakeGroupID}}
+                {{range $.IntakeGroups}}
+                <option value="{{.ID}}"{{if eq .ID $gid}} selected{{end}}>{{.IntakeName}} / {{.GroupName}} ({{.GroupCode}})</option>
+                {{end}}
+              </select>
+            </td>
+            <td><input class="sess-input cl-cap" type="number" name="enrolment_cap"
+                       value="{{if .EnrolmentCap}}{{.EnrolmentCap}}{{end}}" min="1" placeholder="—"></td>
+            <td class="sess-actions">
+              <span class="sess-status"></span>
+              <button class="btn-danger-sm cl-delete" type="button" title="Delete">✕</button>
+            </td>
           </tr>
           {{end}}
         </tbody>
       </table>
     </div>
-    {{end}}
 
-    <div class="form-section form-section--spaced">
-      <h2 class="form-section-title">Add Class</h2>
-
-      {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
-      {{if .Success}}<p class="form-success">Class saved.</p>{{end}}
-
-      <form class="admin-form" method="POST" action="/admin/classes/new">
-
-        <div class="form-section">
-          <h2 class="form-section-title">Class Details</h2>
-          <div class="form-row">
-            <div class="form-group fg-260">
-              <label>Class Code <span class="req">*</span></label>
-              <input type="text" name="class_code" value="{{.Form.ClassCode}}"
-                     maxlength="80" placeholder="e.g. ICT30120-DA-2025-T1-A" required>
-            </div>
-            <div class="form-group fg-140">
-              <label>Enrolment Cap</label>
-              <input type="number" name="enrolment_cap" value="{{.Form.EnrolmentCapStr}}" min="1">
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group fg-260">
-              <label>Academic Period <span class="req">*</span></label>
-              <select name="academic_period_id" required>
-                <option value="">— select period —</option>
-                {{range .Periods}}
-                <option value="{{.ID}}"{{if eq $.Form.AcademicPeriodID .ID}} selected{{end}}>
-                  {{.Year}} — {{.PeriodName}} ({{.PeriodCode}})
-                </option>
-                {{end}}
-              </select>
-            </div>
-            <div class="form-group fg-260">
-              <label>Delivery Location <span class="req">*</span></label>
-              <select name="delivery_location_id" required>
-                <option value="">— select location —</option>
-                {{range .Locations}}
-                <option value="{{.ID}}"{{if eq $.Form.DeliveryLocationID .ID}} selected{{end}}>{{.Name}}</option>
-                {{end}}
-              </select>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group fg-360">
-              <label>Intake Group</label>
-              <select name="intake_group_id">
-                <option value="">— none —</option>
-                {{range .IntakeGroups}}
-                <option value="{{.ID}}"{{if eq $.Form.IntakeGroupID .ID}} selected{{end}}>
-                  {{.IntakeName}} / {{.GroupName}} ({{.GroupCode}})
-                </option>
-                {{end}}
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-section">
-          <h2 class="form-section-title">Subjects</h2>
-          {{if not .Subjects}}
-            <p class="hint">No subjects in the database yet.</p>
-          {{else}}
-          <p class="hint">Check subjects this class delivers. Edit the label if needed.</p>
-          <div class="subjects-scroll">
-            <table class="subjects-pick-table">
-              <thead>
-                <tr>
-                  <th class="col-check"></th>
-                  <th class="col-code">Code</th>
-                  <th class="td-left col-name">Name</th>
-                  <th class="td-left col-label">Class Label</th>
-                </tr>
-              </thead>
-              <tbody>
-                {{range .Subjects}}
-                <tr>
-                  <td class="col-check">
-                    <input type="checkbox" name="subject_ids" value="{{.ID}}"
-                           id="subj-{{.ID}}" onchange="toggleLabel(this)">
-                  </td>
-                  <td>
-                    <label for="subj-{{.ID}}">{{.SubjectCode}}</label>
-                  </td>
-                  <td class="td-left">
-                    <label for="subj-{{.ID}}">{{.SubjectName}}</label>
-                  </td>
-                  <td class="td-left">
-                    <input type="hidden" name="subj_name_{{.ID}}" value="{{.SubjectName}}">
-                    <input type="text" name="label_{{.ID}}" value="{{.SubjectName}}"
-                           class="subj-label-input" disabled
-                           placeholder="Label (defaults to subject name)">
-                  </td>
-                </tr>
-                {{end}}
-              </tbody>
-            </table>
-          </div>
-          {{end}}
-        </div>
-
-        <div class="form-actions">
-          <button type="submit" class="btn-primary">Add Class</button>
-          <a class="btn-secondary" href="/admin/classes">Reset</a>
-        </div>
-
-      </form>
+    <div class="sess-add-bar">
+      <button class="btn-primary btn-sm" id="btn-add-class" type="button">+ Add Class</button>
     </div>
+
   </main>
-<style>
-.subjects-scroll {
-  max-height: 360px;
-  overflow-y: auto;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  margin-top: 8px;
-}
-.subjects-pick-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.subjects-pick-table thead th {
-  position: sticky;
-  top: 0;
-  background: #f5f5f5;
-  border-bottom: 1px solid #ddd;
-  padding: 6px 8px;
-  font-weight: 600;
-  text-align: center;
-}
-.subjects-pick-table td {
-  padding: 4px 8px;
-  border-bottom: 1px solid #f0f0f0;
-  vertical-align: middle;
-}
-.subjects-pick-table tr:last-child td { border-bottom: none; }
-.col-check { width: 32px; text-align: center; }
-.col-code  { width: 130px; }
-.col-name  { }
-.col-label { width: 240px; }
-.subj-label-input {
-  width: 100%;
-  padding: 3px 6px;
-  font-size: 12px;
-  border: 1px solid #ccc;
-  border-radius: 3px;
-  box-sizing: border-box;
-}
-.subj-label-input:disabled {
-  background: #f5f5f5;
-  color: #aaa;
-  border-color: #e0e0e0;
-}
-</style>
+
 <script>
-function toggleLabel(cb) {
-  const row = cb.closest('tr');
-  const inp = row.querySelector('.subj-label-input');
-  if (!inp) return;
-  inp.disabled = !cb.checked;
-}
+(function () {
+  // Size the Code column to fit the longest existing value
+  (function sizeCodeColumn() {
+    const inputs = [...document.querySelectorAll('#classes-tbody [name=class_code]')];
+    if (!inputs.length) return;
+    const probe = document.createElement('span');
+    probe.style.cssText = 'visibility:hidden;position:absolute;font:13px/1 sans-serif;padding:4px 6px;white-space:pre';
+    document.body.appendChild(probe);
+    let maxW = 180;
+    inputs.forEach(inp => {
+      probe.textContent = inp.value;
+      maxW = Math.max(maxW, probe.offsetWidth + 2);
+    });
+    document.body.removeChild(probe);
+    inputs.forEach(inp => { inp.style.width = maxW + 'px'; });
+  })();
+
+  const periods  = [{{range $i,$p := .Periods}}{{if $i}},{{end}}{"id":{{$p.ID}},"label":{{printf "%q" (printf "%d — %s" $p.Year $p.PeriodName)}}}{{end}}];
+  const locations = [{{range $i,$l := .Locations}}{{if $i}},{{end}}{"id":{{$l.ID}},"name":{{printf "%q" $l.Name}}}{{end}}];
+  const groups   = [{{range $i,$g := .IntakeGroups}}{{if $i}},{{end}}{"id":{{$g.ID}},"label":{{printf "%q" (printf "%s / %s (%s)" $g.IntakeName $g.GroupName $g.GroupCode)}}}{{end}}];
+
+  function periodOptions(selectedID) {
+    return periods.map(p =>
+      `<option value="${p.id}"${p.id === selectedID ? ' selected' : ''}>${p.label}</option>`
+    ).join('');
+  }
+  function locationOptions(selectedID) {
+    return locations.map(l =>
+      `<option value="${l.id}"${l.id === selectedID ? ' selected' : ''}>${l.name}</option>`
+    ).join('');
+  }
+  function groupOptions(selectedID) {
+    return `<option value="0"${selectedID === 0 ? ' selected' : ''}>— none —</option>` +
+      groups.map(g =>
+        `<option value="${g.id}"${g.id === selectedID ? ' selected' : ''}>${g.label}</option>`
+      ).join('');
+  }
+
+  function setStatus(tr, state) {
+    const el = tr.querySelector('.sess-status');
+    el.className = 'sess-status sess-status-' + state;
+    el.textContent = state === 'saving' ? '…' : state === 'saved' ? '✓' : state === 'error' ? '!' : '';
+    if (state === 'saved') setTimeout(() => { el.textContent = ''; el.className = 'sess-status'; }, 1500);
+  }
+
+  function collectFields(tr) {
+    return {
+      class_code:           tr.querySelector('[name=class_code]').value.trim(),
+      academic_period_id:   tr.querySelector('[name=academic_period_id]').value,
+      delivery_location_id: tr.querySelector('[name=delivery_location_id]').value,
+      intake_group_id:      tr.querySelector('[name=intake_group_id]').value,
+      enrolment_cap:        tr.querySelector('[name=enrolment_cap]').value.trim(),
+    };
+  }
+
+  function isComplete(f) {
+    return f.class_code && f.academic_period_id && f.delivery_location_id;
+  }
+
+  async function saveRow(tr) {
+    const id = tr.dataset.id;
+    const f  = collectFields(tr);
+    if (!isComplete(f)) return;
+
+    setStatus(tr, 'saving');
+    const url  = id === 'new' ? '/admin/classes/new' : `/admin/classes/${id}`;
+    const body = new URLSearchParams(f);
+    try {
+      const res = await fetch(url, { method: 'POST', body });
+      if (!res.ok) { setStatus(tr, 'error'); return; }
+      if (id === 'new') { location.reload(); return; }
+      setStatus(tr, 'saved');
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  async function deleteRow(tr) {
+    const id = tr.dataset.id;
+    if (id === 'new') { tr.remove(); return; }
+    if (!confirm('Delete this class?')) return;
+    setStatus(tr, 'saving');
+    try {
+      const res = await fetch(`/admin/classes/${id}/delete`, { method: 'POST' });
+      if (!res.ok) { setStatus(tr, 'error'); return; }
+      tr.remove();
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  function attachRowListeners(tr) {
+    tr.querySelector('[name=class_code]')?.addEventListener('blur', () => saveRow(tr));
+    tr.querySelector('[name=enrolment_cap]')?.addEventListener('blur', () => saveRow(tr));
+    ['academic_period_id','delivery_location_id','intake_group_id'].forEach(name => {
+      tr.querySelector(`[name=${name}]`)?.addEventListener('change', () => saveRow(tr));
+    });
+    tr.querySelector('.cl-delete')?.addEventListener('click', () => deleteRow(tr));
+  }
+
+  document.querySelectorAll('#classes-tbody .sess-row').forEach(attachRowListeners);
+
+  document.getElementById('btn-add-class')?.addEventListener('click', () => {
+    const tbody = document.getElementById('classes-tbody');
+    tbody.querySelector('.sess-new')?.remove();
+
+    const defaultPeriodID   = periods.length   === 1 ? periods[0].id   : 0;
+    const defaultLocationID = locations.length === 1 ? locations[0].id : 0;
+    const tr = document.createElement('tr');
+    tr.className = 'sess-row sess-new';
+    tr.dataset.id = 'new';
+    tr.innerHTML = `
+      <td><input class="sess-input cl-code" type="text" name="class_code"
+                 placeholder="e.g. ICT30120-DA-2025-T1-A" maxlength="80"></td>
+      <td><select class="sess-input cl-period" name="academic_period_id">${periodOptions(defaultPeriodID)}</select></td>
+      <td><select class="sess-input cl-location" name="delivery_location_id">${locationOptions(defaultLocationID)}</select></td>
+      <td><select class="sess-input cl-group" name="intake_group_id">${groupOptions(0)}</select></td>
+      <td><input class="sess-input cl-cap" type="number" name="enrolment_cap" placeholder="—" min="1"></td>
+      <td class="sess-actions">
+        <span class="sess-status"></span>
+        <button class="btn-danger-sm cl-delete" type="button" title="Remove">✕</button>
+      </td>`;
+    tbody.appendChild(tr);
+    attachRowListeners(tr);
+    tr.querySelector('[name=class_code]').focus();
+  });
+})();
 </script>
 </body>
 </html>{{end}}

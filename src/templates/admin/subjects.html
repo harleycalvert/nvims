@@ -6,6 +6,7 @@
   <title>NVIMS-SMS — Subjects</title>
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/sessions.css">
 </head>
 <body>
   <header>
@@ -21,109 +22,159 @@
       <span class="header-role">{{.User.Role}}</span>
     </div>
   </header>
-  <main>
-    <div class="admin-toolbar">
+
+  <main class="sessions-main">
+
+    <div class="sess-toolbar">
       <a class="btn-secondary" href="/admin/classes">← Classes</a>
     </div>
 
-    {{if not .Subjects}}
-      <p class="hint">No subjects on record yet.</p>
-    {{else}}
     <div class="table-wrap">
-      <table>
+      <table class="sessions-table" id="subjects-table">
         <thead>
           <tr>
             <th>Code</th>
             <th class="td-left">Name</th>
-            <th>Field of Ed.</th>
-            <th>Hours</th>
-            <th>VET</th>
-            <th>Module</th>
+            <th title="ASCED Field of Education">Field</th>
+            <th title="Nominal hours">Hours</th>
+            <th title="Credit points (HE)">Credits</th>
+            <th title="Module flag">Mod</th>
+            <th title="VET flag">VET</th>
+            <th></th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="subjects-tbody">
           {{range .Subjects}}
-          <tr>
-            <td>{{.SubjectCode}}</td>
-            <td class="td-left">{{.SubjectName}}</td>
-            <td>{{.FieldOfEducation}}</td>
-            <td>{{.NominalHours}}</td>
-            <td>{{if .VetFlag}}Y{{else}}N{{end}}</td>
-            <td>{{.ModuleFlag}}</td>
+          <tr class="sess-row" data-id="{{.ID}}">
+            <td><input class="sess-input sb-code" type="text" name="subject_code"
+                       value="{{.SubjectCode}}" maxlength="30"></td>
+            <td><input class="sess-input sb-name" type="text" name="subject_name"
+                       value="{{.SubjectName}}" maxlength="100"></td>
+            <td><input class="sess-input sb-field" type="text" name="field_of_education"
+                       value="{{.FieldOfEducation}}" maxlength="6"></td>
+            <td><input class="sess-input sb-hours" type="number" name="nominal_hours"
+                       value="{{if .NominalHours}}{{.NominalHours}}{{end}}" min="1" placeholder="—"></td>
+            <td><input class="sess-input sb-credits" type="number" name="credit_points"
+                       value="{{if .CreditPoints}}{{.CreditPoints}}{{end}}" min="1" placeholder="—"></td>
+            <td>
+              <select class="sess-input sb-mod" name="module_flag">
+                <option value="N"{{if eq .ModuleFlag "N"}} selected{{end}}>No</option>
+                <option value="Y"{{if eq .ModuleFlag "Y"}} selected{{end}}>Yes</option>
+              </select>
+            </td>
+            <td class="pp-flag"><input type="checkbox" name="vet_flag"{{if .VetFlag}} checked{{end}}></td>
+            <td class="sess-actions">
+              <span class="sess-status"></span>
+              <button class="btn-danger-sm sb-delete" type="button" title="Delete">✕</button>
+            </td>
           </tr>
           {{end}}
         </tbody>
       </table>
     </div>
-    {{end}}
 
-    <div class="form-section form-section--spaced">
-      <h2 class="form-section-title">Add Subject</h2>
-
-      {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
-      {{if .Success}}<p class="form-success">Subject saved.</p>{{end}}
-
-      <form class="admin-form" method="POST" action="/admin/subjects/new">
-        <div class="form-section">
-          <h2 class="form-section-title">Identification</h2>
-          <div class="form-row">
-            <div class="form-group fg-200">
-              <label>Subject Code <span class="req">*</span></label>
-              <input type="text" name="subject_code" value="{{.Form.SubjectCode}}"
-                     maxlength="30" placeholder="e.g. ICTPRG302" required>
-            </div>
-            <div class="form-group form-group-grow">
-              <label>Subject Name <span class="req">*</span></label>
-              <input type="text" name="subject_name" value="{{.Form.SubjectName}}"
-                     maxlength="100" required>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-section">
-          <h2 class="form-section-title">Classification</h2>
-          <div class="form-row">
-            <div class="form-group fg-160">
-              <label>Field of Education <span class="req">*</span></label>
-              <input type="text" name="field_of_education" value="{{.Form.FieldOfEducation}}"
-                     maxlength="6" placeholder="e.g. 0299" required>
-              <span class="hint">ASCED code (4–6 chars)</span>
-            </div>
-            <div class="form-group fg-140">
-              <label>Nominal Hours</label>
-              <input type="number" name="nominal_hours" value="{{.Form.NominalHoursStr}}" min="1">
-            </div>
-            <div class="form-group fg-140">
-              <label>Credit Points</label>
-              <input type="number" name="credit_points" value="{{.Form.CreditPointsStr}}" min="1">
-              <span class="hint">HE only</span>
-            </div>
-            <div class="form-group fg-140">
-              <label>Module</label>
-              <select name="module_flag">
-                <option value="N"{{if eq .Form.ModuleFlag "N"}} selected{{end}}>No</option>
-                <option value="Y"{{if eq .Form.ModuleFlag "Y"}} selected{{end}}>Yes</option>
-              </select>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label>&nbsp;</label>
-              <div class="checkbox-row">
-                <label class="checkbox-label">
-                  <input type="checkbox" name="vet_flag"{{if .Form.VetFlag}} checked{{end}}> VET
-                </label>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-actions">
-          <button type="submit" class="btn-primary">Add Subject</button>
-          <a class="btn-secondary" href="/admin/subjects">Reset</a>
-        </div>
-      </form>
+    <div class="sess-add-bar">
+      <button class="btn-primary btn-sm" id="btn-add-subject" type="button">+ Add Subject</button>
     </div>
+
   </main>
+
+<script>
+(function () {
+  function setStatus(tr, state) {
+    const el = tr.querySelector('.sess-status');
+    el.className = 'sess-status sess-status-' + state;
+    el.textContent = state === 'saving' ? '…' : state === 'saved' ? '✓' : state === 'error' ? '!' : '';
+    if (state === 'saved') setTimeout(() => { el.textContent = ''; el.className = 'sess-status'; }, 1500);
+  }
+
+  function collectFields(tr) {
+    return {
+      subject_code:       tr.querySelector('[name=subject_code]').value.trim(),
+      subject_name:       tr.querySelector('[name=subject_name]').value.trim(),
+      field_of_education: tr.querySelector('[name=field_of_education]').value.trim(),
+      nominal_hours:      tr.querySelector('[name=nominal_hours]').value.trim(),
+      credit_points:      tr.querySelector('[name=credit_points]').value.trim(),
+      module_flag:        tr.querySelector('[name=module_flag]').value,
+      vet_flag:           tr.querySelector('[name=vet_flag]').checked ? '1' : '0',
+    };
+  }
+
+  function isComplete(f) {
+    return f.subject_code && f.subject_name && f.field_of_education;
+  }
+
+  async function saveRow(tr) {
+    const id = tr.dataset.id;
+    const f  = collectFields(tr);
+    if (!isComplete(f)) return;
+
+    setStatus(tr, 'saving');
+    const url  = id === 'new' ? '/admin/subjects/new' : `/admin/subjects/${id}`;
+    const body = new URLSearchParams(f);
+    try {
+      const res = await fetch(url, { method: 'POST', body });
+      if (!res.ok) { setStatus(tr, 'error'); return; }
+      if (id === 'new') { location.reload(); return; }
+      setStatus(tr, 'saved');
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  async function deleteRow(tr) {
+    const id = tr.dataset.id;
+    if (id === 'new') { tr.remove(); return; }
+    if (!confirm('Delete this subject?')) return;
+    setStatus(tr, 'saving');
+    try {
+      const res = await fetch(`/admin/subjects/${id}/delete`, { method: 'POST' });
+      if (!res.ok) { setStatus(tr, 'error'); return; }
+      tr.remove();
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  function attachRowListeners(tr) {
+    ['subject_code','subject_name','field_of_education','nominal_hours','credit_points'].forEach(name => {
+      tr.querySelector(`[name=${name}]`)?.addEventListener('blur', () => saveRow(tr));
+    });
+    tr.querySelector('[name=module_flag]')?.addEventListener('change', () => saveRow(tr));
+    tr.querySelector('[name=vet_flag]')?.addEventListener('change', () => saveRow(tr));
+    tr.querySelector('.sb-delete')?.addEventListener('click', () => deleteRow(tr));
+  }
+
+  document.querySelectorAll('#subjects-tbody .sess-row').forEach(attachRowListeners);
+
+  document.getElementById('btn-add-subject')?.addEventListener('click', () => {
+    const tbody = document.getElementById('subjects-tbody');
+    tbody.querySelector('.sess-new')?.remove();
+
+    const tr = document.createElement('tr');
+    tr.className = 'sess-row sess-new';
+    tr.dataset.id = 'new';
+    tr.innerHTML = `
+      <td><input class="sess-input sb-code" type="text" name="subject_code"
+                 placeholder="e.g. ICTPRG302" maxlength="30"></td>
+      <td><input class="sess-input sb-name" type="text" name="subject_name"
+                 placeholder="Subject name" maxlength="100"></td>
+      <td><input class="sess-input sb-field" type="text" name="field_of_education"
+                 placeholder="0299" maxlength="6"></td>
+      <td><input class="sess-input sb-hours" type="number" name="nominal_hours"
+                 placeholder="—" min="1"></td>
+      <td><input class="sess-input sb-credits" type="number" name="credit_points"
+                 placeholder="—" min="1"></td>
+      <td><select class="sess-input sb-mod" name="module_flag">
+            <option value="N">No</option>
+            <option value="Y">Yes</option>
+          </select></td>
+      <td class="pp-flag"><input type="checkbox" name="vet_flag" checked></td>
+      <td class="sess-actions">
+        <span class="sess-status"></span>
+        <button class="btn-danger-sm sb-delete" type="button" title="Remove">✕</button>
+      </td>`;
+    tbody.appendChild(tr);
+    attachRowListeners(tr);
+    tr.querySelector('[name=subject_code]').focus();
+  });
+})();
+</script>
 </body>
 </html>{{end}}

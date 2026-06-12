@@ -1,11 +1,14 @@
 package handler
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
 	"net/http"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -125,6 +128,7 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 			"templates/admin/locations.html",
 			"templates/admin/intake-groups.html",
 			"templates/admin/sessions.html",
+			"templates/backup.html",
 		),
 	)
 	return &Handler{store: st, sessions: sessions, tmpl: tmpl}
@@ -664,6 +668,178 @@ func personFormFromPost(r *http.Request, id int64) personForm {
 	}
 }
 
+func backupDSN() string {
+	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
+		return dsn
+	}
+	return "postgresql://nvims:jjnhbFC56RDWRTJHBjhb98uibe@localhost:5432/nvims-sms"
+}
+
+// jsonSafe converts pgx-native values to types that encoding/json handles cleanly.
+func jsonSafe(v any) any {
+	if v == nil {
+		return nil
+	}
+	switch t := v.(type) {
+	case bool, int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64,
+		float32, float64, string:
+		return t
+	case time.Time:
+		return t.Format(time.RFC3339)
+	default:
+		return fmt.Sprintf("%v", t)
+	}
+}
+
+func (h *Handler) BackupPage(w http.ResponseWriter, r *http.Request) {
+	tables, err := h.store.ListTableNames(r.Context())
+	if err != nil {
+		log.Printf("ListTableNames: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	user, _ := auth.Current(r)
+	h.render(w, "backup", map[string]any{
+		"Tables": tables,
+		"User":   user,
+	})
+}
+
+func (h *Handler) BackupSQL(w http.ResponseWriter, r *http.Request) {
+	filename := "nvims-sms-" + time.Now().Format("2006-01-02-150405") + ".sql"
+	cmd := exec.CommandContext(r.Context(), "pg_dump", backupDSN())
+	out, err := cmd.Output()
+	if err != nil {
+		log.Printf("pg_dump: %v", err)
+		http.Error(w, "Backup failed — check server logs.", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	w.Header().Set("Content-Length", strconv.Itoa(len(out)))
+	_, _ = w.Write(out)
+}
+
+func (h *Handler) BackupJSON(w http.ResponseWriter, r *http.Request) {
+	tables, err := h.store.ListTableNames(r.Context())
+	if err != nil {
+		log.Printf("ListTableNames: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+
+	tablesData := make(map[string]any, len(tables))
+	for _, tbl := range tables {
+		cols, rows, err := h.store.ExportTableRows(r.Context(), tbl)
+		if err != nil {
+			log.Printf("ExportTableRows(%s): %v", tbl, err)
+			continue
+		}
+		tableRows := make([]map[string]any, len(rows))
+		for i, row := range rows {
+			m := make(map[string]any, len(cols))
+			for j, col := range cols {
+				m[col] = jsonSafe(row[j])
+			}
+			tableRows[i] = m
+		}
+		tablesData[tbl] = tableRows
+	}
+
+	payload := map[string]any{
+		"exported_at": time.Now().UTC().Format(time.RFC3339),
+		"tables":      tablesData,
+	}
+	out, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		http.Error(w, "json error", http.StatusInternalServerError)
+		return
+	}
+	filename := "nvims-sms-" + time.Now().Format("2006-01-02-150405") + ".json"
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	w.Header().Set("Content-Length", strconv.Itoa(len(out)))
+	_, _ = w.Write(out)
+}
+
+func (h *Handler) BackupTable(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	tableName := r.FormValue("table")
+	format := r.FormValue("format")
+
+	// validate table name against the live schema
+	tables, err := h.store.ListTableNames(r.Context())
+	if err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	allowed := false
+	for _, t := range tables {
+		if t == tableName {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		http.Error(w, "invalid table", http.StatusBadRequest)
+		return
+	}
+
+	cols, rows, err := h.store.ExportTableRows(r.Context(), tableName)
+	if err != nil {
+		log.Printf("ExportTableRows(%s): %v", tableName, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+
+	ts := time.Now().Format("2006-01-02-150405")
+	switch format {
+	case "csv":
+		filename := tableName + "-" + ts + ".csv"
+		w.Header().Set("Content-Type", "text/csv")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+		cw := csv.NewWriter(w)
+		_ = cw.Write(cols)
+		for _, row := range rows {
+			rec := make([]string, len(row))
+			for i, v := range row {
+				if v == nil {
+					rec[i] = ""
+				} else {
+					rec[i] = fmt.Sprintf("%v", v)
+				}
+			}
+			_ = cw.Write(rec)
+		}
+		cw.Flush()
+	case "json":
+		tableRows := make([]map[string]any, len(rows))
+		for i, row := range rows {
+			m := make(map[string]any, len(cols))
+			for j, col := range cols {
+				m[col] = jsonSafe(row[j])
+			}
+			tableRows[i] = m
+		}
+		out, err := json.MarshalIndent(tableRows, "", "  ")
+		if err != nil {
+			http.Error(w, "json error", http.StatusInternalServerError)
+			return
+		}
+		filename := tableName + "-" + ts + ".json"
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+		w.Header().Set("Content-Length", strconv.Itoa(len(out)))
+		_, _ = w.Write(out)
+	default:
+		http.Error(w, "invalid format", http.StatusBadRequest)
+	}
+}
+
 func (h *Handler) AdminMenu(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.Current(r)
 	h.render(w, "admin-menu", map[string]any{"User": user})
@@ -1073,99 +1249,99 @@ func (h *Handler) AdminClasses(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "database error", http.StatusInternalServerError)
 		return
 	}
-	subjects, err := h.store.ListSubjects(r.Context())
-	if err != nil {
-		log.Printf("ListSubjects: %v", err)
-		http.Error(w, "database error", http.StatusInternalServerError)
-		return
-	}
 	user, _ := auth.Current(r)
 	h.render(w, "admin-classes", map[string]any{
 		"Classes":      classes,
 		"Periods":      periods,
 		"Locations":    locations,
 		"IntakeGroups": intakeGroups,
-		"Subjects":     subjects,
-		"Form":         classForm{},
-		"Error":        "",
-		"Success":      r.URL.Query().Get("saved") == "1",
 		"User":         user,
 	})
 }
 
+func classOptionalInt64(r *http.Request, field string) *int64 {
+	v := parseInt64(r.FormValue(field))
+	if v == 0 {
+		return nil
+	}
+	return &v
+}
+
+func classOptionalInt(r *http.Request, field string) *int {
+	s := strings.TrimSpace(r.FormValue(field))
+	if s == "" {
+		return nil
+	}
+	if v, err := strconv.Atoi(s); err == nil && v > 0 {
+		return &v
+	}
+	return nil
+}
+
 func (h *Handler) AdminClassCreate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
 		return
 	}
-	user, _ := auth.Current(r)
+	classCode  := strings.TrimSpace(r.FormValue("class_code"))
+	periodID   := parseInt64(r.FormValue("academic_period_id"))
+	locationID := parseInt64(r.FormValue("delivery_location_id"))
 
-	f := classForm{
-		ClassCode:          strings.TrimSpace(r.FormValue("class_code")),
-		AcademicPeriodID:   parseInt64(r.FormValue("academic_period_id")),
-		DeliveryLocationID: parseInt64(r.FormValue("delivery_location_id")),
-		IntakeGroupID:      parseInt64(r.FormValue("intake_group_id")),
-		EnrolmentCapStr:    strings.TrimSpace(r.FormValue("enrolment_cap")),
-	}
-
-	renderErr := func(msg string) {
-		classes, _ := h.store.ListClasses(r.Context())
-		periods, _ := h.store.Periods(r.Context())
-		locations, _ := h.store.ListDeliveryLocations(r.Context())
-		intakeGroups, _ := h.store.ListIntakeGroups(r.Context())
-		subjects, _ := h.store.ListSubjects(r.Context())
-		h.render(w, "admin-classes", map[string]any{
-			"Classes":      classes,
-			"Periods":      periods,
-			"Locations":    locations,
-			"IntakeGroups": intakeGroups,
-			"Subjects":     subjects,
-			"Form":         f,
-			"Error":        msg,
-			"User":         user,
-		})
-	}
-
-	if f.ClassCode == "" || f.AcademicPeriodID == 0 || f.DeliveryLocationID == 0 {
-		renderErr("Please fill in all required fields.")
+	if classCode == "" || periodID == 0 || locationID == 0 {
+		http.Error(w, `{"error":"code, period and location are required"}`, http.StatusBadRequest)
 		return
 	}
-
-	var intakeGroupID *int64
-	if f.IntakeGroupID > 0 {
-		intakeGroupID = &f.IntakeGroupID
-	}
-
-	var enrolmentCap *int
-	if f.EnrolmentCapStr != "" {
-		if v, err := strconv.Atoi(f.EnrolmentCapStr); err == nil && v > 0 {
-			enrolmentCap = &v
-		}
-	}
-
-	subjectIDStrs := r.Form["subject_ids"]
-	var classSubjects []store.ClassSubject
-	for _, idStr := range subjectIDStrs {
-		sid := parseInt64(idStr)
-		if sid == 0 {
-			continue
-		}
-		label := strings.TrimSpace(r.FormValue(fmt.Sprintf("label_%d", sid)))
-		if label == "" {
-			label = strings.TrimSpace(r.FormValue(fmt.Sprintf("subj_name_%d", sid)))
-		}
-		classSubjects = append(classSubjects, store.ClassSubject{SubjectID: sid, SubjectLabel: label})
-	}
-
-	_, err := h.store.CreateClass(r.Context(),
-		f.ClassCode, f.AcademicPeriodID, f.DeliveryLocationID,
-		intakeGroupID, enrolmentCap, classSubjects)
+	_, err := h.store.CreateClass(r.Context(), classCode, periodID, locationID,
+		classOptionalInt64(r, "intake_group_id"), classOptionalInt(r, "enrolment_cap"), nil)
 	if err != nil {
 		log.Printf("CreateClass: %v", err)
-		renderErr("Could not save — check the class code is not already in use.")
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/admin/classes?saved=1", http.StatusSeeOther)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminClassUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	classCode  := strings.TrimSpace(r.FormValue("class_code"))
+	periodID   := parseInt64(r.FormValue("academic_period_id"))
+	locationID := parseInt64(r.FormValue("delivery_location_id"))
+
+	if classCode == "" || periodID == 0 || locationID == 0 {
+		http.Error(w, `{"error":"code, period and location are required"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.UpdateClass(r.Context(), id, periodID, locationID, classCode,
+		classOptionalInt64(r, "intake_group_id"), classOptionalInt(r, "enrolment_cap")); err != nil {
+		log.Printf("UpdateClass(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminClassDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	if err := h.store.DeleteClass(r.Context(), id); err != nil {
+		log.Printf("DeleteClass(%d): %v", id, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ── Admin / Periods ────────────────────────────────────────────────────────
@@ -1542,7 +1718,7 @@ func (h *Handler) AdminSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var sessions []store.ScheduledSessionRow
-	var teacherClasses []store.ClassListRow
+	var viewClasses []store.ClassListRow
 
 	if entityID > 0 && selPeriod != nil {
 		from := selPeriod.StartDate.Format("2006-01-02")
@@ -1554,12 +1730,13 @@ func (h *Handler) AdminSessions(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				log.Printf("SessionsForTeacher(%d): %v", entityID, err)
 			}
-			teacherClasses, _ = h.store.TeacherClassesForPeriod(r.Context(), entityID, periodID)
+			viewClasses, _ = h.store.TeacherClassesForPeriod(r.Context(), entityID, periodID)
 		case "group":
-			sessions, err = h.store.SessionsForIntakeGroup(r.Context(), entityID, from, to)
+			sessions, err = h.store.SessionsForIntakeGroup(r.Context(), entityID, from, to, classIDs)
 			if err != nil {
 				log.Printf("SessionsForIntakeGroup(%d): %v", entityID, err)
 			}
+			viewClasses, _ = h.store.GroupClassesForPeriod(r.Context(), entityID, periodID)
 		}
 	}
 
@@ -1580,7 +1757,7 @@ func (h *Handler) AdminSessions(w http.ResponseWriter, r *http.Request) {
 		"Teachers":       teachers,
 		"IntakeGroups":   intakeGroups,
 		"Classes":        classes,
-		"TeacherClasses": teacherClasses,
+		"ViewClasses":    viewClasses,
 		"Periods":        periods,
 		"SessionTypes":   sessionTypes,
 		"PeriodEndDate":  periodEndDate,
@@ -1938,65 +2115,91 @@ func (h *Handler) AdminSubjects(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.Current(r)
 	h.render(w, "admin-subjects", map[string]any{
 		"Subjects": subjects,
-		"Form":     subjectForm{VetFlag: true, ModuleFlag: "N"},
-		"Error":    "",
-		"Success":  r.URL.Query().Get("saved") == "1",
 		"User":     user,
 	})
 }
 
+func subjectNullableInt(r *http.Request, field string) *int {
+	s := strings.TrimSpace(r.FormValue(field))
+	if s == "" {
+		return nil
+	}
+	if v, err := strconv.Atoi(s); err == nil && v > 0 {
+		return &v
+	}
+	return nil
+}
+
+func parseSubjectFields(r *http.Request) (code, name, mod, field string, vet bool) {
+	code  = strings.TrimSpace(r.FormValue("subject_code"))
+	name  = strings.TrimSpace(r.FormValue("subject_name"))
+	field = strings.TrimSpace(r.FormValue("field_of_education"))
+	mod   = r.FormValue("module_flag")
+	if mod != "Y" && mod != "N" {
+		mod = "N"
+	}
+	vet = r.FormValue("vet_flag") == "1"
+	return
+}
+
 func (h *Handler) AdminSubjectCreate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
 		return
 	}
-	user, _ := auth.Current(r)
-	f := subjectFormFromPost(r)
-
-	if f.ModuleFlag != "Y" && f.ModuleFlag != "N" {
-		f.ModuleFlag = "N"
-	}
-
-	if f.SubjectCode == "" || f.SubjectName == "" || f.FieldOfEducation == "" {
-		subjects, _ := h.store.ListSubjects(r.Context())
-		h.render(w, "admin-subjects", map[string]any{
-			"Subjects": subjects,
-			"Form":     f,
-			"Error":    "Please fill in all required fields.",
-			"User":     user,
-		})
+	code, name, mod, field, vet := parseSubjectFields(r)
+	if code == "" || name == "" || field == "" {
+		http.Error(w, `{"error":"code, name and field are required"}`, http.StatusBadRequest)
 		return
 	}
-
-	var nominalHours *int
-	if f.NominalHoursStr != "" {
-		if v, err := strconv.Atoi(f.NominalHoursStr); err == nil && v > 0 {
-			nominalHours = &v
-		}
-	}
-
-	var creditPoints *int
-	if f.CreditPointsStr != "" {
-		if v, err := strconv.Atoi(f.CreditPointsStr); err == nil && v > 0 {
-			creditPoints = &v
-		}
-	}
-
-	_, err := h.store.CreateSubject(r.Context(),
-		f.SubjectCode, f.SubjectName, f.ModuleFlag, f.FieldOfEducation,
-		nominalHours, f.VetFlag, creditPoints)
+	_, err := h.store.CreateSubject(r.Context(), code, name, mod, field,
+		subjectNullableInt(r, "nominal_hours"), vet, subjectNullableInt(r, "credit_points"))
 	if err != nil {
 		log.Printf("CreateSubject: %v", err)
-		subjects, _ := h.store.ListSubjects(r.Context())
-		h.render(w, "admin-subjects", map[string]any{
-			"Subjects": subjects,
-			"Form":     f,
-			"Error":    "Could not save — check the subject code is not already in use.",
-			"User":     user,
-		})
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/admin/subjects?saved=1", http.StatusSeeOther)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminSubjectUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	code, name, mod, field, vet := parseSubjectFields(r)
+	if code == "" || name == "" || field == "" {
+		http.Error(w, `{"error":"code, name and field are required"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.UpdateSubject(r.Context(), id, code, name, mod, field,
+		subjectNullableInt(r, "nominal_hours"), subjectNullableInt(r, "credit_points"), vet); err != nil {
+		log.Printf("UpdateSubject(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminSubjectDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	if err := h.store.DeleteSubject(r.Context(), id); err != nil {
+		log.Printf("DeleteSubject(%d): %v", id, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func parseInt64(s string) int64 {

@@ -944,15 +944,49 @@ func (s *Store) TeacherClassesForPeriod(ctx context.Context, teacherID, periodID
 	return out, rows.Err()
 }
 
-func (s *Store) SessionsForIntakeGroup(ctx context.Context, groupID int64, from, to string) ([]ScheduledSessionRow, error) {
+func (s *Store) GroupClassesForPeriod(ctx context.Context, groupID, periodID int64) ([]ClassListRow, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT DISTINCT c.id, c.class_code, ap.period_name || ' ' || ap.year, dl.name
+		FROM public.classes c
+		JOIN public.academic_periods ap ON ap.id = c.academic_period_id
+		JOIN public.delivery_locations dl ON dl.id = c.delivery_location_id
+		WHERE c.intake_group_id = $1 AND c.academic_period_id = $2
+		ORDER BY c.class_code
+	`, groupID, periodID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ClassListRow
+	for rows.Next() {
+		var r ClassListRow
+		if err := rows.Scan(&r.ID, &r.ClassCode, &r.PeriodName, &r.LocationName); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) SessionsForIntakeGroup(ctx context.Context, groupID int64, from, to string, classIDs []int64) ([]ScheduledSessionRow, error) {
+	args := []any{groupID, from, to}
+	classFilter := ""
+	if len(classIDs) > 0 {
+		placeholders := make([]string, len(classIDs))
+		for i, id := range classIDs {
+			args = append(args, id)
+			placeholders[i] = fmt.Sprintf("$%d", len(args))
+		}
+		classFilter = " AND c.id IN (" + strings.Join(placeholders, ",") + ")"
+	}
 	q := scheduledSessionSQL + `
 	WHERE c.intake_group_id = $1
-	  AND cs.session_date >= $2::date AND cs.session_date <= $3::date
+	  AND cs.session_date >= $2::date AND cs.session_date <= $3::date` + classFilter + `
 	GROUP BY cs.id, c.id, c.class_code, cs.session_date, cs.start_time, cs.end_time,
 	         cs.session_type, cs.notes, cs.cancelled, dl.name, b.building_name, r.room_name
 	ORDER BY cs.session_date, cs.start_time
 	`
-	rows, err := s.pool.Query(ctx, q, groupID, from, to)
+	rows, err := s.pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -990,6 +1024,7 @@ type SubjectRow struct {
 	SubjectName      string
 	FieldOfEducation string
 	NominalHours     int
+	CreditPoints     int
 	VetFlag          bool
 	ModuleFlag       string
 }
@@ -1011,10 +1046,14 @@ type ProgramListRow struct {
 }
 
 type ClassListRow struct {
-	ID           int64
-	ClassCode    string
-	PeriodName   string
-	LocationName string
+	ID                 int64
+	ClassCode          string
+	PeriodName         string
+	LocationName       string
+	AcademicPeriodID   int64
+	DeliveryLocationID int64
+	IntakeGroupID      int64
+	EnrolmentCap       int
 }
 
 type ClassSubject struct {
@@ -1146,7 +1185,7 @@ func (s *Store) ListIntakeGroups(ctx context.Context) ([]IntakeGroupRow, error) 
 func (s *Store) ListSubjects(ctx context.Context) ([]SubjectRow, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, subject_code, subject_name,
-		       field_of_education, COALESCE(nominal_hours, 0), vet_flag, module_flag
+		       field_of_education, COALESCE(nominal_hours,0), COALESCE(credit_points,0), vet_flag, module_flag
 		FROM public.subjects ORDER BY subject_code
 	`)
 	if err != nil {
@@ -1157,7 +1196,7 @@ func (s *Store) ListSubjects(ctx context.Context) ([]SubjectRow, error) {
 	for rows.Next() {
 		var r SubjectRow
 		if err := rows.Scan(&r.ID, &r.SubjectCode, &r.SubjectName,
-			&r.FieldOfEducation, &r.NominalHours, &r.VetFlag, &r.ModuleFlag); err != nil {
+			&r.FieldOfEducation, &r.NominalHours, &r.CreditPoints, &r.VetFlag, &r.ModuleFlag); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -1167,7 +1206,9 @@ func (s *Store) ListSubjects(ctx context.Context) ([]SubjectRow, error) {
 
 func (s *Store) ListClasses(ctx context.Context) ([]ClassListRow, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT c.id, c.class_code, ap.period_name || ' ' || ap.year, dl.name
+		SELECT c.id, c.class_code, ap.period_name || ' ' || ap.year, dl.name,
+		       c.academic_period_id, c.delivery_location_id,
+		       COALESCE(c.intake_group_id,0), COALESCE(c.enrolment_cap,0)
 		FROM public.classes c
 		JOIN public.academic_periods ap ON ap.id = c.academic_period_id
 		JOIN public.delivery_locations dl ON dl.id = c.delivery_location_id
@@ -1180,7 +1221,8 @@ func (s *Store) ListClasses(ctx context.Context) ([]ClassListRow, error) {
 	var out []ClassListRow
 	for rows.Next() {
 		var r ClassListRow
-		if err := rows.Scan(&r.ID, &r.ClassCode, &r.PeriodName, &r.LocationName); err != nil {
+		if err := rows.Scan(&r.ID, &r.ClassCode, &r.PeriodName, &r.LocationName,
+			&r.AcademicPeriodID, &r.DeliveryLocationID, &r.IntakeGroupID, &r.EnrolmentCap); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -1681,6 +1723,21 @@ func (s *Store) DeleteFaculty(ctx context.Context, id int64) error {
 	return err
 }
 
+func (s *Store) UpdateSubject(ctx context.Context, id int64, subjectCode, subjectName, moduleFlag, fieldOfEducation string, nominalHours, creditPoints *int, vetFlag bool) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.subjects
+		SET subject_code=$2, subject_name=$3, module_flag=$4, field_of_education=$5,
+		    nominal_hours=$6, credit_points=$7, vet_flag=$8
+		WHERE id=$1
+	`, id, subjectCode, subjectName, moduleFlag, fieldOfEducation, nominalHours, creditPoints, vetFlag)
+	return err
+}
+
+func (s *Store) DeleteSubject(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM public.subjects WHERE id=$1`, id)
+	return err
+}
+
 func (s *Store) CreateSubject(ctx context.Context, subjectCode, subjectName, moduleFlag, fieldOfEducation string, nominalHours *int, vetFlag bool, creditPoints *int) (int64, error) {
 	var id int64
 	err := s.pool.QueryRow(ctx, `
@@ -1690,6 +1747,21 @@ func (s *Store) CreateSubject(ctx context.Context, subjectCode, subjectName, mod
 		RETURNING id
 	`, subjectCode, subjectName, moduleFlag, fieldOfEducation, nominalHours, vetFlag, creditPoints).Scan(&id)
 	return id, err
+}
+
+func (s *Store) UpdateClass(ctx context.Context, id, academicPeriodID, deliveryLocationID int64, classCode string, intakeGroupID *int64, enrolmentCap *int) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.classes
+		SET class_code=$2, academic_period_id=$3, delivery_location_id=$4,
+		    intake_group_id=$5, enrolment_cap=$6
+		WHERE id=$1
+	`, id, classCode, academicPeriodID, deliveryLocationID, intakeGroupID, enrolmentCap)
+	return err
+}
+
+func (s *Store) DeleteClass(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM public.classes WHERE id=$1`, id)
+	return err
 }
 
 func (s *Store) CreateClass(ctx context.Context, classCode string, academicPeriodID, deliveryLocationID int64, intakeGroupID *int64, enrolmentCap *int, subjects []ClassSubject) (int64, error) {
@@ -1720,4 +1792,51 @@ func (s *Store) CreateClass(ctx context.Context, classCode string, academicPerio
 	}
 
 	return id, tx.Commit(ctx)
+}
+
+// ── Backup / Export ───────────────────────────────────────────────────────────
+
+func (s *Store) ListTableNames(ctx context.Context) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT table_name
+		FROM information_schema.tables
+		WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+		ORDER BY table_name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	return names, rows.Err()
+}
+
+func (s *Store) ExportTableRows(ctx context.Context, tableName string) ([]string, [][]any, error) {
+	rows, err := s.pool.Query(ctx, "SELECT * FROM public."+tableName)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	var cols []string
+	for _, fd := range rows.FieldDescriptions() {
+		cols = append(cols, fd.Name)
+	}
+
+	var out [][]any
+	for rows.Next() {
+		vals, err := rows.Values()
+		if err != nil {
+			return nil, nil, err
+		}
+		out = append(out, vals)
+	}
+	return cols, out, rows.Err()
 }

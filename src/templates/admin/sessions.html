@@ -70,14 +70,14 @@
 
     </div>
 
-    {{/* ── Class checkboxes (teacher view only) ── */}}
-    {{if and (eq .View "teacher") .TeacherClasses}}
+    {{/* ── Class checkboxes ── */}}
+    {{if .ViewClasses}}
     <form id="class-filter-form" class="sess-class-filter" method="GET" action="/admin/sessions">
       <input type="hidden" name="view" value="{{.View}}">
       <input type="hidden" name="id" value="{{.EntityID}}">
       <input type="hidden" name="period_id" value="{{.PeriodID}}">
       <span class="sess-class-filter-label">Classes:</span>
-      {{range .TeacherClasses}}
+      {{range .ViewClasses}}
       <label class="sess-class-cb-label">
         <input type="checkbox" name="class_id" value="{{.ID}}"
           {{if or (not $.HasClassFilter) (index $.FilterClassSet .ID)}}checked{{end}}

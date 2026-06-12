@@ -1,0 +1,86 @@
+{{define "backup"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS-SMS — Database Backup</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/">Home</a>
+        <h1>Database Backup</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+
+  <main>
+    <div style="max-width:640px;padding:24px 24px 0">
+
+      {{/* ── Full SQL Backup ── */}}
+      <div class="form-section form-section--spaced">
+        <h2 class="form-section-title">Full SQL Backup</h2>
+        <p class="hint">Complete <code>pg_dump</code> of the entire database. Suitable for full restore.</p>
+        <form method="POST" action="/backup/sql">
+          <div class="form-actions" style="margin-top:12px">
+            <button type="submit" class="btn-primary">Download SQL Backup</button>
+          </div>
+        </form>
+      </div>
+
+      {{/* ── Full JSON Export ── */}}
+      <div class="form-section form-section--spaced">
+        <h2 class="form-section-title">Full JSON Export</h2>
+        <p class="hint">All tables exported to a single JSON file, keyed by table name.</p>
+        <form method="POST" action="/backup/json">
+          <div class="form-actions" style="margin-top:12px">
+            <button type="submit" class="btn-primary">Download JSON Export</button>
+          </div>
+        </form>
+      </div>
+
+      {{/* ── Export Table ── */}}
+      <div class="form-section form-section--spaced">
+        <h2 class="form-section-title">Export Table</h2>
+        <p class="hint">Choose a table and download it as CSV or JSON.</p>
+        <form method="POST" action="/backup/table">
+          <div class="form-row" style="margin-top:12px">
+            <div class="form-group fg-260">
+              <label>Table</label>
+              <select name="table" required>
+                <option value="">— select table —</option>
+                {{range .Tables}}
+                <option value="{{.}}">{{.}}</option>
+                {{end}}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Format</label>
+              <div style="display:flex;gap:16px;padding-top:6px">
+                <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer">
+                  <input type="radio" name="format" value="csv" checked> CSV
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer">
+                  <input type="radio" name="format" value="json"> JSON
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="form-actions" style="margin-top:8px">
+            <button type="submit" class="btn-primary">Download Table</button>
+          </div>
+        </form>
+      </div>
+
+    </div>
+  </main>
+</body>
+</html>{{end}}
