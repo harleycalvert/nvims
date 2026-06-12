@@ -6,6 +6,7 @@
   <title>NVIMS-SMS — Class Sessions</title>
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/sessions.css">
 </head>
 <body>
   <header>
@@ -21,170 +22,299 @@
       <span class="header-role">{{.User.Role}}</span>
     </div>
   </header>
-  <main>
-    <div class="admin-toolbar">
-      <a class="btn-secondary" href="/admin/classes">← Classes</a>
+
+  <main class="sessions-main">
+
+    {{/* ── Toolbar ── */}}
+    <div class="sess-toolbar">
+
+      <div class="sess-radio-group">
+        <label class="sess-radio-label">
+          <input type="radio" name="view" value="teacher"{{if eq .View "teacher"}} checked{{end}}> Teacher
+        </label>
+        <label class="sess-radio-label">
+          <input type="radio" name="view" value="group"{{if eq .View "group"}} checked{{end}}> Intake Group
+        </label>
+      </div>
+
+      <div id="sel-teacher"{{if eq .View "group"}} class="hidden"{{end}}>
+        <select id="teacher-select" class="search-role-select">
+          <option value="">— select teacher —</option>
+          {{range .Teachers}}
+          <option value="{{.ID}}"{{if and (eq $.View "teacher") (eq $.EntityID .ID)}} selected{{end}}>
+            {{.FullName}} ({{.TeacherNumber}})
+          </option>
+          {{end}}
+        </select>
+      </div>
+
+      <div id="sel-group"{{if eq .View "teacher"}} class="hidden"{{end}}>
+        <select id="group-select" class="search-role-select">
+          <option value="">— select intake group —</option>
+          {{range .IntakeGroups}}
+          <option value="{{.ID}}"{{if and (eq $.View "group") (eq $.EntityID .ID)}} selected{{end}}>
+            {{.GroupCode}} — {{.GroupName}}
+          </option>
+          {{end}}
+        </select>
+      </div>
+
+      <select id="period-select" class="search-role-select">
+        <option value="">— select period —</option>
+        {{range .Periods}}
+        <option value="{{.ID}}"{{if eq $.PeriodID .ID}} selected{{end}}>
+          {{.PeriodName}} {{.Year}}
+        </option>
+        {{end}}
+      </select>
+
     </div>
 
-    {{/* Class selector */}}
-    <div class="form-section">
-      <form class="admin-form" method="GET" action="/admin/sessions">
-        <div class="form-row">
-          <div class="form-group fg-360">
-            <label>Class</label>
-            <select name="class_id" onchange="this.form.submit()">
-              <option value="">— select a class to view sessions —</option>
-              {{range .Classes}}
-              <option value="{{.ID}}"{{if eq $.SelectedClass .ID}} selected{{end}}>
-                {{.ClassCode}} — {{.PeriodName}}
-              </option>
-              {{end}}
-            </select>
-          </div>
-        </div>
-      </form>
-    </div>
+    {{/* ── Class checkboxes (teacher view only) ── */}}
+    {{if and (eq .View "teacher") .TeacherClasses}}
+    <form id="class-filter-form" class="sess-class-filter" method="GET" action="/admin/sessions">
+      <input type="hidden" name="view" value="{{.View}}">
+      <input type="hidden" name="id" value="{{.EntityID}}">
+      <input type="hidden" name="period_id" value="{{.PeriodID}}">
+      <span class="sess-class-filter-label">Classes:</span>
+      {{range .TeacherClasses}}
+      <label class="sess-class-cb-label">
+        <input type="checkbox" name="class_id" value="{{.ID}}"
+          {{if or (not $.HasClassFilter) (index $.FilterClassSet .ID)}}checked{{end}}
+          onchange="document.getElementById('class-filter-form').submit()">
+        {{.ClassCode}}
+      </label>
+      {{end}}
+    </form>
+    {{end}}
 
-    {{if .SelectedClass}}
+    {{/* ── Sessions table ── */}}
+    {{if not .EntityID}}
+      <p class="hint" style="margin-top:20px">Select a teacher or intake group and a period above.</p>
+    {{else if not .PeriodID}}
+      <p class="hint" style="margin-top:20px">Select an academic period above.</p>
+    {{else if not .Sessions}}
+      <p class="hint" style="margin-top:20px">No sessions found for this selection.</p>
+    {{end}}
 
-    {{if .Success}}<p class="form-success">Session saved.</p>{{end}}
-    {{if .Generated}}<p class="form-success">Generated {{.Generated}} new session(s).</p>{{end}}
-
-    {{/* Session list */}}
-    {{if not .Sessions}}
-      <p class="hint">No sessions yet for this class.</p>
-    {{else}}
+    {{if and .EntityID .PeriodID}}
     <div class="table-wrap">
-      <table>
+      <table class="sessions-table" id="sessions-table">
         <thead>
           <tr>
             <th>Date</th>
+            <th>Day</th>
             <th>Start</th>
             <th>End</th>
+            <th>Class</th>
             <th>Type</th>
-            <th>Cancelled</th>
+            <th>Teacher</th>
+            <th>Location</th>
+            <th>Room</th>
+            <th>Notes</th>
+            <th></th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="sessions-tbody">
           {{range .Sessions}}
-          <tr{{if .Cancelled}} class="row-cancelled"{{end}}>
-            <td>{{dateFull .SessionDate}}</td>
-            <td>{{timeShort .StartTime}}</td>
-            <td>{{timeShort .EndTime}}</td>
-            <td>{{.SessionType}}</td>
-            <td>{{if .Cancelled}}Yes{{else}}—{{end}}</td>
+          <tr class="sess-row{{if .Cancelled}} sess-cancelled{{end}}" data-id="{{.ID}}">
+            <td><input class="sess-input si-date" type="text" name="session_date"
+                       value="{{dateDMY .SessionDate}}" placeholder="DD/MM/YYYY"
+                       pattern="\d{2}/\d{2}/\d{4}" size="10"></td>
+            <td class="sess-day">{{dateDayName .SessionDate}}</td>
+            <td><input class="sess-input si-time" type="time" name="start_time" value="{{timeShort .StartTime}}"></td>
+            <td><input class="sess-input si-time" type="time" name="end_time"   value="{{timeShort .EndTime}}"></td>
+            <td class="sess-static">{{.ClassCode}}</td>
+            <td>
+              <select class="sess-input si-type" name="session_type">
+                {{$st := .SessionType}}{{range $.SessionTypes}}<option value="{{.}}"{{if eq . $st}} selected{{end}}>{{.}}</option>{{end}}
+              </select>
+            </td>
+            <td class="sess-static sess-teachers">{{.Teachers}}</td>
+            <td class="sess-static">{{.Location}}</td>
+            <td class="sess-static">{{if .Room}}{{.Room}}{{else}}<span class="muted">—</span>{{end}}</td>
+            <td><input class="sess-input si-notes" type="text" name="notes" value="{{.Notes}}" maxlength="255" placeholder="—"></td>
+            <td class="sess-actions">
+              <span class="sess-status"></span>
+              <button class="btn-danger-sm sess-delete" type="button" title="Delete">✕</button>
+            </td>
           </tr>
           {{end}}
         </tbody>
       </table>
     </div>
+
+    <div class="sess-add-bar">
+      <button class="btn-primary btn-sm" id="btn-add-row" type="button">+ Add Session</button>
+    </div>
     {{end}}
 
-    {{/* Add single session */}}
-    <div class="form-section form-section--spaced">
-      <h2 class="form-section-title">Add Single Session</h2>
-      <form class="admin-form" method="POST" action="/admin/sessions/new">
-        <input type="hidden" name="class_id" value="{{.SelectedClass}}">
-        <div class="form-section">
-          <div class="form-row">
-            <div class="form-group fg-180">
-              <label>Date <span class="req">*</span></label>
-              <input type="date" name="session_date" value="{{.SForm.SessionDate}}" required>
-            </div>
-            <div class="form-group fg-140">
-              <label>Start Time <span class="req">*</span></label>
-              <input type="time" name="start_time" value="{{.SForm.StartTime}}" required>
-            </div>
-            <div class="form-group fg-140">
-              <label>End Time <span class="req">*</span></label>
-              <input type="time" name="end_time" value="{{.SForm.EndTime}}" required>
-            </div>
-            <div class="form-group fg-180">
-              <label>Type</label>
-              <select name="session_type">
-                {{range .SessionTypes}}
-                <option value="{{.}}"{{if eq $.SForm.SessionType .}} selected{{end}}>{{.}}</option>
-                {{end}}
-              </select>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group form-group-grow">
-              <label>Notes</label>
-              <input type="text" name="notes" value="{{.SForm.Notes}}" maxlength="255">
-            </div>
-          </div>
-        </div>
-        <div class="form-actions">
-          <button type="submit" class="btn-primary">Add Session</button>
-        </div>
-      </form>
-    </div>
-
-    {{/* Generate recurring sessions */}}
-    <div class="form-section form-section--spaced">
-      <h2 class="form-section-title">Generate Recurring Sessions</h2>
-      <p class="hint">Creates one session per matching weekday in the date range. Skips dates that already have a session at the same time.</p>
-      <form class="admin-form" method="POST" action="/admin/sessions/generate">
-        <input type="hidden" name="class_id" value="{{.SelectedClass}}">
-        <div class="form-section">
-          <div class="form-row">
-            <div class="form-group fg-180">
-              <label>From Date <span class="req">*</span></label>
-              <input type="date" name="start_date" value="{{.GForm.StartDate}}" required>
-            </div>
-            <div class="form-group fg-180">
-              <label>To Date <span class="req">*</span></label>
-              <input type="date" name="end_date" value="{{.GForm.EndDate}}" required>
-            </div>
-            <div class="form-group fg-140">
-              <label>Start Time <span class="req">*</span></label>
-              <input type="time" name="start_time" value="{{.GForm.StartTime}}" required>
-            </div>
-            <div class="form-group fg-140">
-              <label>End Time <span class="req">*</span></label>
-              <input type="time" name="end_time" value="{{.GForm.EndTime}}" required>
-            </div>
-            <div class="form-group fg-180">
-              <label>Type</label>
-              <select name="session_type">
-                {{range .SessionTypes}}
-                <option value="{{.}}"{{if eq $.GForm.SessionType .}} selected{{end}}>{{.}}</option>
-                {{end}}
-              </select>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label>Days of Week <span class="req">*</span></label>
-              <div class="checkbox-row">
-                <label class="checkbox-label"><input type="checkbox" name="day_of_week" value="1"> Mon</label>
-                <label class="checkbox-label"><input type="checkbox" name="day_of_week" value="2"> Tue</label>
-                <label class="checkbox-label"><input type="checkbox" name="day_of_week" value="3"> Wed</label>
-                <label class="checkbox-label"><input type="checkbox" name="day_of_week" value="4"> Thu</label>
-                <label class="checkbox-label"><input type="checkbox" name="day_of_week" value="5"> Fri</label>
-                <label class="checkbox-label"><input type="checkbox" name="day_of_week" value="6"> Sat</label>
-                <label class="checkbox-label"><input type="checkbox" name="day_of_week" value="0"> Sun</label>
-              </div>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group form-group-grow">
-              <label>Notes</label>
-              <input type="text" name="notes" value="{{.GForm.Notes}}" maxlength="255">
-            </div>
-          </div>
-        </div>
-        <div class="form-actions">
-          <button type="submit" class="btn-primary">Generate Sessions</button>
-        </div>
-      </form>
-    </div>
-
-    {{end}}{{/* end if SelectedClass */}}
   </main>
-<style>
-.row-cancelled td { opacity: 0.5; text-decoration: line-through; }
-</style>
+
+<script>
+(function () {
+  const sessionTypes = [{{range $i,$t := .SessionTypes}}{{if $i}},{{end}}"{{$t}}"{{end}}];
+  const allClasses   = [{{range $i,$c := .Classes}}{{if $i}},{{end}}{"id":{{$c.ID}},"label":"{{$c.ClassCode}} — {{$c.PeriodName}}"}{{end}}];
+
+  /* ── navigation helpers ── */
+  function currentView() {
+    return document.querySelector('input[name=view]:checked')?.value || 'teacher';
+  }
+  function navigate(view, id, periodID) {
+    if (!id || !periodID) return;
+    window.location.href = `/admin/sessions?view=${view}&id=${id}&period_id=${periodID}`;
+  }
+
+  /* ── radio: toggle visible selector, then navigate ── */
+  document.querySelectorAll('input[name=view]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const isTeacher = radio.value === 'teacher';
+      document.getElementById('sel-teacher').classList.toggle('hidden', !isTeacher);
+      document.getElementById('sel-group').classList.toggle('hidden', isTeacher);
+      const selID = isTeacher
+        ? document.getElementById('teacher-select').value
+        : document.getElementById('group-select').value;
+      const periodID = document.getElementById('period-select').value;
+      navigate(radio.value, selID, periodID);
+    });
+  });
+
+  /* ── entity / period selects navigate on change ── */
+  ['teacher-select','group-select'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', function() {
+      navigate(currentView(), this.value, document.getElementById('period-select').value);
+    });
+  });
+  document.getElementById('period-select').addEventListener('change', function() {
+    navigate(currentView(),
+      currentView() === 'teacher'
+        ? document.getElementById('teacher-select').value
+        : document.getElementById('group-select').value,
+      this.value);
+  });
+
+  /* ── date helpers ── */
+  function dmyToIso(dmy) {
+    const m = dmy.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+  }
+  function isoToDmy(iso) {
+    const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
+  }
+  function dayName(iso) {
+    if (!iso) return '';
+    const d = new Date(iso + 'T00:00:00');
+    return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
+  }
+
+  /* ── editable table ── */
+  function typeOptions(selected) {
+    return sessionTypes.map(t =>
+      `<option value="${t}"${t === selected ? ' selected' : ''}>${t}</option>`
+    ).join('');
+  }
+  function classOptions() {
+    return '<option value="">— class —</option>' +
+      allClasses.map(c => `<option value="${c.id}">${c.label}</option>`).join('');
+  }
+
+  function setStatus(tr, state) {
+    const el = tr.querySelector('.sess-status');
+    el.className = 'sess-status sess-status-' + state;
+    el.textContent = state === 'saving' ? '…' : state === 'saved' ? '✓' : state === 'error' ? '!' : '';
+    if (state === 'saved') setTimeout(() => { el.textContent = ''; el.className = 'sess-status'; }, 1500);
+  }
+
+  async function saveRow(tr) {
+    const id      = tr.dataset.id;
+    const rawDate = tr.querySelector('[name=session_date]').value;
+    const isoDate = dmyToIso(rawDate);
+    const start   = tr.querySelector('[name=start_time]').value;
+    const end     = tr.querySelector('[name=end_time]').value;
+    const type    = tr.querySelector('[name=session_type]').value;
+    const notes   = tr.querySelector('[name=notes]').value;
+
+    if (!isoDate || !start || !end) return;
+    setStatus(tr, 'saving');
+
+    if (id === 'new') {
+      const classID = tr.querySelector('[name=class_id]')?.value;
+      if (!classID) { setStatus(tr, 'error'); return; }
+      const body = new URLSearchParams({class_id: classID,
+        session_date: isoDate, start_time: start, end_time: end,
+        session_type: type, notes});
+      try {
+        await fetch('/admin/sessions/new', {method:'POST', body});
+        location.reload();
+      } catch { setStatus(tr, 'error'); }
+      return;
+    }
+
+    const body = new URLSearchParams({
+      session_date: isoDate, start_time: start, end_time: end,
+      session_type: type, notes});
+    try {
+      const res = await fetch(`/admin/sessions/${id}`, {method:'POST', body});
+      if (!res.ok) throw new Error();
+      setStatus(tr, 'saved');
+      const day = tr.querySelector('.sess-day');
+      if (day) day.textContent = dayName(isoDate);
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  async function deleteRow(tr) {
+    const id = tr.dataset.id;
+    if (id === 'new') { tr.remove(); return; }
+    if (!confirm('Delete this session?')) return;
+    setStatus(tr, 'saving');
+    try {
+      const res = await fetch(`/admin/sessions/${id}/delete`, {method:'POST'});
+      if (!res.ok) throw new Error();
+      tr.remove();
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  function attachRowListeners(tr) {
+    tr.querySelectorAll('select.sess-input, input[type=time].sess-input')
+      .forEach(el => el.addEventListener('change', () => saveRow(tr)));
+    tr.querySelectorAll('input[type=text].sess-input')
+      .forEach(el => el.addEventListener('blur', () => saveRow(tr)));
+    /* update day label when date blurs */
+    const dateInput = tr.querySelector('[name=session_date]');
+    dateInput?.addEventListener('blur', () => {
+      const day = tr.querySelector('.sess-day');
+      if (day) day.textContent = dayName(dmyToIso(dateInput.value));
+    });
+    tr.querySelector('.sess-delete')?.addEventListener('click', () => deleteRow(tr));
+  }
+
+  document.querySelectorAll('#sessions-tbody .sess-row').forEach(attachRowListeners);
+
+  document.getElementById('btn-add-row')?.addEventListener('click', () => {
+    const tr = document.createElement('tr');
+    tr.className = 'sess-row sess-new';
+    tr.dataset.id = 'new';
+    tr.innerHTML = `
+      <td><input class="sess-input si-date" type="text" name="session_date" placeholder="DD/MM/YYYY" size="10"></td>
+      <td class="sess-day"></td>
+      <td><input class="sess-input si-time" type="time" name="start_time"></td>
+      <td><input class="sess-input si-time" type="time" name="end_time"></td>
+      <td><select class="sess-input si-class" name="class_id">${classOptions()}</select></td>
+      <td><select class="sess-input si-type" name="session_type">${typeOptions('Scheduled')}</select></td>
+      <td class="sess-static"></td>
+      <td class="sess-static"></td>
+      <td class="sess-static"></td>
+      <td><input class="sess-input si-notes" type="text" name="notes" maxlength="255" placeholder="—"></td>
+      <td class="sess-actions">
+        <span class="sess-status"></span>
+        <button class="btn-danger-sm sess-delete" type="button">✕</button>
+      </td>`;
+    document.getElementById('sessions-tbody').appendChild(tr);
+    attachRowListeners(tr);
+    tr.querySelector('[name=session_date]').focus();
+  });
+})();
+</script>
 </body>
 </html>{{end}}

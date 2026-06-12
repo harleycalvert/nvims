@@ -89,6 +89,8 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 	}
 
 	funcs["dateISO"] = func(t time.Time) string { return t.Format("2006-01-02") }
+	funcs["dateDMY"] = func(t time.Time) string { return t.Format("02/01/2006") }
+	funcs["dateDayName"] = func(t time.Time) string { return t.Format("Mon") }
 	funcs["sub"] = func(a, b int) int { return a - b }
 	funcs["sessionTypeClass"] = func(t string) string {
 		switch t {
@@ -1395,36 +1397,175 @@ type generateForm struct {
 }
 
 func (h *Handler) AdminSessions(w http.ResponseWriter, r *http.Request) {
-	classID := parseInt64(r.URL.Query().Get("class_id"))
+	q := r.URL.Query()
+	view := q.Get("view")
+	if view != "group" {
+		view = "teacher"
+	}
+	entityID := parseInt64(q.Get("id"))
+	periodID := parseInt64(q.Get("period_id"))
 
-	classes, err := h.store.ListClasses(r.Context())
-	if err != nil {
-		log.Printf("ListClasses: %v", err)
-		http.Error(w, "database error", http.StatusInternalServerError)
-		return
+	// class filter — only meaningful for teacher view
+	var classIDs []int64
+	for _, s := range q["class_id"] {
+		if id := parseInt64(s); id > 0 {
+			classIDs = append(classIDs, id)
+		}
+	}
+	filterSet := make(map[int64]bool)
+	for _, id := range classIDs {
+		filterSet[id] = true
 	}
 
-	var sessions []store.SessionListRow
-	if classID > 0 {
-		sessions, err = h.store.ListSessionsForClass(r.Context(), classID)
-		if err != nil {
-			log.Printf("ListSessionsForClass: %v", err)
+	teachers, _ := h.store.ListTeachers(r.Context())
+	intakeGroups, _ := h.store.ListIntakeGroups(r.Context())
+	classes, _ := h.store.ListClasses(r.Context())
+	periods, _ := h.store.ListPeriods(r.Context())
+
+	// find selected period
+	var selPeriod *store.PeriodListRow
+	for i := range periods {
+		if periods[i].ID == periodID {
+			selPeriod = &periods[i]
+			break
+		}
+	}
+
+	var sessions []store.ScheduledSessionRow
+	var teacherClasses []store.ClassListRow
+
+	if entityID > 0 && selPeriod != nil {
+		from := selPeriod.StartDate.Format("2006-01-02")
+		to := selPeriod.EndDate.Format("2006-01-02")
+		var err error
+		switch view {
+		case "teacher":
+			sessions, err = h.store.SessionsForTeacher(r.Context(), entityID, from, to, classIDs)
+			if err != nil {
+				log.Printf("SessionsForTeacher(%d): %v", entityID, err)
+			}
+			teacherClasses, _ = h.store.TeacherClassesForPeriod(r.Context(), entityID, periodID)
+		case "group":
+			sessions, err = h.store.SessionsForIntakeGroup(r.Context(), entityID, from, to)
+			if err != nil {
+				log.Printf("SessionsForIntakeGroup(%d): %v", entityID, err)
+			}
 		}
 	}
 
 	user, _ := auth.Current(r)
 	h.render(w, "admin-sessions", map[string]any{
-		"Classes":      classes,
-		"Sessions":     sessions,
-		"SelectedClass": classID,
-		"SessionTypes": sessionTypes,
-		"SForm":        sessionForm{ClassID: classID, SessionType: "Scheduled"},
-		"GForm":        generateForm{ClassID: classID, SessionType: "Scheduled"},
-		"Error":        "",
-		"Success":      r.URL.Query().Get("saved") == "1",
-		"Generated":    r.URL.Query().Get("generated"),
-		"User":         user,
+		"View":           view,
+		"EntityID":       entityID,
+		"PeriodID":       periodID,
+		"HasClassFilter": len(classIDs) > 0,
+		"FilterClassSet": filterSet,
+		"Sessions":       sessions,
+		"Teachers":       teachers,
+		"IntakeGroups":   intakeGroups,
+		"Classes":        classes,
+		"TeacherClasses": teacherClasses,
+		"Periods":        periods,
+		"SessionTypes":   sessionTypes,
+		"User":           user,
 	})
+}
+
+func (h *Handler) AdminSessionUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id == 0 {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad form"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.UpdateSession(r.Context(), id,
+		r.FormValue("session_date"),
+		r.FormValue("start_time"),
+		r.FormValue("end_time"),
+		r.FormValue("session_type"),
+		r.FormValue("notes"),
+	); err != nil {
+		log.Printf("UpdateSession(%d): %v", id, err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"save failed"}`))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminSessionDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id == 0 {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.DeleteSession(r.Context(), id); err != nil {
+		log.Printf("DeleteSession(%d): %v", id, err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"delete failed"}`))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminSessionSchedule(w http.ResponseWriter, r *http.Request) {
+	schedType := r.URL.Query().Get("type") // "teacher" or "group"
+	entityID := parseInt64(r.URL.Query().Get("id"))
+	from := r.URL.Query().Get("from")
+	to := r.URL.Query().Get("to")
+	if entityID == 0 || from == "" || to == "" {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+		return
+	}
+	var sessions []store.ScheduleSession
+	var err error
+	switch schedType {
+	case "teacher":
+		sessions, err = h.store.ScheduleForTeacher(r.Context(), entityID, from, to)
+	case "group":
+		sessions, err = h.store.ScheduleForIntakeGroup(r.Context(), entityID, from, to)
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+		return
+	}
+	if err != nil {
+		log.Printf("AdminSessionSchedule(%s,%d): %v", schedType, entityID, err)
+		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	type row struct {
+		Date     string `json:"date"`
+		Day      string `json:"day"`
+		Start    string `json:"start"`
+		End      string `json:"end"`
+		Class    string `json:"class"`
+		Subjects string `json:"subjects"`
+		Type     string `json:"type"`
+	}
+	out := make([]row, 0, len(sessions))
+	for _, s := range sessions {
+		out = append(out, row{
+			Date:     s.SessionDate.Format("2006-01-02"),
+			Day:      s.SessionDate.Format("Mon"),
+			Start:    s.StartTime.Format("15:04"),
+			End:      s.EndTime.Format("15:04"),
+			Class:    s.ClassCode,
+			Subjects: s.SubjectCodes,
+			Type:     s.SessionType,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 func (h *Handler) AdminSessionCreate(w http.ResponseWriter, r *http.Request) {

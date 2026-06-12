@@ -848,6 +848,112 @@ func (s *Store) GetRoleDetail(ctx context.Context, personID int64, roleType stri
 	return d, err
 }
 
+const scheduledSessionSQL = `
+	SELECT cs.id, c.id, c.class_code,
+	       cs.session_date, cs.start_time, cs.end_time,
+	       cs.session_type, COALESCE(cs.notes,''), cs.cancelled,
+	       COALESCE(string_agg(
+	           DISTINCT p.family_name || ', ' || p.first_given_name,
+	           ' · ' ORDER BY p.family_name || ', ' || p.first_given_name
+	       ),''),
+	       dl.name,
+	       COALESCE(b.building_name || ' ' || r.room_name, '')
+	FROM public.class_sessions cs
+	JOIN public.classes c ON c.id = cs.class_id
+	JOIN public.delivery_locations dl ON dl.id = c.delivery_location_id
+	LEFT JOIN public.rooms r ON r.id = cs.room_id
+	LEFT JOIN public.buildings b ON b.id = r.building_id
+	LEFT JOIN public.session_teachers st2 ON st2.session_id = cs.id
+	LEFT JOIN public.teachers t2 ON t2.id = st2.teacher_id
+	LEFT JOIN public.people p ON p.id = t2.id
+`
+
+func scanScheduledRows(rows interface {
+	Next() bool
+	Scan(...any) error
+	Err() error
+	Close()
+}) ([]ScheduledSessionRow, error) {
+	defer rows.Close()
+	var out []ScheduledSessionRow
+	for rows.Next() {
+		var r ScheduledSessionRow
+		if err := rows.Scan(&r.ID, &r.ClassID, &r.ClassCode,
+			&r.SessionDate, &r.StartTime, &r.EndTime,
+			&r.SessionType, &r.Notes, &r.Cancelled,
+			&r.Teachers, &r.Location, &r.Room); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) SessionsForTeacher(ctx context.Context, teacherID int64, from, to string, classIDs []int64) ([]ScheduledSessionRow, error) {
+	args := []any{teacherID, from, to}
+	classFilter := ""
+	if len(classIDs) > 0 {
+		placeholders := make([]string, len(classIDs))
+		for i, id := range classIDs {
+			args = append(args, id)
+			placeholders[i] = fmt.Sprintf("$%d", len(args))
+		}
+		classFilter = " AND c.id IN (" + strings.Join(placeholders, ",") + ")"
+	}
+	q := scheduledSessionSQL + `
+	JOIN public.session_teachers st ON st.session_id = cs.id AND st.teacher_id = $1
+	WHERE cs.session_date >= $2::date AND cs.session_date <= $3::date` + classFilter + `
+	GROUP BY cs.id, c.id, c.class_code, cs.session_date, cs.start_time, cs.end_time,
+	         cs.session_type, cs.notes, cs.cancelled, dl.name, b.building_name, r.room_name
+	ORDER BY cs.session_date, cs.start_time`
+	rows, err := s.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	return scanScheduledRows(rows)
+}
+
+func (s *Store) TeacherClassesForPeriod(ctx context.Context, teacherID, periodID int64) ([]ClassListRow, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT DISTINCT c.id, c.class_code, ap.period_name || ' ' || ap.year, dl.name
+		FROM public.class_sessions cs
+		JOIN public.classes c ON c.id = cs.class_id
+		JOIN public.academic_periods ap ON ap.id = c.academic_period_id
+		JOIN public.delivery_locations dl ON dl.id = c.delivery_location_id
+		JOIN public.session_teachers st ON st.session_id = cs.id
+		WHERE st.teacher_id = $1 AND c.academic_period_id = $2
+		ORDER BY c.class_code
+	`, teacherID, periodID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ClassListRow
+	for rows.Next() {
+		var r ClassListRow
+		if err := rows.Scan(&r.ID, &r.ClassCode, &r.PeriodName, &r.LocationName); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) SessionsForIntakeGroup(ctx context.Context, groupID int64, from, to string) ([]ScheduledSessionRow, error) {
+	q := scheduledSessionSQL + `
+	WHERE c.intake_group_id = $1
+	  AND cs.session_date >= $2::date AND cs.session_date <= $3::date
+	GROUP BY cs.id, c.id, c.class_code, cs.session_date, cs.start_time, cs.end_time,
+	         cs.session_type, cs.notes, cs.cancelled, dl.name, b.building_name, r.room_name
+	ORDER BY cs.session_date, cs.start_time
+	`
+	rows, err := s.pool.Query(ctx, q, groupID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	return scanScheduledRows(rows)
+}
+
 // ── Admin / Programs & Classes ─────────────────────────────────────────────
 
 type FacultyRow struct {
@@ -1074,6 +1180,37 @@ type SessionListRow struct {
 	EndTime     time.Time
 	SessionType string
 	Cancelled   bool
+	Notes       string
+}
+
+type TeacherListRow struct {
+	ID            int64
+	TeacherNumber string
+	FullName      string
+}
+
+type ScheduleSession struct {
+	SessionDate  time.Time
+	StartTime    time.Time
+	EndTime      time.Time
+	ClassCode    string
+	SubjectCodes string
+	SessionType  string
+}
+
+type ScheduledSessionRow struct {
+	ID           int64
+	ClassID      int64
+	ClassCode    string
+	SessionDate  time.Time
+	StartTime    time.Time
+	EndTime      time.Time
+	SessionType  string
+	Notes        string
+	Cancelled    bool
+	Teachers     string
+	Location     string // delivery location name
+	Room         string // building + room, blank if unassigned
 }
 
 type SessionInput struct {
@@ -1285,7 +1422,8 @@ func (s *Store) CreateIntakeGroup(ctx context.Context, intakeID int64, groupCode
 
 func (s *Store) ListSessionsForClass(ctx context.Context, classID int64) ([]SessionListRow, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT cs.id, c.class_code, cs.session_date, cs.start_time, cs.end_time, cs.session_type, cs.cancelled
+		SELECT cs.id, c.class_code, cs.session_date, cs.start_time, cs.end_time,
+		       cs.session_type, cs.cancelled, COALESCE(cs.notes,'')
 		FROM public.class_sessions cs
 		JOIN public.classes c ON c.id = cs.class_id
 		WHERE cs.class_id = $1
@@ -1298,7 +1436,117 @@ func (s *Store) ListSessionsForClass(ctx context.Context, classID int64) ([]Sess
 	var out []SessionListRow
 	for rows.Next() {
 		var r SessionListRow
-		if err := rows.Scan(&r.ID, &r.ClassCode, &r.SessionDate, &r.StartTime, &r.EndTime, &r.SessionType, &r.Cancelled); err != nil {
+		if err := rows.Scan(&r.ID, &r.ClassCode, &r.SessionDate, &r.StartTime, &r.EndTime,
+			&r.SessionType, &r.Cancelled, &r.Notes); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ListTeachers(ctx context.Context) ([]TeacherListRow, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT t.id, t.teacher_number, p.family_name || ', ' || p.first_given_name
+		FROM public.teachers t
+		JOIN public.people p ON p.id = t.id
+		ORDER BY p.family_name, p.first_given_name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TeacherListRow
+	for rows.Next() {
+		var r TeacherListRow
+		if err := rows.Scan(&r.ID, &r.TeacherNumber, &r.FullName); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) UpdateSession(ctx context.Context, id int64, date, startTime, endTime, sessionType, notes string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.class_sessions
+		SET session_date = $2::date,
+		    start_time   = $3::time,
+		    end_time     = $4::time,
+		    session_type = $5,
+		    notes        = NULLIF($6,'')
+		WHERE id = $1
+	`, id, date, startTime, endTime, sessionType, notes)
+	return err
+}
+
+func (s *Store) DeleteSession(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM public.class_sessions WHERE id = $1`, id)
+	return err
+}
+
+func (s *Store) ScheduleForTeacher(ctx context.Context, teacherID int64, from, to string) ([]ScheduleSession, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT cs.session_date, cs.start_time, cs.end_time, c.class_code,
+		       COALESCE((
+		           SELECT string_agg(subj.subject_code, ' · ' ORDER BY subj.subject_code)
+		           FROM public.class_subjects _cs
+		           JOIN public.subjects subj ON subj.id = _cs.subject_id
+		           WHERE _cs.class_id = c.id
+		       ),''),
+		       cs.session_type
+		FROM public.class_sessions cs
+		JOIN public.classes c ON c.id = cs.class_id
+		JOIN public.session_teachers st ON st.session_id = cs.id
+		WHERE st.teacher_id = $1
+		  AND cs.session_date >= $2::date
+		  AND cs.session_date <= $3::date
+		  AND NOT cs.cancelled
+		ORDER BY cs.session_date, cs.start_time
+	`, teacherID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ScheduleSession
+	for rows.Next() {
+		var r ScheduleSession
+		if err := rows.Scan(&r.SessionDate, &r.StartTime, &r.EndTime,
+			&r.ClassCode, &r.SubjectCodes, &r.SessionType); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ScheduleForIntakeGroup(ctx context.Context, groupID int64, from, to string) ([]ScheduleSession, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT cs.session_date, cs.start_time, cs.end_time, c.class_code,
+		       COALESCE((
+		           SELECT string_agg(subj.subject_code, ' · ' ORDER BY subj.subject_code)
+		           FROM public.class_subjects _cs
+		           JOIN public.subjects subj ON subj.id = _cs.subject_id
+		           WHERE _cs.class_id = c.id
+		       ),''),
+		       cs.session_type
+		FROM public.class_sessions cs
+		JOIN public.classes c ON c.id = cs.class_id
+		WHERE c.intake_group_id = $1
+		  AND cs.session_date >= $2::date
+		  AND cs.session_date <= $3::date
+		  AND NOT cs.cancelled
+		ORDER BY cs.session_date, cs.start_time
+	`, groupID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ScheduleSession
+	for rows.Next() {
+		var r ScheduleSession
+		if err := rows.Scan(&r.SessionDate, &r.StartTime, &r.EndTime,
+			&r.ClassCode, &r.SubjectCodes, &r.SessionType); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

@@ -1,0 +1,184 @@
+/* ── Sessions page layout ─────────────────────────────────────── */
+.sessions-main {
+  padding: 20px 24px;
+}
+
+/* ── Toolbar ──────────────────────────────────────────────────── */
+.sess-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.sess-radio-group {
+  display: flex;
+  gap: 14px;
+}
+
+.sess-radio-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #444;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* ── Class checkboxes ─────────────────────────────────────────── */
+.sess-class-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #f5f8ff;
+  border: 1px solid #dce8f5;
+  border-radius: 5px;
+  margin-bottom: 12px;
+}
+
+.sess-class-filter-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.sess-class-cb-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a4480;
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 2px 8px;
+  background: #dce8f5;
+  border-radius: 3px;
+}
+
+.sess-class-cb-label input { cursor: pointer; }
+
+.sess-add-bar {
+  margin-top: 10px;
+}
+
+/* ── Editable sessions table ──────────────────────────────────── */
+.sessions-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.sessions-table th {
+  text-align: left;
+  padding: 6px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #666;
+  border-bottom: 2px solid #e0e0e0;
+  background: #fafafa;
+  white-space: nowrap;
+}
+
+.sessions-table td {
+  padding: 4px 6px;
+  border-bottom: 1px solid #f0f0f0;
+  vertical-align: middle;
+}
+
+.sess-row:hover td { background: #fafcff; }
+
+.sess-cancelled td { opacity: 0.45; }
+
+.sess-input {
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  font-size: 13px;
+  background: transparent;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.sess-input:hover,
+.sess-input:focus {
+  border-color: #b0c4e8;
+  background: #fff;
+  outline: none;
+}
+
+.si-date  { width: 130px; }
+.si-time  { width: 80px; }
+.si-type  { width: 120px; }
+.si-class { width: 200px; }
+.si-notes { width: 100%; min-width: 120px; }
+
+.sess-static {
+  font-size: 12px;
+  color: #444;
+  white-space: nowrap;
+  padding: 4px 6px;
+}
+
+.sess-teachers {
+  max-width: 160px;
+  white-space: normal;
+  line-height: 1.3;
+}
+
+.sess-day {
+  font-size: 12px;
+  color: #888;
+  white-space: nowrap;
+  padding: 4px 6px;
+}
+
+.sess-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.sess-status {
+  font-size: 12px;
+  font-weight: 700;
+  width: 14px;
+  text-align: center;
+}
+
+.sess-status-saving { color: #888; }
+.sess-status-saved  { color: #155724; }
+.sess-status-error  { color: #c0392b; }
+
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.btn-danger-sm {
+  padding: 2px 7px;
+  background: #fff;
+  color: #c0392b;
+  border: 1px solid #e8b4b4;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.btn-danger-sm:hover { background: #fde8e8; }
+
+.muted { color: #bbb; }
+.hidden { display: none !important; }
