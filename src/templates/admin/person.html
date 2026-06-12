@@ -134,6 +134,25 @@
         </div>
       </div>
 
+      <div class="form-section">
+        <h2 class="form-section-title">Police Check</h2>
+        <div class="form-row">
+          <div class="form-group fg-220">
+            <label>Status</label>
+            <select name="police_check_status">
+              <option value="">— not recorded —</option>
+              <option value="Pending"{{if eq .Form.PoliceCheckStatus "Pending"}} selected{{end}}>Pending</option>
+              <option value="Clear"{{if eq .Form.PoliceCheckStatus "Clear"}} selected{{end}}>Clear</option>
+              <option value="Not Required"{{if eq .Form.PoliceCheckStatus "Not Required"}} selected{{end}}>Not Required</option>
+            </select>
+          </div>
+          <div class="form-group fg-180">
+            <label>Date</label>
+            <input type="date" name="police_check_date" value="{{.Form.PoliceCheckDateStr}}">
+          </div>
+        </div>
+      </div>
+
       <div class="form-actions">
         <button type="submit" class="btn-primary">
           {{if .IsNew}}Create Person{{else}}Save Changes{{end}}
@@ -167,14 +186,6 @@
           <div class="role-card-body">
             {{if .Person.IsTeacher}}
               <p class="role-number">{{.Person.TeacherNumber}}</p>
-              {{if .Person.TeacherPoliceCheckStatus}}
-              <p class="role-check-info">
-                Police check: <strong>{{.Person.TeacherPoliceCheckStatus}}</strong>
-                {{if .Person.TeacherPoliceCheckDateStr}}({{.Person.TeacherPoliceCheckDateStr}}){{end}}
-              </p>
-              {{else}}
-              <p class="role-check-none">No police check on record</p>
-              {{end}}
               <a class="btn-row-action" href="/admin/people/{{.Form.ID}}/role?type=teacher">Edit</a>
             {{else}}
               <p class="role-none">Not assigned</p>
@@ -188,14 +199,6 @@
           <div class="role-card-body">
             {{if .Person.IsStaff}}
               <p class="role-number">{{.Person.StaffNumber}}</p>
-              {{if .Person.StaffPoliceCheckStatus}}
-              <p class="role-check-info">
-                Police check: <strong>{{.Person.StaffPoliceCheckStatus}}</strong>
-                {{if .Person.StaffPoliceCheckDateStr}}({{.Person.StaffPoliceCheckDateStr}}){{end}}
-              </p>
-              {{else}}
-              <p class="role-check-none">No police check on record</p>
-              {{end}}
               <a class="btn-row-action" href="/admin/people/{{.Form.ID}}/role?type=staff">Edit</a>
             {{else}}
               <p class="role-none">Not assigned</p>

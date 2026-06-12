@@ -612,21 +612,23 @@ func (h *Handler) PublishSCColumn(w http.ResponseWriter, r *http.Request) {
 var auStates = []string{"NSW", "VIC", "QLD", "SA", "WA", "TAS", "NT", "ACT"}
 
 type personForm struct {
-	ID            int64
-	Title         string
-	FirstName     string
-	FamilyName    string
-	PreferredName string
-	DOBStr        string
-	Gender        string
-	Email         string
-	PhoneMobile   string
-	Suburb        string
-	StateCode     string
-	Postcode      string
-	PhotoURL      string
-	WWCCNumber    string
-	WWCCExpiryStr string
+	ID                 int64
+	Title              string
+	FirstName          string
+	FamilyName         string
+	PreferredName      string
+	DOBStr             string
+	Gender             string
+	Email              string
+	PhoneMobile        string
+	Suburb             string
+	StateCode          string
+	Postcode           string
+	PhotoURL           string
+	WWCCNumber         string
+	WWCCExpiryStr      string
+	PoliceCheckStatus  string
+	PoliceCheckDateStr string
 }
 
 func personFormFrom(d store.PersonDetail) personForm {
@@ -636,24 +638,27 @@ func personFormFrom(d store.PersonDetail) personForm {
 		Gender: d.Gender, Email: d.Email, PhoneMobile: d.PhoneMobile,
 		Suburb: d.Suburb, StateCode: d.StateCode, Postcode: d.Postcode,
 		PhotoURL: d.PhotoURL, WWCCNumber: d.WWCCNumber, WWCCExpiryStr: d.WWCCExpiryStr,
+		PoliceCheckStatus: d.PoliceCheckStatus, PoliceCheckDateStr: d.PoliceCheckDateStr,
 	}
 }
 
 func personFormFromPost(r *http.Request, id int64) personForm {
 	return personForm{
 		ID: id, Title: r.FormValue("title"),
-		FirstName: strings.TrimSpace(r.FormValue("first_name")),
-		FamilyName: strings.TrimSpace(r.FormValue("family_name")),
+		FirstName:     strings.TrimSpace(r.FormValue("first_name")),
+		FamilyName:    strings.TrimSpace(r.FormValue("family_name")),
 		PreferredName: strings.TrimSpace(r.FormValue("preferred_name")),
 		DOBStr: r.FormValue("dob"), Gender: r.FormValue("gender"),
-		Email: strings.TrimSpace(r.FormValue("email")),
+		Email:       strings.TrimSpace(r.FormValue("email")),
 		PhoneMobile: strings.TrimSpace(r.FormValue("phone_mobile")),
-		Suburb: strings.TrimSpace(r.FormValue("suburb")),
-		StateCode: r.FormValue("state_code"),
-		Postcode: strings.TrimSpace(r.FormValue("postcode")),
-		PhotoURL:      strings.TrimSpace(r.FormValue("photo_url")),
-		WWCCNumber:    strings.TrimSpace(r.FormValue("wwcc_number")),
-		WWCCExpiryStr: r.FormValue("wwcc_expiry"),
+		Suburb:      strings.TrimSpace(r.FormValue("suburb")),
+		StateCode:   r.FormValue("state_code"),
+		Postcode:    strings.TrimSpace(r.FormValue("postcode")),
+		PhotoURL:           strings.TrimSpace(r.FormValue("photo_url")),
+		WWCCNumber:         strings.TrimSpace(r.FormValue("wwcc_number")),
+		WWCCExpiryStr:      r.FormValue("wwcc_expiry"),
+		PoliceCheckStatus:  r.FormValue("police_check_status"),
+		PoliceCheckDateStr: r.FormValue("police_check_date"),
 	}
 }
 
@@ -717,7 +722,8 @@ func (h *Handler) AdminPersonCreate(w http.ResponseWriter, r *http.Request) {
 		f.Title, f.FirstName, f.FamilyName, f.PreferredName,
 		f.DOBStr, f.Gender, f.Email, f.PhoneMobile,
 		f.Suburb, f.StateCode, f.Postcode,
-		f.WWCCNumber, f.WWCCExpiryStr, f.PhotoURL)
+		f.WWCCNumber, f.WWCCExpiryStr, f.PhotoURL,
+		f.PoliceCheckStatus, f.PoliceCheckDateStr)
 	if err != nil {
 		log.Printf("CreatePerson: %v", err)
 		h.render(w, "admin-person", map[string]any{
@@ -775,7 +781,8 @@ func (h *Handler) AdminPersonUpdate(w http.ResponseWriter, r *http.Request) {
 		f.Title, f.FirstName, f.FamilyName, f.PreferredName,
 		f.DOBStr, f.Gender, f.Email, f.PhoneMobile,
 		f.Suburb, f.StateCode, f.Postcode,
-		f.WWCCNumber, f.WWCCExpiryStr, f.PhotoURL); err != nil {
+		f.WWCCNumber, f.WWCCExpiryStr, f.PhotoURL,
+		f.PoliceCheckStatus, f.PoliceCheckDateStr); err != nil {
 		log.Printf("UpdatePerson(%d): %v", id, err)
 		person, _ := h.store.GetPerson(r.Context(), id)
 		h.render(w, "admin-person", map[string]any{
@@ -799,10 +806,12 @@ func (h *Handler) AdminRoleForm(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	roleType := r.URL.Query().Get("type")
+	role, _ := h.store.GetRoleDetail(r.Context(), id, roleType)
 	user, _ := auth.Current(r)
 	h.render(w, "admin-role-form", map[string]any{
-		"Person": person, "RoleType": r.URL.Query().Get("type"),
-		"Error": "", "User": user,
+		"Person": person, "RoleType": roleType,
+		"Role": role, "Error": "", "User": user,
 	})
 }
 
@@ -827,13 +836,9 @@ func (h *Handler) AdminRoleAdd(w http.ResponseWriter, r *http.Request) {
 		roleErr = h.store.AddStudentRole(r.Context(), id, number, email)
 	case "teacher":
 		roleErr = h.store.AddTeacherRole(r.Context(), id, number, email,
-			r.FormValue("employment_status"),
-			r.FormValue("police_check_status"),
-			r.FormValue("police_check_date"))
+			r.FormValue("employment_status"))
 	case "staff":
-		roleErr = h.store.AddStaffRole(r.Context(), id, number, email,
-			r.FormValue("police_check_status"),
-			r.FormValue("police_check_date"))
+		roleErr = h.store.AddStaffRole(r.Context(), id, number, email)
 	default:
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -842,8 +847,13 @@ func (h *Handler) AdminRoleAdd(w http.ResponseWriter, r *http.Request) {
 	if roleErr != nil {
 		log.Printf("AddRole(%s,%d): %v", roleType, id, roleErr)
 		person, _ := h.store.GetPerson(r.Context(), id)
+		role := store.RoleDetail{
+			Number: number, Email: email,
+			EmploymentStatus: r.FormValue("employment_status"),
+		}
 		h.render(w, "admin-role-form", map[string]any{
 			"Person": person, "RoleType": roleType,
+			"Role": role,
 			"Error": "Could not add role — check that the number is not already in use.",
 			"User": user,
 		})

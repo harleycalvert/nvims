@@ -575,16 +575,14 @@ type PersonDetail struct {
 	PhotoURL      string
 	WWCCNumber    string
 	WWCCExpiryStr string
+	PoliceCheckStatus  string
+	PoliceCheckDateStr string
 	IsStudent     bool
 	IsTeacher     bool
 	IsStaff       bool
-	StudentNumber             string
-	TeacherNumber             string
-	TeacherPoliceCheckStatus  string
-	TeacherPoliceCheckDateStr string
-	StaffNumber               string
-	StaffPoliceCheckStatus    string
-	StaffPoliceCheckDateStr   string
+	StudentNumber string
+	TeacherNumber string
+	StaffNumber   string
 }
 
 type PeopleResult struct {
@@ -667,26 +665,23 @@ func (s *Store) GetPerson(ctx context.Context, id int64) (PersonDetail, error) {
 		       COALESCE(p.photo_url,''),
 		       COALESCE(p.wwcc_number,''),
 		       COALESCE(TO_CHAR(p.wwcc_expiry,'YYYY-MM-DD'),''),
+		       COALESCE(p.police_check_status,''),
+		       COALESCE(TO_CHAR(p.police_check_date,'YYYY-MM-DD'),''),
 		       EXISTS(SELECT 1 FROM public.students st WHERE st.id = p.id AND st.deleted_at IS NULL),
 		       EXISTS(SELECT 1 FROM public.teachers t  WHERE t.id  = p.id),
 		       EXISTS(SELECT 1 FROM public.staff   sf WHERE sf.id  = p.id),
 		       COALESCE((SELECT student_number FROM public.students WHERE id = p.id),''),
 		       COALESCE((SELECT teacher_number FROM public.teachers WHERE id = p.id),''),
-		       COALESCE((SELECT COALESCE(police_check_status,'') FROM public.teachers WHERE id = p.id),''),
-		       COALESCE((SELECT TO_CHAR(police_check_date,'YYYY-MM-DD') FROM public.teachers WHERE id = p.id),''),
-		       COALESCE((SELECT staff_number FROM public.staff WHERE id = p.id),''),
-		       COALESCE((SELECT COALESCE(police_check_status,'') FROM public.staff WHERE id = p.id),''),
-		       COALESCE((SELECT TO_CHAR(police_check_date,'YYYY-MM-DD') FROM public.staff WHERE id = p.id),'')
+		       COALESCE((SELECT staff_number   FROM public.staff    WHERE id = p.id),'')
 		FROM public.people p WHERE p.id = $1
 	`, id).Scan(
 		&d.ID, &d.Title, &d.FirstName, &d.FamilyName, &d.PreferredName,
 		&d.DOB, &d.Gender, &d.Email, &d.PhoneMobile,
 		&d.Suburb, &d.StateCode, &d.Postcode,
 		&d.PhotoURL, &d.WWCCNumber, &d.WWCCExpiryStr,
+		&d.PoliceCheckStatus, &d.PoliceCheckDateStr,
 		&d.IsStudent, &d.IsTeacher, &d.IsStaff,
-		&d.StudentNumber,
-		&d.TeacherNumber, &d.TeacherPoliceCheckStatus, &d.TeacherPoliceCheckDateStr,
-		&d.StaffNumber, &d.StaffPoliceCheckStatus, &d.StaffPoliceCheckDateStr,
+		&d.StudentNumber, &d.TeacherNumber, &d.StaffNumber,
 	)
 	return d, err
 }
@@ -728,7 +723,7 @@ func (s *Store) GetStudentPanel(ctx context.Context, studentID int64) (StudentPa
 	return d, err
 }
 
-func (s *Store) CreatePerson(ctx context.Context, title, firstName, familyName, preferredName, dob, gender, email, phoneMobile, suburb, stateCode, postcode, wwccNumber, wwccExpiry, photoURL string) (int64, error) {
+func (s *Store) CreatePerson(ctx context.Context, title, firstName, familyName, preferredName, dob, gender, email, phoneMobile, suburb, stateCode, postcode, wwccNumber, wwccExpiry, photoURL, policeCheckStatus, policeCheckDate string) (int64, error) {
 	var id int64
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO public.people
@@ -736,48 +731,54 @@ func (s *Store) CreatePerson(ctx context.Context, title, firstName, familyName, 
 		     dob, gender, primary_email, phone_mobile,
 		     suburb, state_code, postcode,
 		     wwcc_number, wwcc_expiry,
-		     photo_url, photo_uploaded_at)
+		     photo_url, photo_uploaded_at,
+		     police_check_status, police_check_date)
 		VALUES
 		    (NULLIF($1,''), $2, $3, NULLIF($4,''),
 		     $5::date, $6, $7, NULLIF($8,''),
 		     $9, $10, $11,
 		     NULLIF($12,''), NULLIF($13,'')::date,
-		     NULLIF($14,''), CASE WHEN NULLIF($14,'') IS NOT NULL THEN NOW() ELSE NULL END)
+		     NULLIF($14,''), CASE WHEN NULLIF($14,'') IS NOT NULL THEN NOW() ELSE NULL END,
+		     NULLIF($15,''), NULLIF($16,'')::date)
 		RETURNING id
 	`, title, firstName, familyName, preferredName,
 		dob, gender, email, phoneMobile,
 		suburb, stateCode, postcode,
 		wwccNumber, wwccExpiry, photoURL,
+		policeCheckStatus, policeCheckDate,
 	).Scan(&id)
 	return id, err
 }
 
-func (s *Store) UpdatePerson(ctx context.Context, id int64, title, firstName, familyName, preferredName, dob, gender, email, phoneMobile, suburb, stateCode, postcode, wwccNumber, wwccExpiry, photoURL string) error {
+func (s *Store) UpdatePerson(ctx context.Context, id int64, title, firstName, familyName, preferredName, dob, gender, email, phoneMobile, suburb, stateCode, postcode, wwccNumber, wwccExpiry, photoURL, policeCheckStatus, policeCheckDate string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE public.people SET
-		    title            = NULLIF($2,''),
-		    first_given_name = $3,
-		    family_name      = $4,
-		    preferred_name   = NULLIF($5,''),
-		    dob              = $6::date,
-		    gender           = $7,
-		    primary_email    = $8,
-		    phone_mobile     = NULLIF($9,''),
-		    suburb           = $10,
-		    state_code       = $11,
-		    postcode         = $12,
-		    wwcc_number      = NULLIF($13,''),
-		    wwcc_expiry      = NULLIF($14,'')::date,
-		    photo_url        = NULLIF($15,''),
-		    photo_uploaded_at = CASE
+		    title               = NULLIF($2,''),
+		    first_given_name    = $3,
+		    family_name         = $4,
+		    preferred_name      = NULLIF($5,''),
+		    dob                 = $6::date,
+		    gender              = $7,
+		    primary_email       = $8,
+		    phone_mobile        = NULLIF($9,''),
+		    suburb              = $10,
+		    state_code          = $11,
+		    postcode            = $12,
+		    wwcc_number         = NULLIF($13,''),
+		    wwcc_expiry         = NULLIF($14,'')::date,
+		    photo_url           = NULLIF($15,''),
+		    photo_uploaded_at   = CASE
 		        WHEN NULLIF($15,'') IS NOT NULL THEN COALESCE(photo_uploaded_at, NOW())
 		        ELSE NULL END,
-		    updated_at       = NOW()
+		    police_check_status = NULLIF($16,''),
+		    police_check_date   = NULLIF($17,'')::date,
+		    updated_at          = NOW()
 		WHERE id = $1
 	`, id, title, firstName, familyName, preferredName,
 		dob, gender, email, phoneMobile,
 		suburb, stateCode, postcode,
 		wwccNumber, wwccExpiry, photoURL,
+		policeCheckStatus, policeCheckDate,
 	)
 	return err
 }
@@ -794,31 +795,57 @@ func (s *Store) AddStudentRole(ctx context.Context, personID int64, studentNumbe
 	return err
 }
 
-func (s *Store) AddTeacherRole(ctx context.Context, personID int64, teacherNumber, teacherEmail, employmentStatus, policeCheckStatus, policeCheckDate string) error {
+func (s *Store) AddTeacherRole(ctx context.Context, personID int64, teacherNumber, teacherEmail, employmentStatus string) error {
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO public.teachers (id, teacher_number, teacher_email, employment_status, police_check_status, police_check_date)
-		VALUES ($1, $2, $3, $4::public.employment_type, NULLIF($5,''), NULLIF($6,'')::date)
+		INSERT INTO public.teachers (id, teacher_number, teacher_email, employment_status)
+		VALUES ($1, $2, $3, $4::public.employment_type)
 		ON CONFLICT (id) DO UPDATE SET
-		    teacher_number      = EXCLUDED.teacher_number,
-		    teacher_email       = EXCLUDED.teacher_email,
-		    employment_status   = EXCLUDED.employment_status,
-		    police_check_status = EXCLUDED.police_check_status,
-		    police_check_date   = EXCLUDED.police_check_date
-	`, personID, teacherNumber, teacherEmail, employmentStatus, policeCheckStatus, policeCheckDate)
+		    teacher_number    = EXCLUDED.teacher_number,
+		    teacher_email     = EXCLUDED.teacher_email,
+		    employment_status = EXCLUDED.employment_status
+	`, personID, teacherNumber, teacherEmail, employmentStatus)
 	return err
 }
 
-func (s *Store) AddStaffRole(ctx context.Context, personID int64, staffNumber, staffEmail, policeCheckStatus, policeCheckDate string) error {
+func (s *Store) AddStaffRole(ctx context.Context, personID int64, staffNumber, staffEmail string) error {
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO public.staff (id, staff_number, staff_email, police_check_status, police_check_date)
-		VALUES ($1, $2, $3, NULLIF($4,''), NULLIF($5,'')::date)
+		INSERT INTO public.staff (id, staff_number, staff_email)
+		VALUES ($1, $2, $3)
 		ON CONFLICT (id) DO UPDATE SET
-		    staff_number         = EXCLUDED.staff_number,
-		    staff_email          = EXCLUDED.staff_email,
-		    police_check_status  = EXCLUDED.police_check_status,
-		    police_check_date    = EXCLUDED.police_check_date
-	`, personID, staffNumber, staffEmail, policeCheckStatus, policeCheckDate)
+		    staff_number = EXCLUDED.staff_number,
+		    staff_email  = EXCLUDED.staff_email
+	`, personID, staffNumber, staffEmail)
 	return err
+}
+
+type RoleDetail struct {
+	Number           string
+	Email            string
+	EmploymentStatus string // teacher only
+}
+
+func (s *Store) GetRoleDetail(ctx context.Context, personID int64, roleType string) (RoleDetail, error) {
+	var d RoleDetail
+	var err error
+	switch roleType {
+	case "student":
+		err = s.pool.QueryRow(ctx, `
+			SELECT COALESCE(student_number,''), COALESCE(student_email,'')
+			FROM public.students WHERE id = $1 AND deleted_at IS NULL
+		`, personID).Scan(&d.Number, &d.Email)
+	case "teacher":
+		err = s.pool.QueryRow(ctx, `
+			SELECT COALESCE(teacher_number,''), COALESCE(teacher_email,''),
+			       COALESCE(employment_status::text,'')
+			FROM public.teachers WHERE id = $1
+		`, personID).Scan(&d.Number, &d.Email, &d.EmploymentStatus)
+	case "staff":
+		err = s.pool.QueryRow(ctx, `
+			SELECT COALESCE(staff_number,''), COALESCE(staff_email,'')
+			FROM public.staff WHERE id = $1
+		`, personID).Scan(&d.Number, &d.Email)
+	}
+	return d, err
 }
 
 // ── Admin / Programs & Classes ─────────────────────────────────────────────

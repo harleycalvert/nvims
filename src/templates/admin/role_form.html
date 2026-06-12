@@ -48,7 +48,7 @@
               {{else}}Staff Number{{end}}
               <span class="req">*</span>
             </label>
-            <input type="text" name="number" required autofocus>
+            <input type="text" name="number" value="{{.Role.Number}}" required autofocus>
           </div>
           <div class="form-group form-group-grow">
             <label>
@@ -56,7 +56,7 @@
               {{else if eq .RoleType "teacher"}}Teacher Email
               {{else}}Staff Email{{end}}
             </label>
-            <input type="email" name="email" value="{{.Person.Email}}">
+            <input type="email" name="email" value="{{.Role.Email}}">
           </div>
         </div>
 
@@ -66,31 +66,14 @@
             <label>Employment Status <span class="req">*</span></label>
             <select name="employment_status" required>
               <option value="">— select —</option>
-              <option value="Full-Time">Full-Time</option>
-              <option value="Part-Time">Part-Time</option>
-              <option value="Casual">Casual</option>
+              <option value="Full-Time"{{if eq .Role.EmploymentStatus "Full-Time"}} selected{{end}}>Full-Time</option>
+              <option value="Part-Time"{{if eq .Role.EmploymentStatus "Part-Time"}} selected{{end}}>Part-Time</option>
+              <option value="Casual"{{if eq .Role.EmploymentStatus "Casual"}} selected{{end}}>Casual</option>
             </select>
           </div>
         </div>
         {{end}}
 
-        {{if or (eq .RoleType "teacher") (eq .RoleType "staff")}}
-        <div class="form-row">
-          <div class="form-group fg-220">
-            <label>Police Check Status</label>
-            <select name="police_check_status">
-              <option value="">— not recorded —</option>
-              <option value="Pending">Pending</option>
-              <option value="Clear">Clear</option>
-              <option value="Not Required">Not Required</option>
-            </select>
-          </div>
-          <div class="form-group fg-180">
-            <label>Police Check Date</label>
-            <input type="date" name="police_check_date">
-          </div>
-        </div>
-        {{end}}
       </div>
 
       <div class="form-actions">

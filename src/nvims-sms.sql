@@ -74,23 +74,23 @@
 --       and other enrolable products are rows in programs, differentiated by
 --       this column. Specialisations are captured by group_code / group_title
 --       on subject_programs (added in item 5).
---  10.  teacher_vcms: Vocational Competency Map document, versioned per year,
+--  10.  teacher_vccs: Vocational Competency & Currency document, versioned per year,
 --       with approval workflow (Draft → Submitted → Approved).
---  11.  teacher_vcm_professional_qualifications: teacher's own credentials
---       (TAE, degrees, industry certs) recorded against a VCM version.
---  12.  teacher_vcm_courses: courses covered in a VCM (may link to programs).
---  13.  teacher_vcm_units: units the teacher has currency for, with competency
+--  11.  teacher_vcc_professional_qualifications: teacher's own credentials
+--       (TAE, degrees, industry certs) recorded against a VCC version.
+--  12.  teacher_vcc_courses: courses covered in a VCC (may link to programs).
+--  13.  teacher_vcc_units: units the teacher has currency for, with competency
 --       method and justification text. Multiple rows per unit allowed (one per
---       method). Standalone or grouped under a VCM course.
+--       method). Standalone or grouped under a VCC course.
 --  14.  teacher_documents: per-teacher document library (testamurs,
 --       transcripts, credentials, and other supporting evidence).
---  15.  teacher_document_connections: M2M linking documents to exactly one VCM
+--  15.  teacher_document_connections: M2M linking documents to exactly one VCC
 --       entity — professional qualification, unit, or currency activity.
 --  16.  teacher_currency_activities: vocational and professional currency
 --       point records with activity detail and approval tracking.
 --  17.  teacher_currency_unit_links: units related to a currency activity.
---  18.  teacher_vcm_profiling: spider-chart dimension scores (self, supervisor,
---       business ideal) stored per VCM version.
+--  18.  teacher_vcc_profiling: spider-chart dimension scores (self, supervisor,
+--       business ideal) stored per VCC version.
 -- Changes from v0.15:
 --   1.  classes.group_code varchar(20): optional cohort label (G1, G2 …).
 --       Groups multiple subject-level classes into one student cohort.
@@ -2357,39 +2357,39 @@ CREATE TABLE IF NOT EXISTS public.student_employment_registrations (
 );
 
 -- =========================================================================
--- NEW TABLES — Vocational Competency Map (VCM)
+-- NEW TABLES — Vocational Competency & Currency (VCC)
 -- =========================================================================
 
--- Top-level VCM document: one per teacher per year per version.
-CREATE TABLE IF NOT EXISTS public.teacher_vcms (
+-- Top-level VCC document: one per teacher per year per version.
+CREATE TABLE IF NOT EXISTS public.teacher_vccs (
     id              bigserial    NOT NULL,
     teacher_id      bigint       NOT NULL,
     calendar_year   smallint     NOT NULL,
     version         smallint     NOT NULL DEFAULT 1,
     version_label   varchar(20)  NULL,           -- e.g. '2026_V1'
     status          varchar(20)  NOT NULL DEFAULT 'Draft',
-    supervisor_id   bigint       NULL,            -- line manager / VCM supervisor
+    supervisor_id   bigint       NULL,            -- line manager / VCC supervisor
     approved_by_id  bigint       NULL,
     approved_at     timestamp with time zone NULL,
     notes           text         NULL,
     created_at      timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at      timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    CONSTRAINT uq_teacher_vcm_version  UNIQUE (teacher_id, calendar_year, version),
-    CONSTRAINT fk_vcm_teacher          FOREIGN KEY (teacher_id)     REFERENCES public.teachers(id)   ON DELETE RESTRICT,
-    CONSTRAINT fk_vcm_supervisor       FOREIGN KEY (supervisor_id)  REFERENCES public.app_users(id)  ON DELETE SET NULL,
-    CONSTRAINT fk_vcm_approved_by      FOREIGN KEY (approved_by_id) REFERENCES public.app_users(id)  ON DELETE SET NULL,
-    CONSTRAINT chk_vcm_status          CHECK (status IN ('Draft','Submitted','Approved','Rejected'))
+    CONSTRAINT uq_teacher_vcc_version  UNIQUE (teacher_id, calendar_year, version),
+    CONSTRAINT fk_vcc_teacher          FOREIGN KEY (teacher_id)     REFERENCES public.teachers(id)   ON DELETE RESTRICT,
+    CONSTRAINT fk_vcc_supervisor       FOREIGN KEY (supervisor_id)  REFERENCES public.app_users(id)  ON DELETE SET NULL,
+    CONSTRAINT fk_vcc_approved_by      FOREIGN KEY (approved_by_id) REFERENCES public.app_users(id)  ON DELETE SET NULL,
+    CONSTRAINT chk_vcc_status          CHECK (status IN ('Draft','Submitted','Approved','Rejected'))
 );
 
-CREATE OR REPLACE TRIGGER trg_touch_teacher_vcms
-    BEFORE UPDATE ON public.teacher_vcms
+CREATE OR REPLACE TRIGGER trg_touch_teacher_vccs
+    BEFORE UPDATE ON public.teacher_vccs
     FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
 
 -- Teacher's own professional credentials (TAE, degrees, industry certs).
-CREATE TABLE IF NOT EXISTS public.teacher_vcm_professional_qualifications (
+CREATE TABLE IF NOT EXISTS public.teacher_vcc_professional_qualifications (
     id                   bigserial    NOT NULL,
-    vcm_id               bigint       NOT NULL,
+    vcc_id               bigint       NOT NULL,
     qualification_code   varchar(30)  NOT NULL,
     qualification_title  varchar(200) NOT NULL,
     institution          varchar(200) NULL,
@@ -2398,30 +2398,30 @@ CREATE TABLE IF NOT EXISTS public.teacher_vcm_professional_qualifications (
     notes                text         NULL,
     created_at           timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    CONSTRAINT fk_vcm_pq_vcm     FOREIGN KEY (vcm_id) REFERENCES public.teacher_vcms(id) ON DELETE CASCADE,
-    CONSTRAINT chk_vcm_pq_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))
+    CONSTRAINT fk_vcc_pq_vcc     FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE,
+    CONSTRAINT chk_vcc_pq_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))
 );
 
--- Courses (qualifications) the teacher is mapped to deliver in this VCM.
-CREATE TABLE IF NOT EXISTS public.teacher_vcm_courses (
+-- Courses (qualifications) the teacher is mapped to deliver in this VCC.
+CREATE TABLE IF NOT EXISTS public.teacher_vcc_courses (
     id           bigserial    NOT NULL,
-    vcm_id       bigint       NOT NULL,
+    vcc_id       bigint       NOT NULL,
     program_id   bigint       NULL,          -- NULL for non-TGA courses (VIC codes etc.)
     course_code  varchar(20)  NOT NULL,
     course_title varchar(200) NOT NULL,
     sort_order   smallint     NOT NULL DEFAULT 0,
     created_at   timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    CONSTRAINT fk_vcm_course_vcm     FOREIGN KEY (vcm_id)     REFERENCES public.teacher_vcms(id) ON DELETE CASCADE,
-    CONSTRAINT fk_vcm_course_program FOREIGN KEY (program_id) REFERENCES public.programs(id)     ON DELETE SET NULL
+    CONSTRAINT fk_vcc_course_vcc     FOREIGN KEY (vcc_id)     REFERENCES public.teacher_vccs(id) ON DELETE CASCADE,
+    CONSTRAINT fk_vcc_course_program FOREIGN KEY (program_id) REFERENCES public.programs(id)     ON DELETE SET NULL
 );
 
 -- Units the teacher has currency for. Multiple rows per unit are allowed
--- (one per competency method, matching TGA VCM practice).
-CREATE TABLE IF NOT EXISTS public.teacher_vcm_units (
+-- (one per competency method, matching TGA VCC practice).
+CREATE TABLE IF NOT EXISTS public.teacher_vcc_units (
     id                    bigserial    NOT NULL,
-    vcm_id                bigint       NOT NULL,
-    vcm_course_id         bigint       NULL,          -- NULL = standalone "Single Unit"
+    vcc_id                bigint       NOT NULL,
+    vcc_course_id         bigint       NULL,          -- NULL = standalone "Single Unit"
     subject_id            bigint       NULL,
     unit_code             varchar(20)  NOT NULL,
     unit_title            varchar(200) NOT NULL,
@@ -2436,21 +2436,21 @@ CREATE TABLE IF NOT EXISTS public.teacher_vcm_units (
     created_at            timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at            timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    CONSTRAINT fk_vcm_unit_vcm     FOREIGN KEY (vcm_id)        REFERENCES public.teacher_vcms(id)                      ON DELETE CASCADE,
-    CONSTRAINT fk_vcm_unit_course  FOREIGN KEY (vcm_course_id) REFERENCES public.teacher_vcm_courses(id)               ON DELETE SET NULL,
-    CONSTRAINT fk_vcm_unit_subject FOREIGN KEY (subject_id)    REFERENCES public.subjects(id)                          ON DELETE SET NULL,
-    CONSTRAINT chk_vcm_unit_method CHECK (competency_method IN (
+    CONSTRAINT fk_vcc_unit_vcc     FOREIGN KEY (vcc_id)        REFERENCES public.teacher_vccs(id)                      ON DELETE CASCADE,
+    CONSTRAINT fk_vcc_unit_course  FOREIGN KEY (vcc_course_id) REFERENCES public.teacher_vcc_courses(id)               ON DELETE SET NULL,
+    CONSTRAINT fk_vcc_unit_subject FOREIGN KEY (subject_id)    REFERENCES public.subjects(id)                          ON DELETE SET NULL,
+    CONSTRAINT chk_vcc_unit_method CHECK (competency_method IN (
         'I hold the current unit of competency',
         'I hold a superseded and equivalent unit of competency',
         'I hold a recognition of relevant study',
         'I have vocational work experience',
         'Other'
     )),
-    CONSTRAINT chk_vcm_unit_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))
+    CONSTRAINT chk_vcc_unit_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))
 );
 
-CREATE OR REPLACE TRIGGER trg_touch_teacher_vcm_units
-    BEFORE UPDATE ON public.teacher_vcm_units
+CREATE OR REPLACE TRIGGER trg_touch_teacher_vcc_units
+    BEFORE UPDATE ON public.teacher_vcc_units
     FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
 
 -- =========================================================================
@@ -2475,19 +2475,19 @@ CREATE TABLE IF NOT EXISTS public.teacher_documents (
     ))
 );
 
--- Links a document to exactly one VCM entity. vcm_currency_activity_id FK is
+-- Links a document to exactly one VCC entity. vcc_currency_activity_id FK is
 -- added after teacher_currency_activities is created below.
 CREATE TABLE IF NOT EXISTS public.teacher_document_connections (
     id                       bigserial NOT NULL,
     document_id              bigint    NOT NULL,
-    vcm_professional_qual_id bigint    NULL,
-    vcm_unit_id              bigint    NULL,
-    vcm_currency_activity_id bigint    NULL,
+    vcc_professional_qual_id bigint    NULL,
+    vcc_unit_id              bigint    NULL,
+    vcc_currency_activity_id bigint    NULL,
     PRIMARY KEY (id),
     CONSTRAINT fk_tdc_document FOREIGN KEY (document_id)              REFERENCES public.teacher_documents(id)                      ON DELETE CASCADE,
-    CONSTRAINT fk_tdc_pq       FOREIGN KEY (vcm_professional_qual_id) REFERENCES public.teacher_vcm_professional_qualifications(id) ON DELETE CASCADE,
-    CONSTRAINT fk_tdc_unit     FOREIGN KEY (vcm_unit_id)              REFERENCES public.teacher_vcm_units(id)                      ON DELETE CASCADE,
-    CONSTRAINT chk_tdc_target  CHECK (num_nonnulls(vcm_professional_qual_id, vcm_unit_id, vcm_currency_activity_id) = 1)
+    CONSTRAINT fk_tdc_pq       FOREIGN KEY (vcc_professional_qual_id) REFERENCES public.teacher_vcc_professional_qualifications(id) ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_unit     FOREIGN KEY (vcc_unit_id)              REFERENCES public.teacher_vcc_units(id)                      ON DELETE CASCADE,
+    CONSTRAINT chk_tdc_target  CHECK (num_nonnulls(vcc_professional_qual_id, vcc_unit_id, vcc_currency_activity_id) = 1)
 );
 
 -- =========================================================================
@@ -2527,7 +2527,7 @@ CREATE TABLE IF NOT EXISTS public.teacher_currency_activities (
 
 -- Wire up the deferred FK now that teacher_currency_activities exists.
 ALTER TABLE public.teacher_document_connections
-    ADD CONSTRAINT fk_tdc_currency FOREIGN KEY (vcm_currency_activity_id)
+    ADD CONSTRAINT fk_tdc_currency FOREIGN KEY (vcc_currency_activity_id)
     REFERENCES public.teacher_currency_activities(id) ON DELETE CASCADE;
 
 CREATE OR REPLACE TRIGGER trg_touch_teacher_currency_activities
@@ -2548,18 +2548,18 @@ CREATE TABLE IF NOT EXISTS public.teacher_currency_unit_links (
 );
 
 -- =========================================================================
--- NEW TABLES — VCM Profiling Tool
+-- NEW TABLES — VCC Profiling Tool
 -- =========================================================================
 
--- Stores spider/radar chart scores per dimension per VCM version.
-CREATE TABLE IF NOT EXISTS public.teacher_vcm_profiling (
-    vcm_id               bigint       NOT NULL,
+-- Stores spider/radar chart scores per dimension per VCC version.
+CREATE TABLE IF NOT EXISTS public.teacher_vcc_profiling (
+    vcc_id               bigint       NOT NULL,
     dimension            varchar(100) NOT NULL,
     business_ideal_score smallint     NULL,
     self_score           smallint     NULL,
     supervisor_score     smallint     NULL,
-    PRIMARY KEY (vcm_id, dimension),
-    CONSTRAINT fk_vcm_profiling FOREIGN KEY (vcm_id) REFERENCES public.teacher_vcms(id) ON DELETE CASCADE
+    PRIMARY KEY (vcc_id, dimension),
+    CONSTRAINT fk_vcc_profiling FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE
 );
 
 -- =========================================================================
@@ -2584,26 +2584,26 @@ CREATE INDEX IF NOT EXISTS idx_ser_student
 CREATE INDEX IF NOT EXISTS idx_programs_type
     ON public.programs(program_type) WHERE (program_type IS NOT NULL);
 
-CREATE INDEX IF NOT EXISTS idx_teacher_vcms_teacher
-    ON public.teacher_vcms(teacher_id);
+CREATE INDEX IF NOT EXISTS idx_teacher_vccs_teacher
+    ON public.teacher_vccs(teacher_id);
 
-CREATE INDEX IF NOT EXISTS idx_teacher_vcms_year
-    ON public.teacher_vcms(calendar_year);
+CREATE INDEX IF NOT EXISTS idx_teacher_vccs_year
+    ON public.teacher_vccs(calendar_year);
 
-CREATE INDEX IF NOT EXISTS idx_vcm_pq_vcm
-    ON public.teacher_vcm_professional_qualifications(vcm_id);
+CREATE INDEX IF NOT EXISTS idx_vcc_pq_vcc
+    ON public.teacher_vcc_professional_qualifications(vcc_id);
 
-CREATE INDEX IF NOT EXISTS idx_vcm_courses_vcm
-    ON public.teacher_vcm_courses(vcm_id);
+CREATE INDEX IF NOT EXISTS idx_vcc_courses_vcc
+    ON public.teacher_vcc_courses(vcc_id);
 
-CREATE INDEX IF NOT EXISTS idx_vcm_units_vcm
-    ON public.teacher_vcm_units(vcm_id);
+CREATE INDEX IF NOT EXISTS idx_vcc_units_vcc
+    ON public.teacher_vcc_units(vcc_id);
 
-CREATE INDEX IF NOT EXISTS idx_vcm_units_course
-    ON public.teacher_vcm_units(vcm_course_id) WHERE (vcm_course_id IS NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_vcc_units_course
+    ON public.teacher_vcc_units(vcc_course_id) WHERE (vcc_course_id IS NOT NULL);
 
-CREATE INDEX IF NOT EXISTS idx_vcm_units_subject
-    ON public.teacher_vcm_units(subject_id) WHERE (subject_id IS NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_vcc_units_subject
+    ON public.teacher_vcc_units(subject_id) WHERE (subject_id IS NOT NULL);
 
 CREATE INDEX IF NOT EXISTS idx_teacher_documents_teacher
     ON public.teacher_documents(teacher_id);
