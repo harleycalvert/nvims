@@ -1,6 +1,17 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.24, 2026-06-11
+-- AVETMISS-compliant SMS schema  --  version 0.25, 2026-06-12
 -- =========================================================================
+-- Changes from v0.24:
+--   1.  app_users.role (single varchar) replaced by app_user_roles table.
+--       A user may hold multiple roles simultaneously (e.g. Trainer + Student).
+--       Roleless accounts are valid (service accounts, pending onboarding).
+--       app_users.is_active remains as an account-level lock.
+--       app_user_roles.revoked_at is NULL while the role is active; set to the
+--       revocation timestamp when removed. The surrogate PK allows re-granting
+--       a previously revoked role while preserving audit history. A partial
+--       unique index (uq_aur_active_role) prevents duplicate active grants for
+--       the same (user_id, role) pair. Login evaluation: account must be active
+--       AND at least one role row must have revoked_at IS NULL.
 -- Changes from v0.23:
 --   1.  police_check_status / police_check_date moved from teachers and staff
 --       to people. Any person (student, teacher, staff, guardian) may be subject
@@ -283,16 +294,34 @@ CREATE TABLE IF NOT EXISTS public.app_users (
     person_id bigint NULL,                       -- NULL allowed for service accounts
     username varchar(100) NOT NULL,
     password_hash varchar(255) NOT NULL DEFAULT '',
-    role varchar(30) NOT NULL DEFAULT 'Staff',
-    is_active boolean NOT NULL DEFAULT true,
+    is_active boolean NOT NULL DEFAULT true,     -- account-level lock; disables all roles when false
     last_login_at timestamp with time zone NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     CONSTRAINT uq_app_user_username UNIQUE (username),
-    CONSTRAINT fk_app_user_person FOREIGN KEY (person_id) REFERENCES public.people(id) ON DELETE SET NULL,
-    CONSTRAINT chk_app_user_role CHECK (role IN ('Admin','Trainer','Compliance','Reception','SupportStaff','System','Staff','Student'))
+    CONSTRAINT fk_app_user_person FOREIGN KEY (person_id) REFERENCES public.people(id) ON DELETE SET NULL
 );
+
+-- Per-user role grants. revoked_at NULL = currently active; non-NULL = revoked at that time.
+-- Surrogate PK allows the same role to be re-granted after revocation (history is preserved).
+-- uq_aur_active_role prevents duplicate active grants for the same (user, role) pair.
+CREATE TABLE IF NOT EXISTS public.app_user_roles (
+    id         bigserial   NOT NULL,
+    user_id    bigint      NOT NULL,
+    role       varchar(30) NOT NULL,
+    granted_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    revoked_at timestamp with time zone NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_aur_user FOREIGN KEY (user_id) REFERENCES public.app_users(id) ON DELETE CASCADE,
+    CONSTRAINT chk_aur_role CHECK (role IN (
+        'Admin','Trainer','Compliance','Reception','SupportStaff','System','Staff','Student'
+    ))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_aur_active_role
+    ON public.app_user_roles(user_id, role)
+    WHERE (revoked_at IS NULL);
 
 CREATE TABLE IF NOT EXISTS public.faculties (
     id bigserial NOT NULL,
