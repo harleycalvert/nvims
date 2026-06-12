@@ -23,42 +23,40 @@
     </div>
   </header>
 
-  <main style="padding: 24px; max-width: 1200px;">
-
-    {{if .Flash}}<p class="hint" style="color:#1a7340;background:#e6f4ec;padding:8px 12px;border-radius:4px;margin-bottom:16px">{{.Flash}}</p>{{end}}
+  <main class="sessions-main">
 
     {{$vcc := .VCC}}
 
-    {{/* VCC Header + Status */}}
-    <div class="form-section" style="margin-bottom:24px;display:flex;gap:32px;align-items:flex-start;flex-wrap:wrap">
+    {{/* ── VCC header ── */}}
+    <div style="display:flex;gap:32px;align-items:flex-start;flex-wrap:wrap;padding:16px 0 24px">
       <table class="sessions-table" style="width:auto">
         <tbody>
-          <tr><th class="td-left" style="padding-right:24px">Teacher</th><td>{{$vcc.TeacherName}}</td></tr>
-          <tr><th class="td-left">Year</th><td>{{$vcc.CalendarYear}}</td></tr>
-          <tr><th class="td-left">Version</th><td>{{$vcc.VersionLabel}}</td></tr>
-          <tr><th class="td-left">Status</th><td><span class="status-badge status-{{$vcc.Status | statusCSS}}">{{$vcc.Status}}</span></td></tr>
-          {{if not $vcc.ApprovedAt.IsZero}}<tr><th class="td-left">Approved</th><td>{{$vcc.ApprovedAt | dateFull}}</td></tr>{{end}}
-          {{if $vcc.Notes}}<tr><th class="td-left">Notes</th><td>{{$vcc.Notes}}</td></tr>{{end}}
+          <tr><th class="td-left" style="padding-right:24px;font-weight:600">Teacher</th><td>{{$vcc.TeacherName}}</td></tr>
+          <tr><th class="td-left" style="font-weight:600">Year</th><td>{{$vcc.CalendarYear}}</td></tr>
+          <tr><th class="td-left" style="font-weight:600">Version</th><td>{{$vcc.VersionLabel}}</td></tr>
+          <tr><th class="td-left" style="font-weight:600">Status</th>
+              <td><span class="status-badge status-{{$vcc.Status | statusCSS}}">{{$vcc.Status}}</span></td></tr>
+          {{if not $vcc.ApprovedAt.IsZero}}<tr><th class="td-left" style="font-weight:600">Approved</th><td>{{$vcc.ApprovedAt | dateFull}}</td></tr>{{end}}
+          {{if $vcc.Notes}}<tr><th class="td-left" style="font-weight:600">Notes</th><td>{{$vcc.Notes}}</td></tr>{{end}}
         </tbody>
       </table>
 
-      <form method="POST" action="/admin/vccs/{{$vcc.ID}}/status" style="display:flex;gap:8px;align-items:flex-end;padding-top:4px">
-        <div class="form-group" style="margin:0">
-          <label style="font-size:12px;color:#666">Change VCC status</label>
-          <select name="status">
-            {{range .VCCStatuses}}
-            <option value="{{.}}"{{if eq . $vcc.Status}} selected{{end}}>{{.}}</option>
-            {{end}}
+      <div>
+        <div style="font-size:12px;color:#666;margin-bottom:4px">Change VCC status</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="vcc-status-sel" data-vcc-id="{{$vcc.ID}}">
+            {{$vs := $vcc.Status}}
+            {{range .VCCStatuses}}<option value="{{.}}"{{if eq . $vs}} selected{{end}}>{{.}}</option>{{end}}
           </select>
+          <span class="sess-status" id="vcc-status-ind"></span>
         </div>
-        <button type="submit" class="btn-primary" style="height:34px">Save</button>
-      </form>
+      </div>
     </div>
 
-    {{/* Professional Qualifications */}}
-    <h2 style="font-size:15px;font-weight:600;margin:0 0 8px">Professional Qualifications</h2>
+    {{/* ── Professional Qualifications ── */}}
+    <h2 class="vcc-section-title">Professional Qualifications</h2>
     <div class="table-wrap" style="margin-bottom:32px">
-      <table class="sessions-table">
+      <table class="sessions-table" id="pq-table">
         <thead>
           <tr>
             <th class="td-left">Code</th>
@@ -66,81 +64,69 @@
             <th>Status</th>
             <th>Approved</th>
             <th class="td-left">Supporting Documents</th>
-            <th>Update</th>
+            <th style="width:26px"></th>
           </tr>
         </thead>
         <tbody>
           {{range $vcc.PQs}}
-          <tr>
+          <tr class="sess-row" data-id="{{.ID}}">
             <td style="font-family:monospace;white-space:nowrap">{{.Code}}</td>
             <td class="td-left">{{.Title}}</td>
-            <td><span class="status-badge status-{{.Status | statusCSS}}">{{.Status}}</span></td>
-            <td style="white-space:nowrap">{{if not .ApprovedAt.IsZero}}{{.ApprovedAt | dateFull}}{{else}}—{{end}}</td>
-            <td class="td-left">
-              {{range .Documents}}<div style="font-size:12px">{{.Title}} ({{.Year}})</div>{{end}}
-            </td>
             <td>
-              <form method="POST" action="/admin/vccs/{{$vcc.ID}}/pqs/{{.ID}}" style="display:flex;gap:6px;align-items:center">
-                <select name="status" style="font-size:12px;padding:2px 4px;height:26px">
-                  {{$pqStatus := .Status}}
-                  {{range $.ItemStatuses}}
-                  <option value="{{.}}"{{if eq . $pqStatus}} selected{{end}}>{{.}}</option>
-                  {{end}}
-                </select>
-                <button type="submit" class="btn-secondary" style="font-size:11px;padding:2px 8px;height:26px">Save</button>
-              </form>
+              <select class="sess-input" name="status">
+                {{$s := .Status}}
+                {{range $.ItemStatuses}}<option value="{{.}}"{{if eq . $s}} selected{{end}}>{{.}}</option>{{end}}
+              </select>
             </td>
+            <td style="white-space:nowrap">{{if not .ApprovedAt.IsZero}}{{.ApprovedAt | dateFull}}{{else}}—{{end}}</td>
+            <td class="td-left" style="font-size:12px">
+              {{range .Documents}}<div>{{.Title}} ({{.Year}})</div>{{end}}
+            </td>
+            <td class="sess-actions"><span class="sess-status"></span></td>
           </tr>
           {{end}}
         </tbody>
       </table>
     </div>
 
-    {{/* Courses & Units */}}
+    {{/* ── Units by course ── */}}
     {{range $vcc.Courses}}
-    <h2 style="font-size:15px;font-weight:600;margin:24px 0 8px">
-      {{.CourseCode}} — {{.CourseTitle}}
-    </h2>
-    <div class="table-wrap" style="margin-bottom:24px">
-      <table class="sessions-table">
+    <h2 class="vcc-section-title">{{.CourseCode}} — {{.CourseTitle}}</h2>
+    <div class="table-wrap" style="margin-bottom:28px">
+      <table class="sessions-table vcc-unit-table" data-vcc-id="{{$vcc.ID}}">
         <thead>
           <tr>
-            <th class="td-left">Unit Code</th>
+            <th class="td-left" style="width:110px">Unit Code</th>
             <th class="td-left">Unit Title</th>
-            <th class="td-left">Method</th>
+            <th class="td-left" style="width:200px">Method</th>
             <th class="td-left">Evidence / Notes</th>
-            <th>Status</th>
-            <th>Approved</th>
+            <th style="width:120px">Status</th>
+            <th style="width:110px">Approved</th>
             <th class="td-left">Documents</th>
-            <th>Update</th>
+            <th style="width:26px"></th>
           </tr>
         </thead>
         <tbody>
           {{range .Units}}
-          <tr>
+          <tr class="sess-row" data-id="{{.ID}}">
             <td style="font-family:monospace;white-space:nowrap">{{.UnitCode}}</td>
             <td class="td-left">{{.UnitTitle}}</td>
             <td class="td-left" style="font-size:12px">
               {{.CompetencyMethod}}
-              {{if .SupersededUnitCode}}<div style="color:#888">supersedes {{.SupersededUnitCode}}</div>{{end}}
+              {{if .SupersededUnitCode}}<div style="color:#888;font-size:11px">supersedes {{.SupersededUnitCode}}</div>{{end}}
             </td>
             <td class="td-left" style="font-size:12px">{{.Description}}</td>
-            <td><span class="status-badge status-{{.Status | statusCSS}}">{{.Status}}</span></td>
-            <td style="white-space:nowrap">{{if not .ApprovedAt.IsZero}}{{.ApprovedAt | dateFull}}{{else}}—{{end}}</td>
-            <td class="td-left">
-              {{range .Documents}}<div style="font-size:12px">{{.Title}} ({{.Year}})</div>{{end}}
-            </td>
             <td>
-              <form method="POST" action="/admin/vccs/{{$vcc.ID}}/units/{{.ID}}" style="display:flex;gap:6px;align-items:center">
-                <select name="status" style="font-size:12px;padding:2px 4px;height:26px">
-                  {{$unitStatus := .Status}}
-                  {{range $.ItemStatuses}}
-                  <option value="{{.}}"{{if eq . $unitStatus}} selected{{end}}>{{.}}</option>
-                  {{end}}
-                </select>
-                <button type="submit" class="btn-secondary" style="font-size:11px;padding:2px 8px;height:26px">Save</button>
-              </form>
+              <select class="sess-input" name="status">
+                {{$s := .Status}}
+                {{range $.ItemStatuses}}<option value="{{.}}"{{if eq . $s}} selected{{end}}>{{.}}</option>{{end}}
+              </select>
             </td>
+            <td style="white-space:nowrap;font-size:12px">{{if not .ApprovedAt.IsZero}}{{.ApprovedAt | dateFull}}{{else}}—{{end}}</td>
+            <td class="td-left" style="font-size:12px">
+              {{range .Documents}}<div>{{.Title}} ({{.Year}})</div>{{end}}
+            </td>
+            <td class="sess-actions"><span class="sess-status"></span></td>
           </tr>
           {{end}}
         </tbody>
@@ -149,5 +135,54 @@
     {{end}}
 
   </main>
+
+<style>
+.vcc-section-title { font-size:14px; font-weight:600; margin:0 0 6px; padding:0 0 0 2px; }
+</style>
+
+<script>
+(function () {
+  const vccID = {{.VCC.ID}};
+
+  function setInd(el, state) {
+    el.className = 'sess-status' + (state ? ' sess-status-' + state : '');
+    el.textContent = state === 'saving' ? '…' : state === 'saved' ? '✓' : state === 'error' ? '!' : '';
+    if (state === 'saved') setTimeout(() => { el.textContent = ''; el.className = 'sess-status'; }, 1500);
+  }
+
+  async function postStatus(url, status, indEl) {
+    setInd(indEl, 'saving');
+    try {
+      const res = await fetch(url, { method: 'POST', body: new URLSearchParams({ status }) });
+      setInd(indEl, res.ok ? 'saved' : 'error');
+    } catch { setInd(indEl, 'error'); }
+  }
+
+  // VCC-level status
+  const vccSel = document.getElementById('vcc-status-sel');
+  const vccInd = document.getElementById('vcc-status-ind');
+  vccSel?.addEventListener('change', () =>
+    postStatus(`/admin/vccs/${vccID}/status`, vccSel.value, vccInd));
+
+  // PQ rows
+  document.querySelectorAll('#pq-table .sess-row').forEach(tr => {
+    const sel = tr.querySelector('[name=status]');
+    const ind = tr.querySelector('.sess-status');
+    sel?.addEventListener('change', () =>
+      postStatus(`/admin/vccs/${vccID}/pqs/${tr.dataset.id}`, sel.value, ind));
+  });
+
+  // Unit rows (one table per course)
+  document.querySelectorAll('.vcc-unit-table').forEach(table => {
+    table.querySelectorAll('.sess-row').forEach(tr => {
+      const sel = tr.querySelector('[name=status]');
+      const ind = tr.querySelector('.sess-status');
+      sel?.addEventListener('change', () =>
+        postStatus(`/admin/vccs/${vccID}/units/${tr.dataset.id}`, sel.value, ind));
+    });
+  });
+})();
+</script>
+
 </body>
 </html>{{end}}

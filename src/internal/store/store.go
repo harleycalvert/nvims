@@ -1844,15 +1844,6 @@ func (s *Store) ExportTableRows(ctx context.Context, tableName string) ([]string
 
 // ── VCC ───────────────────────────────────────────────────────────────────────
 
-type VCCSummary struct {
-	ID           int64
-	TeacherID    int64
-	TeacherName  string
-	CalendarYear int
-	VersionLabel string
-	Status       string
-}
-
 type VCCDocument struct {
 	ID       int64
 	Title    string
@@ -1862,12 +1853,14 @@ type VCCDocument struct {
 }
 
 type VCCPQ struct {
-	ID         int64
-	Code       string
-	Title      string
-	Status     string
-	ApprovedAt time.Time // zero means not set
-	Documents  []VCCDocument
+	ID          int64
+	Code        string
+	Title       string
+	Institution string
+	Status      string
+	ApprovedAt  time.Time // zero means not set
+	Notes       string
+	Documents   []VCCDocument
 }
 
 type VCCUnit struct {
@@ -1879,6 +1872,7 @@ type VCCUnit struct {
 	SupersededUnitCode  string
 	SupersededUnitTitle string
 	Description         string
+	Justification       string
 	Status              string
 	ApprovedAt          time.Time // zero means not set
 	SortOrder           int
@@ -1906,30 +1900,6 @@ type VCCDetail struct {
 	Courses      []VCCCourse
 }
 
-func (s *Store) ListAllVCCs(ctx context.Context) ([]VCCSummary, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT tv.id, tv.teacher_id, tv.calendar_year, tv.version_label, tv.status,
-		       p.first_given_name || ' ' || p.family_name
-		FROM teacher_vccs tv
-		JOIN teachers t ON t.id = tv.teacher_id
-		JOIN people p ON p.id = t.id
-		ORDER BY p.family_name, p.first_name, tv.calendar_year DESC
-	`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []VCCSummary
-	for rows.Next() {
-		var v VCCSummary
-		if err := rows.Scan(&v.ID, &v.TeacherID, &v.CalendarYear, &v.VersionLabel, &v.Status, &v.TeacherName); err != nil {
-			return nil, err
-		}
-		out = append(out, v)
-	}
-	return out, rows.Err()
-}
-
 func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 	var v VCCDetail
 	var approvedAt pgtype.Timestamptz
@@ -1952,7 +1922,8 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 
 	// PQs
 	pqRows, err := s.pool.Query(ctx, `
-		SELECT id, qualification_code, qualification_title, status, approved_at
+		SELECT id, qualification_code, qualification_title, COALESCE(institution,''),
+		       status, approved_at, COALESCE(notes,'')
 		FROM teacher_vcc_professional_qualifications
 		WHERE vcc_id = $1 ORDER BY id
 	`, id)
@@ -1963,7 +1934,7 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 	for pqRows.Next() {
 		var pq VCCPQ
 		var at pgtype.Date
-		if err := pqRows.Scan(&pq.ID, &pq.Code, &pq.Title, &pq.Status, &at); err != nil {
+		if err := pqRows.Scan(&pq.ID, &pq.Code, &pq.Title, &pq.Institution, &pq.Status, &at, &pq.Notes); err != nil {
 			pqRows.Close()
 			return nil, err
 		}
@@ -2035,7 +2006,7 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 	uRows, err := s.pool.Query(ctx, `
 		SELECT id, COALESCE(vcc_course_id, 0), unit_code, unit_title, competency_method,
 		       COALESCE(superseded_unit_code,''), COALESCE(superseded_unit_title,''),
-		       COALESCE(description,''), status, approved_at, sort_order
+		       COALESCE(description,''), COALESCE(justification,''), status, approved_at, sort_order
 		FROM teacher_vcc_units
 		WHERE vcc_id = $1
 		ORDER BY COALESCE(vcc_course_id, 0), sort_order
@@ -2048,7 +2019,7 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 		var u VCCUnit
 		var at pgtype.Date
 		if err := uRows.Scan(&u.ID, &u.CourseID, &u.UnitCode, &u.UnitTitle, &u.CompetencyMethod,
-			&u.SupersededUnitCode, &u.SupersededUnitTitle, &u.Description, &u.Status, &at, &u.SortOrder); err != nil {
+			&u.SupersededUnitCode, &u.SupersededUnitTitle, &u.Description, &u.Justification, &u.Status, &at, &u.SortOrder); err != nil {
 			uRows.Close()
 			return nil, err
 		}
@@ -2112,38 +2083,51 @@ func (s *Store) GetLatestVCCForTeacher(ctx context.Context, teacherID int64) (*V
 	return s.GetVCC(ctx, id)
 }
 
-var validVCCStatuses = map[string]bool{
-	"Draft": true, "Submitted": true, "Approved": true, "Rejected": true,
-}
-
-var validVCCItemStatuses = map[string]bool{
-	"Draft": true, "Pending": true, "Approved": true, "Rejected": true,
-}
-
-func (s *Store) UpdateVCCStatus(ctx context.Context, vccID int64, status string) error {
+func (s *Store) UpdateVCCStatus(ctx context.Context, teacherID int64, status string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE teacher_vccs SET status = $1,
 			approved_at = CASE WHEN $1 = 'Approved' THEN NOW() ELSE approved_at END
-		WHERE id = $2
-	`, status, vccID)
+		WHERE teacher_id = $2
+	`, status, teacherID)
 	return err
 }
 
-func (s *Store) UpdateVCCUnitStatus(ctx context.Context, vccID, unitID int64, status string) error {
+func (s *Store) UpdateVCCUnit(ctx context.Context, teacherID, unitID int64,
+	code, title, method, supersededCode, supersededTitle, description, justification, status string,
+	approvedAt pgtype.Date,
+) error {
 	_, err := s.pool.Exec(ctx, `
-		UPDATE teacher_vcc_units SET status = $1,
-			approved_at = CASE WHEN $1 = 'Approved' THEN CURRENT_DATE ELSE approved_at END
-		WHERE id = $2 AND vcc_id = $3
-	`, status, unitID, vccID)
+		UPDATE teacher_vcc_units
+		SET unit_code             = $1,
+		    unit_title            = $2,
+		    competency_method     = $3,
+		    superseded_unit_code  = NULLIF($4, ''),
+		    superseded_unit_title = NULLIF($5, ''),
+		    description           = NULLIF($6, ''),
+		    justification         = NULLIF($7, ''),
+		    status                = $8,
+		    approved_at           = $9
+		WHERE id = $10
+		  AND vcc_id IN (SELECT id FROM teacher_vccs WHERE teacher_id = $11)
+	`, code, title, method, supersededCode, supersededTitle,
+		description, justification, status, approvedAt, unitID, teacherID)
 	return err
 }
 
-func (s *Store) UpdateVCCPQStatus(ctx context.Context, vccID, pqID int64, status string) error {
+func (s *Store) UpdateVCCPQ(ctx context.Context, teacherID, pqID int64,
+	code, title, institution, status string, approvedAt pgtype.Date, notes string,
+) error {
 	_, err := s.pool.Exec(ctx, `
-		UPDATE teacher_vcc_professional_qualifications SET status = $1,
-			approved_at = CASE WHEN $1 = 'Approved' THEN CURRENT_DATE ELSE approved_at END
-		WHERE id = $2 AND vcc_id = $3
-	`, status, pqID, vccID)
+		UPDATE teacher_vcc_professional_qualifications
+		SET qualification_code  = $1,
+		    qualification_title = $2,
+		    institution         = NULLIF($3, ''),
+		    status              = $4,
+		    approved_at         = $5,
+		    notes               = NULLIF($6, '')
+		WHERE id = $7
+		  AND vcc_id IN (SELECT id FROM teacher_vccs WHERE teacher_id = $8)
+	`, code, title, institution, status, approvedAt, notes, pqID, teacherID)
 	return err
 }
 

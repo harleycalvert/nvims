@@ -2535,7 +2535,7 @@ Units the teacher has currency for within a VCC. Each row records the unit code 
 
 #### `teacher_documents`
 
-Per-teacher document library: testamurs, transcripts, accreditations, registrations, licences, job cards, and other evidence files. Each row stores the document title, category, optional year, file URL in cloud storage, and original filename. Documents are linked to specific VCC entities via `teacher_document_connections`. References `teachers`.
+Per-teacher document library: testamurs, transcripts, accreditations, registrations, licences, job cards, and other evidence files. Each row stores the document title, category, optional year, file URL in cloud storage, and original filename. `external_url` can optionally link to a third-party verification page such as a digital badge or eQuals transcript. Documents are linked to specific VCC entities via `teacher_document_connections`. References `teachers`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -2545,6 +2545,7 @@ Per-teacher document library: testamurs, transcripts, accreditations, registrati
 | `file_category` | `varchar(30)` | no | `'Other'` |  |
 | `year_of_document` | `smallint` | yes |  |  |
 | `document_url` | `varchar(2048)` | no |  |  |
+| `external_url` | `varchar(2048)` | yes |  |  |
 | `file_name` | `varchar(255)` | no |  |  |
 | `uploaded_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 | `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |

@@ -23,89 +23,138 @@
     </div>
   </header>
 
-  <main style="padding: 24px; max-width: 1100px;">
+  <main class="sessions-main">
 
   {{if not .VCC}}
-    <p class="hint" style="padding:24px">No VCC record found for your account.</p>
+    <p style="padding:16px 0">No VCC record found for your account.</p>
   {{else}}
 
     {{$vcc := .VCC}}
 
-    <div class="form-section" style="margin-bottom:24px">
+    {{/* ── VCC header ── */}}
+    <div style="display:flex;gap:32px;align-items:flex-start;flex-wrap:wrap;padding:16px 0 24px">
       <table class="sessions-table" style="width:auto">
         <tbody>
-          <tr><th class="td-left" style="padding-right:24px">Teacher</th><td>{{$vcc.TeacherName}}</td></tr>
-          <tr><th class="td-left">Year</th><td>{{$vcc.CalendarYear}}</td></tr>
-          <tr><th class="td-left">Version</th><td>{{$vcc.VersionLabel}}</td></tr>
-          <tr><th class="td-left">Status</th><td><span class="status-badge status-{{$vcc.Status | statusCSS}}">{{$vcc.Status}}</span></td></tr>
-          {{if not $vcc.ApprovedAt.IsZero}}<tr><th class="td-left">Approved</th><td>{{$vcc.ApprovedAt | dateFull}}</td></tr>{{end}}
-          {{if $vcc.Notes}}<tr><th class="td-left">Notes</th><td>{{$vcc.Notes}}</td></tr>{{end}}
+          <tr><th class="td-left" style="padding-right:24px;font-weight:600">Teacher</th><td>{{$vcc.TeacherName}}</td></tr>
+          <tr><th class="td-left" style="font-weight:600">Year</th><td>{{$vcc.CalendarYear}}</td></tr>
+          <tr><th class="td-left" style="font-weight:600">Version</th><td>{{$vcc.VersionLabel}}</td></tr>
+          {{if $vcc.Notes}}<tr><th class="td-left" style="font-weight:600">Notes</th><td>{{$vcc.Notes}}</td></tr>{{end}}
         </tbody>
       </table>
+
+      <div>
+        <div style="font-size:12px;color:#666;margin-bottom:4px">VCC status</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="vcc-status-sel">
+            {{$vs := $vcc.Status}}
+            {{range .VCCStatuses}}<option value="{{.}}"{{if eq . $vs}} selected{{end}}>{{.}}</option>{{end}}
+          </select>
+          <span class="sess-status" id="vcc-status-ind"></span>
+        </div>
+      </div>
     </div>
 
-    {{/* Professional Qualifications */}}
-    <h2 style="font-size:15px;font-weight:600;margin:0 0 8px">Professional Qualifications</h2>
+    {{/* ── Professional Qualifications ── */}}
+    <h2 class="vcc-section-title">Professional Qualifications</h2>
     <div class="table-wrap" style="margin-bottom:32px">
-      <table class="sessions-table">
+      <table class="sessions-table" id="pq-table">
         <thead>
           <tr>
             <th class="td-left">Code</th>
             <th class="td-left">Qualification</th>
+            <th class="td-left">Institution</th>
             <th>Status</th>
             <th>Approved</th>
-            <th class="td-left">Supporting Documents</th>
+            <th class="td-left">Notes</th>
+            <th class="td-left">Documents</th>
+            <th style="width:26px"></th>
           </tr>
         </thead>
         <tbody>
           {{range $vcc.PQs}}
-          <tr>
-            <td style="font-family:monospace;white-space:nowrap">{{.Code}}</td>
-            <td class="td-left">{{.Title}}</td>
-            <td><span class="status-badge status-{{.Status | statusCSS}}">{{.Status}}</span></td>
-            <td style="white-space:nowrap">{{if not .ApprovedAt.IsZero}}{{.ApprovedAt | dateFull}}{{else}}—{{end}}</td>
-            <td class="td-left">
-              {{range .Documents}}<div style="font-size:12px">{{.Title}} ({{.Year}})</div>{{end}}
+          <tr class="sess-row" data-id="{{.ID}}">
+            <td><input class="sess-input" type="text" name="qualification_code"
+                       value="{{.Code}}" maxlength="30" style="width:90px;font-family:monospace"></td>
+            <td><input class="sess-input" type="text" name="qualification_title"
+                       value="{{.Title}}" maxlength="200" style="width:260px"></td>
+            <td><input class="sess-input" type="text" name="institution"
+                       value="{{.Institution}}" maxlength="200" style="width:180px"></td>
+            <td>
+              <select class="sess-input" name="status" style="width:100px">
+                {{$s := .Status}}
+                {{range $.ItemStatuses}}<option value="{{.}}"{{if eq . $s}} selected{{end}}>{{.}}</option>{{end}}
+              </select>
             </td>
+            <td><input class="sess-input" type="date" name="approved_at"
+                       value="{{if not .ApprovedAt.IsZero}}{{.ApprovedAt | dateISO}}{{end}}" style="width:130px"></td>
+            <td><input class="sess-input" type="text" name="notes"
+                       value="{{.Notes}}" maxlength="500" style="width:200px"></td>
+            <td class="td-left" style="font-size:12px">
+              {{range .Documents}}<div>{{.Title}} ({{.Year}})</div>{{end}}
+            </td>
+            <td class="sess-actions"><span class="sess-status"></span></td>
           </tr>
           {{end}}
         </tbody>
       </table>
     </div>
 
-    {{/* Courses & Units */}}
+    {{/* ── Units by course ── */}}
     {{range $vcc.Courses}}
-    <h2 style="font-size:15px;font-weight:600;margin:24px 0 8px">
-      {{.CourseCode}} — {{.CourseTitle}}
-    </h2>
-    <div class="table-wrap" style="margin-bottom:24px">
-      <table class="sessions-table">
+    <h2 class="vcc-section-title">{{.CourseCode}} — {{.CourseTitle}}</h2>
+    <div class="table-wrap" style="margin-bottom:28px">
+      <table class="sessions-table vcc-unit-table">
         <thead>
           <tr>
-            <th class="td-left">Unit Code</th>
-            <th class="td-left">Unit Title</th>
+            <th class="td-left">Code</th>
+            <th class="td-left">Title</th>
             <th class="td-left">Method</th>
-            <th class="td-left">Evidence / Notes</th>
+            <th class="td-left">Superseded</th>
+            <th class="td-left">Description</th>
+            <th class="td-left">Justification</th>
             <th>Status</th>
             <th>Approved</th>
             <th class="td-left">Documents</th>
+            <th style="width:26px"></th>
           </tr>
         </thead>
         <tbody>
           {{range .Units}}
-          <tr>
-            <td style="font-family:monospace;white-space:nowrap">{{.UnitCode}}</td>
-            <td class="td-left">{{.UnitTitle}}</td>
+          <tr class="sess-row" data-id="{{.ID}}">
+            <td><input class="sess-input" type="text" name="unit_code"
+                       value="{{.UnitCode}}" maxlength="20" style="width:90px;font-family:monospace"></td>
+            <td><input class="sess-input" type="text" name="unit_title"
+                       value="{{.UnitTitle}}" maxlength="200" style="width:200px"></td>
+            <td>
+              <select class="sess-input" name="competency_method" style="width:160px">
+                {{$m := .CompetencyMethod}}
+                {{range $.VCCMethods}}<option value="{{.}}"{{if eq . $m}} selected{{end}}>{{.}}</option>{{end}}
+              </select>
+            </td>
+            <td style="min-width:160px">
+              <input class="sess-input" type="text" name="superseded_unit_code"
+                     value="{{.SupersededUnitCode}}" maxlength="20"
+                     placeholder="code" style="width:75px;font-family:monospace;margin-bottom:2px"><br>
+              <input class="sess-input" type="text" name="superseded_unit_title"
+                     value="{{.SupersededUnitTitle}}" maxlength="200"
+                     placeholder="title" style="width:150px">
+            </td>
+            <td><input class="sess-input" type="text" name="description"
+                       value="{{.Description}}" maxlength="500" style="width:180px"></td>
+            <td><input class="sess-input" type="text" name="justification"
+                       value="{{.Justification}}" maxlength="500" style="width:160px"></td>
+            <td>
+              <select class="sess-input" name="status" style="width:100px">
+                {{$s := .Status}}
+                {{range $.ItemStatuses}}<option value="{{.}}"{{if eq . $s}} selected{{end}}>{{.}}</option>{{end}}
+              </select>
+            </td>
+            <td><input class="sess-input" type="date" name="approved_at"
+                       value="{{if not .ApprovedAt.IsZero}}{{.ApprovedAt | dateISO}}{{end}}" style="width:130px"></td>
             <td class="td-left" style="font-size:12px">
-              {{.CompetencyMethod}}
-              {{if .SupersededUnitCode}}<div style="color:#888">supersedes {{.SupersededUnitCode}}</div>{{end}}
+              {{range .Documents}}<div>{{.Title}} ({{.Year}})</div>{{end}}
             </td>
-            <td class="td-left" style="font-size:12px">{{.Description}}</td>
-            <td><span class="status-badge status-{{.Status | statusCSS}}">{{.Status}}</span></td>
-            <td style="white-space:nowrap">{{if not .ApprovedAt.IsZero}}{{.ApprovedAt | dateFull}}{{else}}—{{end}}</td>
-            <td class="td-left">
-              {{range .Documents}}<div style="font-size:12px">{{.Title}} ({{.Year}})</div>{{end}}
-            </td>
+            <td class="sess-actions"><span class="sess-status"></span></td>
           </tr>
           {{end}}
         </tbody>
@@ -115,5 +164,82 @@
 
   {{end}}
   </main>
+
+<style>
+.vcc-section-title { font-size:14px; font-weight:600; margin:0 0 6px; padding:0 0 0 2px; }
+</style>
+
+<script>
+(function () {
+  const vccMethods   = [{{range $i,$m := .VCCMethods}}{{if $i}},{{end}}{{printf "%q" $m}}{{end}}];
+  const itemStatuses = [{{range $i,$s := .ItemStatuses}}{{if $i}},{{end}}{{printf "%q" $s}}{{end}}];
+
+  function setInd(el, state) {
+    el.className = 'sess-status' + (state ? ' sess-status-' + state : '');
+    el.textContent = state === 'saving' ? '…' : state === 'saved' ? '✓' : state === 'error' ? '!' : '';
+    if (state === 'saved') setTimeout(() => { el.textContent = ''; el.className = 'sess-status'; }, 1500);
+  }
+
+  async function saveRow(url, fields, indEl) {
+    setInd(indEl, 'saving');
+    try {
+      const res = await fetch(url, { method: 'POST', body: new URLSearchParams(fields) });
+      setInd(indEl, res.ok ? 'saved' : 'error');
+    } catch { setInd(indEl, 'error'); }
+  }
+
+  // VCC-level status
+  const vccSel = document.getElementById('vcc-status-sel');
+  const vccInd = document.getElementById('vcc-status-ind');
+  vccSel?.addEventListener('change', () =>
+    saveRow('/vcc/status', { status: vccSel.value }, vccInd));
+
+  // PQ rows
+  function collectPQ(tr) {
+    const g = n => tr.querySelector(`[name=${n}]`)?.value ?? '';
+    return {
+      qualification_code:  g('qualification_code').trim(),
+      qualification_title: g('qualification_title').trim(),
+      institution:         g('institution').trim(),
+      status:              g('status'),
+      approved_at:         g('approved_at'),
+      notes:               g('notes').trim(),
+    };
+  }
+  function pqComplete(f) { return f.qualification_code && f.qualification_title && itemStatuses.includes(f.status); }
+
+  document.querySelectorAll('#pq-table .sess-row').forEach(tr => {
+    const ind = tr.querySelector('.sess-status');
+    const save = () => { const f = collectPQ(tr); if (pqComplete(f)) saveRow(`/vcc/pqs/${tr.dataset.id}`, f, ind); };
+    tr.querySelectorAll('input[type=text]').forEach(el => el.addEventListener('blur', save));
+    tr.querySelectorAll('select,input[type=date]').forEach(el => el.addEventListener('change', save));
+  });
+
+  // Unit rows
+  function collectUnit(tr) {
+    const g = n => tr.querySelector(`[name=${n}]`)?.value ?? '';
+    return {
+      unit_code:             g('unit_code').trim(),
+      unit_title:            g('unit_title').trim(),
+      competency_method:     g('competency_method'),
+      superseded_unit_code:  g('superseded_unit_code').trim(),
+      superseded_unit_title: g('superseded_unit_title').trim(),
+      description:           g('description').trim(),
+      justification:         g('justification').trim(),
+      status:                g('status'),
+      approved_at:           g('approved_at'),
+    };
+  }
+  function unitComplete(f) { return f.unit_code && f.unit_title && vccMethods.includes(f.competency_method) && itemStatuses.includes(f.status); }
+
+  document.querySelectorAll('.vcc-unit-table .sess-row').forEach(tr => {
+    const ind = tr.querySelector('.sess-status');
+    const save = () => { const f = collectUnit(tr); if (unitComplete(f)) saveRow(`/vcc/units/${tr.dataset.id}`, f, ind); };
+    tr.querySelectorAll('input[type=text]').forEach(el => el.addEventListener('blur', save));
+    tr.querySelectorAll('select,input[type=date]').forEach(el => el.addEventListener('change', save));
+  });
+})();
+</script>
+
 </body>
 </html>{{end}}

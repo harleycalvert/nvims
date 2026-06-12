@@ -2501,6 +2501,7 @@ CREATE TABLE IF NOT EXISTS public.teacher_documents (
     file_category    varchar(30)   NOT NULL DEFAULT 'Other',
     year_of_document smallint      NULL,
     document_url     varchar(2048) NOT NULL,
+    external_url     varchar(2048) NULL,
     file_name        varchar(255)  NOT NULL,
     uploaded_at      timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     created_at       timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
