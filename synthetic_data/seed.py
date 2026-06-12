@@ -50,7 +50,7 @@ TRUNCATE
     public.class_subjects, public.classes,
     public.intake_groups, public.program_intakes,
     public.student_guardians, public.students,
-    public.staff, public.teachers, public.app_users, public.people,
+    public.staff, public.teachers, public.app_user_roles, public.app_users, public.people,
     public.subject_programs, public.subjects, public.programs,
     public.rooms, public.buildings, public.delivery_locations,
     public.training_orgs, public.academic_periods,
@@ -71,7 +71,7 @@ FROM (
         'teacher_yearly_balances','teacher_period_allocations',
         'class_sessions','class_slots','class_exceptions','classes',
         'intake_groups','program_intakes',
-        'student_guardians','students','app_users','people',
+        'student_guardians','students','app_user_roles','app_users','people',
         'subjects','programs','rooms','buildings','delivery_locations',
         'training_orgs','faculties','secondary_schools'
     ]) AS t(t)
@@ -433,23 +433,30 @@ def seed(cur):
     # ── App users ─────────────────────────────────────────────────────────────
     STAFF_ROLES = ["Compliance", "Reception", "Staff"]
     admin_uid = one(cur, "app_users",
-        ["person_id","username","password_hash","role"],
-        (None, "admin", DEFAULT_PW_HASH, "Admin"))
+        ["person_id","username","password_hash"],
+        (None, "admin", DEFAULT_PW_HASH))
 
     trainer_uids = many(cur, "app_users",
-        ["person_id","username","password_hash","role"],
-        [(pid, gen_username(p["first"], p["last"]), DEFAULT_PW_HASH, "Trainer")
+        ["person_id","username","password_hash"],
+        [(pid, gen_username(p["first"], p["last"]), DEFAULT_PW_HASH)
          for pid, p in zip(teacher_pids, teacher_persons)])
 
-    many(cur, "app_users",
-        ["person_id","username","password_hash","role"],
-        [(pid, gen_username(p["first"], p["last"]), DEFAULT_PW_HASH, STAFF_ROLES[i])
-         for i, (pid, p) in enumerate(zip(staff_pids, staff_persons))])
+    staff_uids = many(cur, "app_users",
+        ["person_id","username","password_hash"],
+        [(pid, gen_username(p["first"], p["last"]), DEFAULT_PW_HASH)
+         for pid, p in zip(staff_pids, staff_persons)])
 
-    many(cur, "app_users",
-        ["person_id","username","password_hash","role"],
-        [(pid, gen_username(p["first"], p["last"]), DEFAULT_PW_HASH, "Student")
+    student_uids = many(cur, "app_users",
+        ["person_id","username","password_hash"],
+        [(pid, gen_username(p["first"], p["last"]), DEFAULT_PW_HASH)
          for pid, p in zip(student_pids, student_persons)])
+
+    bulk(cur, "app_user_roles", ["user_id","role"], [
+        (admin_uid, "Admin"),
+        *[(uid, "Trainer") for uid in trainer_uids],
+        *[(uid, STAFF_ROLES[i]) for i, uid in enumerate(staff_uids)],
+        *[(uid, "Student") for uid in student_uids],
+    ])
 
     teacher_uid_map = {pid: uid for pid, uid in zip(teacher_pids, trainer_uids)}
 
@@ -493,6 +500,42 @@ def seed(cur):
         [(s["pid"], s["number"], s["email"], s["usi"], s["indigenous"],
           s["school_level"], s["yr_school"], s["school_id"], "N","N","N")
          for s in students])
+
+    # ── Multi-role people ──────────────────────────────────────────────────────
+    # 3 teachers who are also students; 2 staff who are also students.
+    # They reuse the same people/email — only a new students row + Student role.
+    print("multi-role people (teacher+student, staff+student)...")
+    N_TEACHER_STUDENTS = 3
+    N_STAFF_STUDENTS   = 2
+    multi_stu_offset   = N_STUDENTS   # numbering continues after regular students
+
+    for i in range(N_TEACHER_STUDENTS):
+        pid = teacher_pids[i]
+        num = f"S{10000 + multi_stu_offset + i:05d}"
+        cur.execute("""
+            INSERT INTO public.students
+                (id, student_number, student_email, usi, indigenous_status_id,
+                 highest_school_level_id, disability_flag,
+                 prior_educational_achievement_flag, at_school_flag)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (pid, num, teacher_persons[i]["email"], gen_usi(),
+              "9", "12", "N", "N", "N"))
+        bulk(cur, "app_user_roles", ["user_id","role"],
+             [(trainer_uids[i], "Student")])
+
+    for i in range(N_STAFF_STUDENTS):
+        pid = staff_pids[i]
+        num = f"S{10000 + multi_stu_offset + N_TEACHER_STUDENTS + i:05d}"
+        cur.execute("""
+            INSERT INTO public.students
+                (id, student_number, student_email, usi, indigenous_status_id,
+                 highest_school_level_id, disability_flag,
+                 prior_educational_achievement_flag, at_school_flag)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (pid, num, staff_persons[i]["email"], gen_usi(),
+              "9", "12", "N", "N", "N"))
+        bulk(cur, "app_user_roles", ["user_id","role"],
+             [(staff_uids[i], "Student")])
 
     # ── Student guardians ─────────────────────────────────────────────────────
     print("student_guardians...")
@@ -798,6 +841,7 @@ def seed(cur):
     print()
     print(f"  {n_prog} programs  {n_subj} subjects")
     print(f"  {N_TEACHERS} teachers  {N_STAFF} staff  {N_STUDENTS} students")
+    print(f"  {N_TEACHER_STUDENTS} teacher+student  {N_STAFF_STUDENTS} staff+student")
     print(f"  {len(classes_list)} classes  {n_sessions} sessions  {n_att} attendance records")
     print(f"  {N_STUDENTS} course enrolments  {cse_count} subject enrolments")
     print(f"  {len(pay_periods)} pay periods  {n_ts} timesheets  {n_wps} workplans")

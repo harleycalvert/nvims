@@ -23,23 +23,39 @@
   </header>
   <main>
     <div class="admin-toolbar">
-      <form class="admin-search" method="GET" action="/admin/people">
-        <input type="search" name="q" value="{{.Search}}" placeholder="Search by name or email…">
-        <button type="submit" class="btn-primary">Search</button>
+      <form id="people-search" class="admin-search" method="GET" action="/admin/people">
+        <input id="q" type="search" name="q" value="{{.Search}}" placeholder="Search by name or email…" autocomplete="off">
+        <select id="role-filter" name="role" class="search-role-select">
+          <option value=""{{if eq .Role ""}} selected{{end}}>All roles</option>
+          <option value="Student"{{if eq .Role "Student"}} selected{{end}}>Student</option>
+          <option value="Teacher"{{if eq .Role "Teacher"}} selected{{end}}>Teacher</option>
+          <option value="Staff"{{if eq .Role "Staff"}} selected{{end}}>Staff</option>
+        </select>
+        <select id="limit-select" name="limit" class="search-role-select">
+          <option value="20"{{if eq .Limit 20}} selected{{end}}>20</option>
+          <option value="50"{{if eq .Limit 50}} selected{{end}}>50</option>
+          <option value="100"{{if eq .Limit 100}} selected{{end}}>100</option>
+        </select>
       </form>
       <a class="btn-primary" href="/admin/people/new">+ Add Person</a>
     </div>
 
     {{if not .People}}
-      <p class="hint">{{if .Search}}No people match "{{.Search}}".{{else}}No people on record yet.{{end}}</p>
+      <p class="hint">{{if or .Search .Role}}No people match the current filter.{{else}}No people on record yet.{{end}}</p>
     {{else}}
+    {{if gt .Total .Limit}}
+      <p class="people-count">Showing {{.Limit}} of {{.Total}} — search or filter to narrow results.</p>
+    {{else}}
+      <p class="people-count">{{.Total}} {{if eq .Total 1}}person{{else}}people{{end}}</p>
+    {{end}}
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
             <th class="col-name">Name</th>
-            <th>Email</th>
-            <th>Roles</th>
+            <th class="col-role">Student</th>
+            <th class="col-role">Teacher</th>
+            <th class="col-role">Staff</th>
             <th></th>
           </tr>
         </thead>
@@ -47,12 +63,9 @@
           {{range .People}}
           <tr>
             <td class="col-name">{{.FamilyName}}, {{.FirstName}}</td>
-            <td class="td-left">{{.Email}}</td>
-            <td>
-              {{if .IsStudent}}<span class="role-badge role-student">Student</span>{{end}}
-              {{if .IsTeacher}}<span class="role-badge role-teacher">Teacher</span>{{end}}
-              {{if .IsStaff}}<span class="role-badge role-staff">Staff</span>{{end}}
-            </td>
+            <td class="col-role">{{if .IsStudent}}<span class="role-badge role-student">{{.StudentNumber}}</span>{{end}}</td>
+            <td class="col-role">{{if .IsTeacher}}<span class="role-badge role-teacher">{{.TeacherNumber}}</span>{{end}}</td>
+            <td class="col-role">{{if .IsStaff}}<span class="role-badge role-staff">{{.StaffNumber}}</span>{{end}}</td>
             <td><a class="btn-row-action" href="/admin/people/{{.ID}}">Edit</a></td>
           </tr>
           {{end}}
@@ -61,5 +74,26 @@
     </div>
     {{end}}
   </main>
+  <script>
+    (function () {
+      var form = document.getElementById('people-search');
+      var input = document.getElementById('q');
+      var debounce;
+      input.addEventListener('input', function () {
+        clearTimeout(debounce);
+        debounce = setTimeout(function () { form.submit(); }, 300);
+      });
+      ['role-filter', 'limit-select'].forEach(function (id) {
+        document.getElementById(id).addEventListener('change', function () {
+          clearTimeout(debounce);
+          form.submit();
+        });
+      });
+      if (input.value) {
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
+    })();
+  </script>
 </body>
 </html>{{end}}

@@ -54,6 +54,16 @@
   font-size: 13px;
 }
 
+.search-role-select {
+  padding: 6px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 13px;
+  background: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 /* ── Admin form ───────────────────────────────────────────── */
 .admin-form {
   max-width: 860px;
@@ -212,6 +222,12 @@
 .role-teacher  { background: #d4edda; color: #155724; }
 .role-staff    { background: #e2d9f3; color: #4a235a; }
 
+.col-role {
+  text-align: center;
+  white-space: nowrap;
+  width: 100px;
+}
+
 /* ── Role cards (person detail) ───────────────────────────── */
 .roles-grid {
   display: grid;
@@ -278,6 +294,12 @@
   color: #888;
   font-style: italic;
   padding: 8px 0;
+}
+
+.people-count {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 8px;
 }
 
 /* ── Form field width constraints ─────────────────────────── */

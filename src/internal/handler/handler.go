@@ -664,14 +664,32 @@ func (h *Handler) AdminMenu(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) AdminPeople(w http.ResponseWriter, r *http.Request) {
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
-	people, err := h.store.ListPeople(r.Context(), search)
+	role := r.URL.Query().Get("role")
+	if !map[string]bool{"Student": true, "Teacher": true, "Staff": true}[role] {
+		role = ""
+	}
+	limit := 50
+	switch r.URL.Query().Get("limit") {
+	case "20":
+		limit = 20
+	case "100":
+		limit = 100
+	}
+	result, err := h.store.ListPeople(r.Context(), search, role, limit)
 	if err != nil {
 		log.Printf("ListPeople: %v", err)
 		http.Error(w, "database error", http.StatusInternalServerError)
 		return
 	}
 	user, _ := auth.Current(r)
-	h.render(w, "admin-people", map[string]any{"People": people, "Search": search, "User": user})
+	h.render(w, "admin-people", map[string]any{
+		"People":    result.Rows,
+		"Total":     result.Total,
+		"Limit":     limit,
+		"Search":    search,
+		"Role":      role,
+		"User":      user,
+	})
 }
 
 func (h *Handler) AdminPersonNew(w http.ResponseWriter, r *http.Request) {

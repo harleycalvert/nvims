@@ -288,11 +288,16 @@ type AuthUser struct {
 func (s *Store) GetUserByUsername(ctx context.Context, username string) (AuthUser, error) {
 	var u AuthUser
 	err := s.pool.QueryRow(ctx, `
-		SELECT u.id, COALESCE(u.person_id, 0), u.username, u.role, u.password_hash,
+		SELECT u.id, COALESCE(u.person_id, 0), u.username,
+		       COALESCE(string_agg(r.role, ', ' ORDER BY r.role), '') AS role,
+		       u.password_hash,
 		       COALESCE(p.first_given_name || ' ' || p.family_name, u.username)
 		FROM public.app_users u
 		LEFT JOIN public.people p ON p.id = u.person_id
+		LEFT JOIN public.app_user_roles r ON r.user_id = u.id AND r.revoked_at IS NULL
 		WHERE u.username = $1 AND u.is_active = true
+		GROUP BY u.id, u.person_id, u.username, u.password_hash,
+		         p.first_given_name, p.family_name
 	`, username).Scan(&u.ID, &u.PersonID, &u.Username, &u.Role, &u.PasswordHash, &u.FullName)
 	return u, err
 }
@@ -542,14 +547,16 @@ func (s *Store) PublishSCColumn(ctx context.Context, subjectID int64, classIDs [
 // ── Admin / People ─────────────────────────────────────────────────────────
 
 type PersonListRow struct {
-	ID         int64
-	FirstName  string
-	FamilyName string
-	Email      string
-	DOB        time.Time
-	IsStudent  bool
-	IsTeacher  bool
-	IsStaff    bool
+	ID            int64
+	FirstName     string
+	FamilyName    string
+	DOB           time.Time
+	IsStudent     bool
+	IsTeacher     bool
+	IsStaff       bool
+	StudentNumber string
+	TeacherNumber string
+	StaffNumber   string
 }
 
 type PersonDetail struct {
@@ -580,39 +587,73 @@ type PersonDetail struct {
 	StaffPoliceCheckDateStr   string
 }
 
-func (s *Store) ListPeople(ctx context.Context, search string) ([]PersonListRow, error) {
-	const base = `
-		SELECT p.id, p.first_given_name, p.family_name, p.primary_email, p.dob,
-		       EXISTS(SELECT 1 FROM public.students st WHERE st.id = p.id AND st.deleted_at IS NULL),
-		       EXISTS(SELECT 1 FROM public.teachers t  WHERE t.id  = p.id),
-		       EXISTS(SELECT 1 FROM public.staff   sf WHERE sf.id  = p.id)
+type PeopleResult struct {
+	Rows  []PersonListRow
+	Total int // total matching rows across all pages
+}
+
+func (s *Store) ListPeople(ctx context.Context, search, role string, limit int) (PeopleResult, error) {
+	const sel = `
+		SELECT p.id, p.first_given_name, p.family_name, p.dob,
+		       (st.id IS NOT NULL)            AS is_student,
+		       (t.id  IS NOT NULL)            AS is_teacher,
+		       (sf.id IS NOT NULL)            AS is_staff,
+		       COALESCE(st.student_number, '') AS student_number,
+		       COALESCE(t.teacher_number,  '') AS teacher_number,
+		       COALESCE(sf.staff_number,   '') AS staff_number,
+		       COUNT(*) OVER ()               AS total_count
 		FROM public.people p
+		LEFT JOIN public.students st ON st.id = p.id AND st.deleted_at IS NULL
+		LEFT JOIN public.teachers  t  ON t.id  = p.id
+		LEFT JOIN public.staff     sf ON sf.id = p.id
 	`
-	var q string
+	var conds []string
 	var args []any
-	if search == "" {
-		q = base + ` ORDER BY p.family_name, p.first_given_name`
-	} else {
-		q = base + ` WHERE p.family_name ILIKE $1 OR p.first_given_name ILIKE $1
-		             OR p.primary_email ILIKE $1
-		             ORDER BY p.family_name, p.first_given_name`
-		args = []any{"%" + search + "%"}
+
+	if search != "" {
+		args = append(args, "%"+search+"%")
+		n := len(args)
+		conds = append(conds, fmt.Sprintf(
+			`(p.family_name ILIKE $%[1]d OR p.first_given_name ILIKE $%[1]d
+			  OR st.student_number ILIKE $%[1]d OR st.student_email ILIKE $%[1]d
+			  OR t.teacher_number  ILIKE $%[1]d OR t.teacher_email  ILIKE $%[1]d
+			  OR sf.staff_number   ILIKE $%[1]d OR sf.staff_email   ILIKE $%[1]d)`,
+			n,
+		))
 	}
+	switch role {
+	case "Student":
+		conds = append(conds, "st.id IS NOT NULL")
+	case "Teacher":
+		conds = append(conds, "t.id IS NOT NULL")
+	case "Staff":
+		conds = append(conds, "sf.id IS NOT NULL")
+	}
+
+	q := sel
+	if len(conds) > 0 {
+		q += " WHERE " + strings.Join(conds, " AND ")
+	}
+	args = append(args, limit)
+	q += fmt.Sprintf(" ORDER BY p.family_name, p.first_given_name LIMIT $%d", len(args))
+
 	rows, err := s.pool.Query(ctx, q, args...)
 	if err != nil {
-		return nil, err
+		return PeopleResult{}, err
 	}
 	defer rows.Close()
-	var out []PersonListRow
+	var res PeopleResult
 	for rows.Next() {
 		var r PersonListRow
-		if err := rows.Scan(&r.ID, &r.FirstName, &r.FamilyName, &r.Email, &r.DOB,
-			&r.IsStudent, &r.IsTeacher, &r.IsStaff); err != nil {
-			return nil, err
+		if err := rows.Scan(&r.ID, &r.FirstName, &r.FamilyName, &r.DOB,
+			&r.IsStudent, &r.IsTeacher, &r.IsStaff,
+			&r.StudentNumber, &r.TeacherNumber, &r.StaffNumber,
+			&res.Total); err != nil {
+			return PeopleResult{}, err
 		}
-		out = append(out, r)
+		res.Rows = append(res.Rows, r)
 	}
-	return out, rows.Err()
+	return res, rows.Err()
 }
 
 func (s *Store) GetPerson(ctx context.Context, id int64) (PersonDetail, error) {
