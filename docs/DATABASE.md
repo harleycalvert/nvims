@@ -27,7 +27,7 @@ mapping to the AVETMISS NAT reporting files.
   - [9. Workplan](#9-workplan)
   - [10. Timesheet](#10-timesheet)
   - [11. Employment services](#11-employment-services)
-  - [12. VCM](#12-vcm)
+  - [12. VCC](#12-vcc)
   - [13. Intakes & cohorts](#13-intakes--cohorts)
 - [Table reference](#table-reference)
 - [Data dictionary](#data-dictionary)
@@ -43,7 +43,7 @@ mapping to the AVETMISS NAT reporting files.
   - Workplan: [`workplans`](#workplans) · [`workplan_approvals`](#workplan_approvals) · [`workplan_entries`](#workplan_entries)
   - Timesheet: [`pay_periods`](#pay_periods) · [`timesheets`](#timesheets) · [`timesheet_entries`](#timesheet_entries)
   - Employment services: [`student_employment_services`](#student_employment_services) · [`student_employment_registrations`](#student_employment_registrations)
-  - VCM: [`teacher_vcms`](#teacher_vcms) · [`teacher_vcm_professional_qualifications`](#teacher_vcm_professional_qualifications) · [`teacher_vcm_courses`](#teacher_vcm_courses) · [`teacher_vcm_units`](#teacher_vcm_units) · [`teacher_documents`](#teacher_documents) · [`teacher_document_connections`](#teacher_document_connections) · [`teacher_currency_activities`](#teacher_currency_activities) · [`teacher_currency_unit_links`](#teacher_currency_unit_links) · [`teacher_vcm_profiling`](#teacher_vcm_profiling)
+  - VCC: [`teacher_vccs`](#teacher_vccs) · [`teacher_vcc_professional_qualifications`](#teacher_vcc_professional_qualifications) · [`teacher_vcc_courses`](#teacher_vcc_courses) · [`teacher_vcc_units`](#teacher_vcc_units) · [`teacher_documents`](#teacher_documents) · [`teacher_document_connections`](#teacher_document_connections) · [`teacher_currency_activities`](#teacher_currency_activities) · [`teacher_currency_unit_links`](#teacher_currency_unit_links) · [`teacher_vcc_profiling`](#teacher_vcc_profiling)
 - [Business rules & constraints](#business-rules--constraints)
 - [Functions & triggers](#functions--triggers)
 - [AVETMISS NAT file mapping](#avetmiss-nat-file-mapping)
@@ -77,7 +77,7 @@ system, designed for both VET and Higher Education delivery:
 - **Timesheet** — fortnightly (or other pay-period) hour records auto-populated from
   sessions; submitted for external payroll processing (hours only, no banking or super
   data).
-- **VCM** — annual Vocational Currency Management document per teacher: credentials,
+- **VCC** — annual Vocational Competency & Currency document per teacher: credentials,
   professional development activities, vocational and professional currency point records,
   and a supervisor approval workflow with spider/radar profiling scores.
 - **Employment services** — Centrelink CRN and job seeker details, plus employment
@@ -114,7 +114,7 @@ graph TD
     W[Workplan<br/>workplans, workplan_approvals, workplan_entries]
     S[Timesheet<br/>pay_periods, timesheets, timesheet_entries]
     ES[Employment Services<br/>student_employment_services, registrations]
-    V[VCM<br/>teacher_vcms, qualifications, courses, units, currency, documents]
+    V[VCC<br/>teacher_vccs, qualifications, courses, units, currency, documents]
 
     P --> E
     C --> IC
@@ -511,20 +511,20 @@ erDiagram
     STUDENT_EMPLOYMENT_SERVICES ||--o{ STUDENT_EMPLOYMENT_REGISTRATIONS : "has provider registrations"
 ```
 
-### 12. VCM
+### 12. VCC
 
 ```mermaid
 erDiagram
-    TEACHERS ||--o{ TEACHER_VCMS : "has VCM versions"
-    TEACHER_VCMS ||--o{ TEACHER_VCM_PROFESSIONAL_QUALIFICATIONS : "has credentials"
-    TEACHER_VCMS ||--o{ TEACHER_VCM_COURSES : "maps courses"
-    TEACHER_VCM_COURSES ||--o{ TEACHER_VCM_UNITS : "has units"
-    TEACHER_VCMS ||--o{ TEACHER_VCM_UNITS : "standalone units"
+    TEACHERS ||--o{ TEACHER_VCCS : "has VCC versions"
+    TEACHER_VCCS ||--o{ TEACHER_VCC_PROFESSIONAL_QUALIFICATIONS : "has credentials"
+    TEACHER_VCCS ||--o{ TEACHER_VCC_COURSES : "maps courses"
+    TEACHER_VCC_COURSES ||--o{ TEACHER_VCC_UNITS : "has units"
+    TEACHER_VCCS ||--o{ TEACHER_VCC_UNITS : "standalone units"
     TEACHERS ||--o{ TEACHER_DOCUMENTS : "document library"
     TEACHER_DOCUMENTS ||--o{ TEACHER_DOCUMENT_CONNECTIONS : "linked to"
     TEACHERS ||--o{ TEACHER_CURRENCY_ACTIVITIES : "currency records"
     TEACHER_CURRENCY_ACTIVITIES ||--o{ TEACHER_CURRENCY_UNIT_LINKS : "related units"
-    TEACHER_VCMS ||--o{ TEACHER_VCM_PROFILING : "dimension scores"
+    TEACHER_VCCS ||--o{ TEACHER_VCC_PROFILING : "dimension scores"
 ```
 
 ### 13. Intakes & cohorts
@@ -690,19 +690,19 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | `student_employment_services` | Centrelink CRN, job seeker ID, participation hours/type — one row per student. | PK = FK → `students` |
 | `student_employment_registrations` | Provider registration rows (e.g. jobactive, DES). Child of employment services. | → `student_employment_services` |
 
-### VCM
+### VCC
 
 | Table | Purpose | Key relationships |
 |---|---|---|
-| `teacher_vcms` | VCM document per teacher per year, versioned, with Draft→Submitted→Approved workflow. | → `teachers`, `app_users` (supervisor, approver) |
-| `teacher_vcm_professional_qualifications` | Teacher's own credentials (TAE, degrees, industry certs). | → `teacher_vcms` |
-| `teacher_vcm_courses` | Courses the teacher is mapped to deliver in a VCM; optionally linked to `programs`. | → `teacher_vcms`, `programs` |
-| `teacher_vcm_units` | Units teacher has currency for, with competency method and justification. Multiple rows per unit allowed. | → `teacher_vcms`, `teacher_vcm_courses`, `subjects` |
+| `teacher_vccs` | VCC document per teacher per year, versioned, with Draft→Submitted→Approved workflow. | → `teachers`, `app_users` (supervisor, approver) |
+| `teacher_vcc_professional_qualifications` | Teacher's own credentials (TAE, degrees, industry certs). | → `teacher_vccs` |
+| `teacher_vcc_courses` | Courses the teacher is mapped to deliver in a VCC; optionally linked to `programs`. | → `teacher_vccs`, `programs` |
+| `teacher_vcc_units` | Units teacher has currency for, with competency method and justification. Multiple rows per unit allowed. | → `teacher_vccs`, `teacher_vcc_courses`, `subjects` |
 | `teacher_documents` | Per-teacher document library (testamurs, transcripts, credentials, other evidence). | → `teachers` |
-| `teacher_document_connections` | Links a document to exactly one VCM entity (professional qual, unit, or currency activity). `num_nonnulls = 1` enforced. | → `teacher_documents`, `teacher_vcm_professional_qualifications`, `teacher_vcm_units`, `teacher_currency_activities` |
+| `teacher_document_connections` | Links a document to exactly one VCC entity (professional qual, unit, or currency activity). `num_nonnulls = 1` enforced. | → `teacher_documents`, `teacher_vcc_professional_qualifications`, `teacher_vcc_units`, `teacher_currency_activities` |
 | `teacher_currency_activities` | Vocational and professional currency point records with activity detail and approval tracking. Professional-specific fields (`domain_name`, `program_type`, etc.) are nullable columns on the same table. | → `teachers` |
 | `teacher_currency_unit_links` | "Related Unit/s" M2M between currency activities and subjects. | → `teacher_currency_activities`, `subjects` |
-| `teacher_vcm_profiling` | Spider/radar-chart dimension scores (self, supervisor, business ideal) per VCM version. PK is `(vcm_id, dimension)`. | → `teacher_vcms` |
+| `teacher_vcc_profiling` | Spider/radar-chart dimension scores (self, supervisor, business ideal) per VCC version. PK is `(vcc_id, dimension)`. | → `teacher_vccs` |
 
 ---
 
@@ -814,7 +814,7 @@ Student-specific demographic and AVETMISS compliance data. Extends `people` via 
 
 #### `teachers`
 
-Teacher-specific employment and capacity data. Extends `people` via a shared PK (`teachers.id = people.id`). Stores the teacher's sector (`VET`/`HE`/`DUAL`), annual teaching hour cap (`default_max_hours_per_year`), optional per-period hour cap for HE/DUAL teachers (`max_hours_per_period`), employment status, and faculty assignment. Police check details are stored on `people`. The hour caps seed `teacher_yearly_balances` and `teacher_period_allocations` for enforcement by triggers. Referenced by `class_slots`, `session_teachers`, `workplans`, `timesheets`, `teacher_vcms`, and `teacher_currency_activities`.
+Teacher-specific employment and capacity data. Extends `people` via a shared PK (`teachers.id = people.id`). Stores the teacher's sector (`VET`/`HE`/`DUAL`), annual teaching hour cap (`default_max_hours_per_year`), optional per-period hour cap for HE/DUAL teachers (`max_hours_per_period`), employment status, and faculty assignment. Police check details are stored on `people`. The hour caps seed `teacher_yearly_balances` and `teacher_period_allocations` for enforcement by triggers. Referenced by `class_slots`, `session_teachers`, `workplans`, `timesheets`, `teacher_vccs`, and `teacher_currency_activities`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1070,7 +1070,7 @@ Organisational units (faculties or departments) within the training organisation
 
 #### `programs`
 
-Qualifications and courses (AVETMISS NAT00030). Each row is a single nationally-recognised or accredited qualification, skill set, or accredited course. Stores the program code, name, ANZSCO/ANZSIC industry codes, AQF level, field of education, nominal hours, VET/HE flags, total credit points (HE), and program type. Subject membership is defined in `subject_programs`. Owned by a faculty. Referenced by `student_course_enrollments`, `program_completions`, `workplan_entries`, `teacher_vcm_courses`, `message_campaigns`, and the NAT00030 export.
+Qualifications and courses (AVETMISS NAT00030). Each row is a single nationally-recognised or accredited qualification, skill set, or accredited course. Stores the program code, name, ANZSCO/ANZSIC industry codes, AQF level, field of education, nominal hours, VET/HE flags, total credit points (HE), and program type. Subject membership is defined in `subject_programs`. Owned by a faculty. Referenced by `student_course_enrollments`, `program_completions`, `workplan_entries`, `teacher_vcc_courses`, `message_campaigns`, and the NAT00030 export.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1102,7 +1102,7 @@ Qualifications and courses (AVETMISS NAT00030). Each row is a single nationally-
 
 #### `subjects`
 
-Units of competency, modules, or subjects (AVETMISS NAT00060). Each row is a single deliverable training unit with its national subject code, name, module flag, field of education, nominal hours (VET), and credit points (HE). Subjects belong to one or more programs via `subject_programs` and may also be enrolled as standalone units in `client_subject_enrolments`. Referenced by `class_subjects`, `workplan_entries`, `teacher_vcm_units`, `teacher_currency_unit_links`, `enrollment_credit_claims`, and the NAT00060 export.
+Units of competency, modules, or subjects (AVETMISS NAT00060). Each row is a single deliverable training unit with its national subject code, name, module flag, field of education, nominal hours (VET), and credit points (HE). Subjects belong to one or more programs via `subject_programs` and may also be enrolled as standalone units in `client_subject_enrolments`. Referenced by `class_subjects`, `workplan_entries`, `teacher_vcc_units`, `teacher_currency_unit_links`, `enrollment_credit_claims`, and the NAT00060 export.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -2390,11 +2390,11 @@ Employment provider registrations for a student (e.g. jobactive, DES, NDIS Emplo
 - `CONSTRAINT chk_ser_status CHECK (status IN ('Active','Inactive','Suspended'))`
 - `CONSTRAINT chk_ser_dates CHECK (end_date IS NULL OR end_date >= start_date)`
 
-### VCM
+### VCC
 
-#### `teacher_vcms`
+#### `teacher_vccs`
 
-Annual Vocational Currency Management document per teacher, versioned to allow amendments. Acts as the root container for all VCM sub-records (professional qualifications, courses, units, profiling scores) for that teacher and year. Progresses through Draft → Submitted → Approved → Rejected. Records the assigned supervisor and approver. References `teachers` and `app_users`.
+Annual Vocational Competency & Currency document per teacher, versioned to allow amendments. Acts as the root container for all VCC sub-records (professional qualifications, courses, units, profiling scores) for that teacher and year. Progresses through Draft → Submitted → Approved → Rejected. Records the assigned supervisor and approver. References `teachers` and `app_users`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -2414,20 +2414,20 @@ Annual Vocational Currency Management document per teacher, versioned to allow a
 *Constraints:*
 
 - `PRIMARY KEY (id)`
-- `CONSTRAINT uq_teacher_vcm UNIQUE (teacher_id, calendar_year, version)`
-- `CONSTRAINT fk_vcm_teacher FOREIGN KEY (teacher_id) REFERENCES public.teachers(id) ON DELETE RESTRICT`
-- `CONSTRAINT fk_vcm_supervisor FOREIGN KEY (supervisor_id) REFERENCES public.app_users(id) ON DELETE SET NULL`
-- `CONSTRAINT fk_vcm_approved_by FOREIGN KEY (approved_by_id) REFERENCES public.app_users(id) ON DELETE SET NULL`
-- `CONSTRAINT chk_vcm_status CHECK (status IN ('Draft','Submitted','Approved','Rejected'))`
+- `CONSTRAINT uq_teacher_vcc UNIQUE (teacher_id, calendar_year, version)`
+- `CONSTRAINT fk_vcc_teacher FOREIGN KEY (teacher_id) REFERENCES public.teachers(id) ON DELETE RESTRICT`
+- `CONSTRAINT fk_vcc_supervisor FOREIGN KEY (supervisor_id) REFERENCES public.app_users(id) ON DELETE SET NULL`
+- `CONSTRAINT fk_vcc_approved_by FOREIGN KEY (approved_by_id) REFERENCES public.app_users(id) ON DELETE SET NULL`
+- `CONSTRAINT chk_vcc_status CHECK (status IN ('Draft','Submitted','Approved','Rejected'))`
 
-#### `teacher_vcm_professional_qualifications`
+#### `teacher_vcc_professional_qualifications`
 
-Teacher's own credentials declared in a VCM: TAE qualification, degrees, industry certifications, registrations. Each row is one qualification with its code, title, institution, and approval status (Draft → Pending → Approved → Rejected). Linked to evidence documents via `teacher_document_connections`. References `teacher_vcms`.
+Teacher's own credentials declared in a VCC: TAE qualification, degrees, industry certifications, registrations. Each row is one qualification with its code, title, institution, and approval status (Draft → Pending → Approved → Rejected). Linked to evidence documents via `teacher_document_connections`. References `teacher_vccs`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
-| `vcm_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teacher_vcms |
+| `vcc_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teacher_vccs |
 | `qualification_code` | `varchar(30)` | no |  |  |
 | `qualification_title` | `varchar(200)` | no |  |  |
 | `institution` | `varchar(200)` | yes |  |  |
@@ -2439,17 +2439,17 @@ Teacher's own credentials declared in a VCM: TAE qualification, degrees, industr
 *Constraints:*
 
 - `PRIMARY KEY (id)`
-- `CONSTRAINT fk_vcmpq_vcm FOREIGN KEY (vcm_id) REFERENCES public.teacher_vcms(id) ON DELETE CASCADE`
-- `CONSTRAINT chk_vcmpq_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))`
+- `CONSTRAINT fk_vccpq_vcc FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
+- `CONSTRAINT chk_vccpq_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))`
 
-#### `teacher_vcm_courses`
+#### `teacher_vcc_courses`
 
-Courses the teacher is mapping to deliver in a VCM. Optionally linked to a `programs` record; stores the course code and title for display (allowing free-text where no matching program exists). Container for `teacher_vcm_units`. `sort_order` controls display sequence. References `teacher_vcms` and optionally `programs`.
+Courses the teacher is mapping to deliver in a VCC. Optionally linked to a `programs` record; stores the course code and title for display (allowing free-text where no matching program exists). Container for `teacher_vcc_units`. `sort_order` controls display sequence. References `teacher_vccs` and optionally `programs`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
-| `vcm_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teacher_vcms |
+| `vcc_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teacher_vccs |
 | `program_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;programs |
 | `course_code` | `varchar(20)` | no |  |  |
 | `course_title` | `varchar(200)` | no |  |  |
@@ -2459,18 +2459,18 @@ Courses the teacher is mapping to deliver in a VCM. Optionally linked to a `prog
 *Constraints:*
 
 - `PRIMARY KEY (id)`
-- `CONSTRAINT fk_vcmc_vcm FOREIGN KEY (vcm_id) REFERENCES public.teacher_vcms(id) ON DELETE CASCADE`
-- `CONSTRAINT fk_vcmc_program FOREIGN KEY (program_id) REFERENCES public.programs(id) ON DELETE SET NULL`
+- `CONSTRAINT fk_vccc_vcc FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_vccc_program FOREIGN KEY (program_id) REFERENCES public.programs(id) ON DELETE SET NULL`
 
-#### `teacher_vcm_units`
+#### `teacher_vcc_units`
 
-Units the teacher has currency for within a VCM. Each row records the unit code and title, competency method (one of five defined methods), an optional superseded equivalent unit, description, justification text, and approval status. Multiple rows are allowed per unit (e.g. different competency methods). May be grouped under a `teacher_vcm_courses` row or be standalone. Optionally linked to `subjects` for cross-referencing with the curriculum catalogue.
+Units the teacher has currency for within a VCC. Each row records the unit code and title, competency method (one of five defined methods), an optional superseded equivalent unit, description, justification text, and approval status. Multiple rows are allowed per unit (e.g. different competency methods). May be grouped under a `teacher_vcc_courses` row or be standalone. Optionally linked to `subjects` for cross-referencing with the curriculum catalogue.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
-| `vcm_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teacher_vcms |
-| `vcm_course_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_vcm_courses |
+| `vcc_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teacher_vccs |
+| `vcc_course_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_vcc_courses |
 | `subject_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;subjects |
 | `unit_code` | `varchar(20)` | no |  |  |
 | `unit_title` | `varchar(200)` | no |  |  |
@@ -2488,15 +2488,15 @@ Units the teacher has currency for within a VCM. Each row records the unit code 
 *Constraints:*
 
 - `PRIMARY KEY (id)`
-- `CONSTRAINT fk_vcmu_vcm FOREIGN KEY (vcm_id) REFERENCES public.teacher_vcms(id) ON DELETE CASCADE`
-- `CONSTRAINT fk_vcmu_course FOREIGN KEY (vcm_course_id) REFERENCES public.teacher_vcm_courses(id) ON DELETE SET NULL`
-- `CONSTRAINT fk_vcmu_subject FOREIGN KEY (subject_id) REFERENCES public.subjects(id) ON DELETE SET NULL`
-- `CONSTRAINT chk_vcmu_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))`
-- `CONSTRAINT chk_vcmu_competency_method CHECK (competency_method IN ('I hold the current unit of competency','I hold a superseded and equivalent unit of competency','I hold a recognition of relevant study','I have vocational work experience','Other'))`
+- `CONSTRAINT fk_vccu_vcc FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_vccu_course FOREIGN KEY (vcc_course_id) REFERENCES public.teacher_vcc_courses(id) ON DELETE SET NULL`
+- `CONSTRAINT fk_vccu_subject FOREIGN KEY (subject_id) REFERENCES public.subjects(id) ON DELETE SET NULL`
+- `CONSTRAINT chk_vccu_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))`
+- `CONSTRAINT chk_vccu_competency_method CHECK (competency_method IN ('I hold the current unit of competency','I hold a superseded and equivalent unit of competency','I hold a recognition of relevant study','I have vocational work experience','Other'))`
 
 #### `teacher_documents`
 
-Per-teacher document library: testamurs, transcripts, accreditations, registrations, licences, job cards, and other evidence files. Each row stores the document title, category, optional year, file URL in cloud storage, and original filename. Documents are linked to specific VCM entities via `teacher_document_connections`. References `teachers`.
+Per-teacher document library: testamurs, transcripts, accreditations, registrations, licences, job cards, and other evidence files. Each row stores the document title, category, optional year, file URL in cloud storage, and original filename. Documents are linked to specific VCC entities via `teacher_document_connections`. References `teachers`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -2518,24 +2518,24 @@ Per-teacher document library: testamurs, transcripts, accreditations, registrati
 
 #### `teacher_document_connections`
 
-Links a teacher document to exactly one VCM entity: a professional qualification, a VCM unit, or a currency activity. The `num_nonnulls(vcm_professional_qual_id, vcm_unit_id, vcm_currency_activity_id) = 1` constraint enforces the single-target rule — one document connection always points to exactly one entity. References `teacher_documents` and the target entity.
+Links a teacher document to exactly one VCC entity: a professional qualification, a VCC unit, or a currency activity. The `num_nonnulls(vcc_professional_qual_id, vcc_unit_id, vcc_currency_activity_id) = 1` constraint enforces the single-target rule — one document connection always points to exactly one entity. References `teacher_documents` and the target entity.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
 | `document_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teacher_documents |
-| `vcm_professional_qual_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_vcm_professional_qualifications |
-| `vcm_unit_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_vcm_units |
-| `vcm_currency_activity_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_currency_activities |
+| `vcc_professional_qual_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_vcc_professional_qualifications |
+| `vcc_unit_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_vcc_units |
+| `vcc_currency_activity_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_currency_activities |
 
 *Constraints:*
 
 - `PRIMARY KEY (id)`
 - `CONSTRAINT fk_tdc_document FOREIGN KEY (document_id) REFERENCES public.teacher_documents(id) ON DELETE CASCADE`
-- `CONSTRAINT fk_tdc_pq FOREIGN KEY (vcm_professional_qual_id) REFERENCES public.teacher_vcm_professional_qualifications(id) ON DELETE CASCADE`
-- `CONSTRAINT fk_tdc_unit FOREIGN KEY (vcm_unit_id) REFERENCES public.teacher_vcm_units(id) ON DELETE CASCADE`
-- `CONSTRAINT fk_tdc_activity FOREIGN KEY (vcm_currency_activity_id) REFERENCES public.teacher_currency_activities(id) ON DELETE CASCADE`
-- `CONSTRAINT chk_tdc_target CHECK (num_nonnulls(vcm_professional_qual_id, vcm_unit_id, vcm_currency_activity_id) = 1)`
+- `CONSTRAINT fk_tdc_pq FOREIGN KEY (vcc_professional_qual_id) REFERENCES public.teacher_vcc_professional_qualifications(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_tdc_unit FOREIGN KEY (vcc_unit_id) REFERENCES public.teacher_vcc_units(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_tdc_activity FOREIGN KEY (vcc_currency_activity_id) REFERENCES public.teacher_currency_activities(id) ON DELETE CASCADE`
+- `CONSTRAINT chk_tdc_target CHECK (num_nonnulls(vcc_professional_qual_id, vcc_unit_id, vcc_currency_activity_id) = 1)`
 
 #### `teacher_currency_activities`
 
@@ -2593,13 +2593,13 @@ Many-to-many join between currency activities and the subjects they contribute c
 - `CONSTRAINT fk_tcul_activity FOREIGN KEY (currency_activity_id) REFERENCES public.teacher_currency_activities(id) ON DELETE CASCADE`
 - `CONSTRAINT fk_tcul_subject FOREIGN KEY (subject_id) REFERENCES public.subjects(id) ON DELETE SET NULL`
 
-#### `teacher_vcm_profiling`
+#### `teacher_vcc_profiling`
 
-Spider/radar-chart dimension scores for a VCM. Composite PK on `(vcm_id, dimension)` allows multiple profiling dimensions per VCM. Each row holds self, supervisor, and business-ideal scores for one dimension, supporting three-way comparison displays. References `teacher_vcms`.
+Spider/radar-chart dimension scores for a VCC. Composite PK on `(vcc_id, dimension)` allows multiple profiling dimensions per VCC. Each row holds self, supervisor, and business-ideal scores for one dimension, supporting three-way comparison displays. References `teacher_vccs`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
-| `vcm_id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;teacher_vcms |
+| `vcc_id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;teacher_vccs |
 | `dimension` | `varchar(100)` | no |  | PK |
 | `business_ideal_score` | `smallint` | yes |  |  |
 | `self_score` | `smallint` | yes |  |  |
@@ -2607,8 +2607,8 @@ Spider/radar-chart dimension scores for a VCM. Composite PK on `(vcm_id, dimensi
 
 *Constraints:*
 
-- `PRIMARY KEY (vcm_id, dimension)`
-- `CONSTRAINT fk_vcmp_vcm FOREIGN KEY (vcm_id) REFERENCES public.teacher_vcms(id) ON DELETE CASCADE`
+- `PRIMARY KEY (vcc_id, dimension)`
+- `CONSTRAINT fk_vccp_vcc FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
 
 ---
 
