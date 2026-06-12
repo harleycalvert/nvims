@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -1840,3 +1841,309 @@ func (s *Store) ExportTableRows(ctx context.Context, tableName string) ([]string
 	}
 	return cols, out, rows.Err()
 }
+
+// ── VCC ───────────────────────────────────────────────────────────────────────
+
+type VCCSummary struct {
+	ID           int64
+	TeacherID    int64
+	TeacherName  string
+	CalendarYear int
+	VersionLabel string
+	Status       string
+}
+
+type VCCDocument struct {
+	ID       int64
+	Title    string
+	Category string
+	Year     int
+	URL      string
+}
+
+type VCCPQ struct {
+	ID         int64
+	Code       string
+	Title      string
+	Status     string
+	ApprovedAt time.Time // zero means not set
+	Documents  []VCCDocument
+}
+
+type VCCUnit struct {
+	ID                  int64
+	CourseID            int64
+	UnitCode            string
+	UnitTitle           string
+	CompetencyMethod    string
+	SupersededUnitCode  string
+	SupersededUnitTitle string
+	Description         string
+	Status              string
+	ApprovedAt          time.Time // zero means not set
+	SortOrder           int
+	Documents           []VCCDocument
+}
+
+type VCCCourse struct {
+	ID          int64
+	CourseCode  string
+	CourseTitle string
+	SortOrder   int
+	Units       []VCCUnit
+}
+
+type VCCDetail struct {
+	ID           int64
+	TeacherID    int64
+	TeacherName  string
+	CalendarYear int
+	VersionLabel string
+	Status       string
+	ApprovedAt   time.Time // zero means not set
+	Notes        string
+	PQs          []VCCPQ
+	Courses      []VCCCourse
+}
+
+func (s *Store) ListAllVCCs(ctx context.Context) ([]VCCSummary, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT tv.id, tv.teacher_id, tv.calendar_year, tv.version_label, tv.status,
+		       p.first_given_name || ' ' || p.family_name
+		FROM teacher_vccs tv
+		JOIN teachers t ON t.id = tv.teacher_id
+		JOIN people p ON p.id = t.id
+		ORDER BY p.family_name, p.first_name, tv.calendar_year DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []VCCSummary
+	for rows.Next() {
+		var v VCCSummary
+		if err := rows.Scan(&v.ID, &v.TeacherID, &v.CalendarYear, &v.VersionLabel, &v.Status, &v.TeacherName); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
+	var v VCCDetail
+	var approvedAt pgtype.Timestamptz
+	err := s.pool.QueryRow(ctx, `
+		SELECT tv.id, tv.teacher_id, tv.calendar_year, tv.version_label, tv.status,
+		       tv.approved_at, COALESCE(tv.notes, ''),
+		       p.first_given_name || ' ' || p.family_name
+		FROM teacher_vccs tv
+		JOIN teachers t ON t.id = tv.teacher_id
+		JOIN people p ON p.id = t.id
+		WHERE tv.id = $1
+	`, id).Scan(&v.ID, &v.TeacherID, &v.CalendarYear, &v.VersionLabel, &v.Status,
+		&approvedAt, &v.Notes, &v.TeacherName)
+	if err != nil {
+		return nil, err
+	}
+	if approvedAt.Valid {
+		v.ApprovedAt = approvedAt.Time
+	}
+
+	// PQs
+	pqRows, err := s.pool.Query(ctx, `
+		SELECT id, qualification_code, qualification_title, status, approved_at
+		FROM teacher_vcc_professional_qualifications
+		WHERE vcc_id = $1 ORDER BY id
+	`, id)
+	if err != nil {
+		return nil, err
+	}
+	pqMap := map[int64]int{} // id → index in v.PQs
+	for pqRows.Next() {
+		var pq VCCPQ
+		var at pgtype.Date
+		if err := pqRows.Scan(&pq.ID, &pq.Code, &pq.Title, &pq.Status, &at); err != nil {
+			pqRows.Close()
+			return nil, err
+		}
+		if at.Valid {
+			pq.ApprovedAt = at.Time
+		}
+		pqMap[pq.ID] = len(v.PQs)
+		v.PQs = append(v.PQs, pq)
+	}
+	if err := pqRows.Err(); err != nil {
+		return nil, err
+	}
+
+	// PQ documents
+	if len(v.PQs) > 0 {
+		pqIDs := make([]int64, len(v.PQs))
+		for i, pq := range v.PQs {
+			pqIDs[i] = pq.ID
+		}
+		dRows, err := s.pool.Query(ctx, `
+			SELECT tdc.vcc_professional_qual_id, td.id, td.title, td.file_category, td.year_of_document, td.document_url
+			FROM teacher_document_connections tdc
+			JOIN teacher_documents td ON td.id = tdc.document_id
+			WHERE tdc.vcc_professional_qual_id = ANY($1)
+			ORDER BY tdc.vcc_professional_qual_id, td.year_of_document DESC
+		`, pqIDs)
+		if err != nil {
+			return nil, err
+		}
+		for dRows.Next() {
+			var pqID int64
+			var d VCCDocument
+			if err := dRows.Scan(&pqID, &d.ID, &d.Title, &d.Category, &d.Year, &d.URL); err != nil {
+				dRows.Close()
+				return nil, err
+			}
+			if idx, ok := pqMap[pqID]; ok {
+				v.PQs[idx].Documents = append(v.PQs[idx].Documents, d)
+			}
+		}
+		if err := dRows.Err(); err != nil {
+			return nil, err
+		}
+	}
+
+	// Courses
+	cRows, err := s.pool.Query(ctx, `
+		SELECT id, course_code, course_title, sort_order
+		FROM teacher_vcc_courses WHERE vcc_id = $1 ORDER BY sort_order
+	`, id)
+	if err != nil {
+		return nil, err
+	}
+	courseMap := map[int64]int{} // id → index in v.Courses
+	for cRows.Next() {
+		var c VCCCourse
+		if err := cRows.Scan(&c.ID, &c.CourseCode, &c.CourseTitle, &c.SortOrder); err != nil {
+			cRows.Close()
+			return nil, err
+		}
+		courseMap[c.ID] = len(v.Courses)
+		v.Courses = append(v.Courses, c)
+	}
+	if err := cRows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Units
+	uRows, err := s.pool.Query(ctx, `
+		SELECT id, COALESCE(vcc_course_id, 0), unit_code, unit_title, competency_method,
+		       COALESCE(superseded_unit_code,''), COALESCE(superseded_unit_title,''),
+		       COALESCE(description,''), status, approved_at, sort_order
+		FROM teacher_vcc_units
+		WHERE vcc_id = $1
+		ORDER BY COALESCE(vcc_course_id, 0), sort_order
+	`, id)
+	if err != nil {
+		return nil, err
+	}
+	unitMap := map[int64][2]int{} // unit id → [courseIdx, unitIdx]
+	for uRows.Next() {
+		var u VCCUnit
+		var at pgtype.Date
+		if err := uRows.Scan(&u.ID, &u.CourseID, &u.UnitCode, &u.UnitTitle, &u.CompetencyMethod,
+			&u.SupersededUnitCode, &u.SupersededUnitTitle, &u.Description, &u.Status, &at, &u.SortOrder); err != nil {
+			uRows.Close()
+			return nil, err
+		}
+		if at.Valid {
+			u.ApprovedAt = at.Time
+		}
+		if cIdx, ok := courseMap[u.CourseID]; ok {
+			uIdx := len(v.Courses[cIdx].Units)
+			v.Courses[cIdx].Units = append(v.Courses[cIdx].Units, u)
+			unitMap[u.ID] = [2]int{cIdx, uIdx}
+		}
+	}
+	if err := uRows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Unit documents
+	if len(unitMap) > 0 {
+		unitIDs := make([]int64, 0, len(unitMap))
+		for uid := range unitMap {
+			unitIDs = append(unitIDs, uid)
+		}
+		udRows, err := s.pool.Query(ctx, `
+			SELECT tdc.vcc_unit_id, td.id, td.title, td.file_category, td.year_of_document, td.document_url
+			FROM teacher_document_connections tdc
+			JOIN teacher_documents td ON td.id = tdc.document_id
+			WHERE tdc.vcc_unit_id = ANY($1)
+			ORDER BY tdc.vcc_unit_id, td.year_of_document DESC
+		`, unitIDs)
+		if err != nil {
+			return nil, err
+		}
+		for udRows.Next() {
+			var unitID int64
+			var d VCCDocument
+			if err := udRows.Scan(&unitID, &d.ID, &d.Title, &d.Category, &d.Year, &d.URL); err != nil {
+				udRows.Close()
+				return nil, err
+			}
+			if pos, ok := unitMap[unitID]; ok {
+				v.Courses[pos[0]].Units[pos[1]].Documents = append(v.Courses[pos[0]].Units[pos[1]].Documents, d)
+			}
+		}
+		if err := udRows.Err(); err != nil {
+			return nil, err
+		}
+	}
+
+	return &v, nil
+}
+
+func (s *Store) GetLatestVCCForTeacher(ctx context.Context, teacherID int64) (*VCCDetail, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+		SELECT id FROM teacher_vccs WHERE teacher_id = $1
+		ORDER BY calendar_year DESC, version DESC LIMIT 1
+	`, teacherID).Scan(&id)
+	if err != nil {
+		return nil, err
+	}
+	return s.GetVCC(ctx, id)
+}
+
+var validVCCStatuses = map[string]bool{
+	"Draft": true, "Submitted": true, "Approved": true, "Rejected": true,
+}
+
+var validVCCItemStatuses = map[string]bool{
+	"Draft": true, "Pending": true, "Approved": true, "Rejected": true,
+}
+
+func (s *Store) UpdateVCCStatus(ctx context.Context, vccID int64, status string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE teacher_vccs SET status = $1,
+			approved_at = CASE WHEN $1 = 'Approved' THEN NOW() ELSE approved_at END
+		WHERE id = $2
+	`, status, vccID)
+	return err
+}
+
+func (s *Store) UpdateVCCUnitStatus(ctx context.Context, vccID, unitID int64, status string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE teacher_vcc_units SET status = $1,
+			approved_at = CASE WHEN $1 = 'Approved' THEN CURRENT_DATE ELSE approved_at END
+		WHERE id = $2 AND vcc_id = $3
+	`, status, unitID, vccID)
+	return err
+}
+
+func (s *Store) UpdateVCCPQStatus(ctx context.Context, vccID, pqID int64, status string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE teacher_vcc_professional_qualifications SET status = $1,
+			approved_at = CASE WHEN $1 = 'Approved' THEN CURRENT_DATE ELSE approved_at END
+		WHERE id = $2 AND vcc_id = $3
+	`, status, pqID, vccID)
+	return err
+}
+

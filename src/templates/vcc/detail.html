@@ -1,0 +1,119 @@
+{{define "vcc-detail"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS-SMS — My VCC</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/sessions.css">
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/">Home</a>
+        <h1>Vocational Competency &amp; Currency</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+
+  <main style="padding: 24px; max-width: 1100px;">
+
+  {{if not .VCC}}
+    <p class="hint" style="padding:24px">No VCC record found for your account.</p>
+  {{else}}
+
+    {{$vcc := .VCC}}
+
+    <div class="form-section" style="margin-bottom:24px">
+      <table class="sessions-table" style="width:auto">
+        <tbody>
+          <tr><th class="td-left" style="padding-right:24px">Teacher</th><td>{{$vcc.TeacherName}}</td></tr>
+          <tr><th class="td-left">Year</th><td>{{$vcc.CalendarYear}}</td></tr>
+          <tr><th class="td-left">Version</th><td>{{$vcc.VersionLabel}}</td></tr>
+          <tr><th class="td-left">Status</th><td><span class="status-badge status-{{$vcc.Status | statusCSS}}">{{$vcc.Status}}</span></td></tr>
+          {{if not $vcc.ApprovedAt.IsZero}}<tr><th class="td-left">Approved</th><td>{{$vcc.ApprovedAt | dateFull}}</td></tr>{{end}}
+          {{if $vcc.Notes}}<tr><th class="td-left">Notes</th><td>{{$vcc.Notes}}</td></tr>{{end}}
+        </tbody>
+      </table>
+    </div>
+
+    {{/* Professional Qualifications */}}
+    <h2 style="font-size:15px;font-weight:600;margin:0 0 8px">Professional Qualifications</h2>
+    <div class="table-wrap" style="margin-bottom:32px">
+      <table class="sessions-table">
+        <thead>
+          <tr>
+            <th class="td-left">Code</th>
+            <th class="td-left">Qualification</th>
+            <th>Status</th>
+            <th>Approved</th>
+            <th class="td-left">Supporting Documents</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $vcc.PQs}}
+          <tr>
+            <td style="font-family:monospace;white-space:nowrap">{{.Code}}</td>
+            <td class="td-left">{{.Title}}</td>
+            <td><span class="status-badge status-{{.Status | statusCSS}}">{{.Status}}</span></td>
+            <td style="white-space:nowrap">{{if not .ApprovedAt.IsZero}}{{.ApprovedAt | dateFull}}{{else}}—{{end}}</td>
+            <td class="td-left">
+              {{range .Documents}}<div style="font-size:12px">{{.Title}} ({{.Year}})</div>{{end}}
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+
+    {{/* Courses & Units */}}
+    {{range $vcc.Courses}}
+    <h2 style="font-size:15px;font-weight:600;margin:24px 0 8px">
+      {{.CourseCode}} — {{.CourseTitle}}
+    </h2>
+    <div class="table-wrap" style="margin-bottom:24px">
+      <table class="sessions-table">
+        <thead>
+          <tr>
+            <th class="td-left">Unit Code</th>
+            <th class="td-left">Unit Title</th>
+            <th class="td-left">Method</th>
+            <th class="td-left">Evidence / Notes</th>
+            <th>Status</th>
+            <th>Approved</th>
+            <th class="td-left">Documents</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Units}}
+          <tr>
+            <td style="font-family:monospace;white-space:nowrap">{{.UnitCode}}</td>
+            <td class="td-left">{{.UnitTitle}}</td>
+            <td class="td-left" style="font-size:12px">
+              {{.CompetencyMethod}}
+              {{if .SupersededUnitCode}}<div style="color:#888">supersedes {{.SupersededUnitCode}}</div>{{end}}
+            </td>
+            <td class="td-left" style="font-size:12px">{{.Description}}</td>
+            <td><span class="status-badge status-{{.Status | statusCSS}}">{{.Status}}</span></td>
+            <td style="white-space:nowrap">{{if not .ApprovedAt.IsZero}}{{.ApprovedAt | dateFull}}{{else}}—{{end}}</td>
+            <td class="td-left">
+              {{range .Documents}}<div style="font-size:12px">{{.Title}} ({{.Year}})</div>{{end}}
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{end}}
+
+  {{end}}
+  </main>
+</body>
+</html>{{end}}

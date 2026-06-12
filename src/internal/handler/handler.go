@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
 
 	"nvims-sms/internal/auth"
@@ -58,6 +59,16 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 				return "att-excused"
 			case "":
 				return "att-none"
+			case "Approved":
+				return "approved"
+			case "Draft":
+				return "draft"
+			case "Submitted":
+				return "submitted"
+			case "Pending":
+				return "pending"
+			case "Rejected":
+				return "rejected"
 			default:
 				return "att-absent"
 			}
@@ -129,6 +140,9 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 			"templates/admin/intake-groups.html",
 			"templates/admin/sessions.html",
 			"templates/backup.html",
+			"templates/vcc/detail.html",
+			"templates/admin/vccs.html",
+			"templates/admin/vcc-detail.html",
 		),
 	)
 	return &Handler{store: st, sessions: sessions, tmpl: tmpl}
@@ -2218,4 +2232,170 @@ func parseIDs(vals []string) []int64 {
 		}
 	}
 	return out
+}
+
+// ── VCC ───────────────────────────────────────────────────────────────────────
+
+var validVCCStatuses = []string{"Draft", "Submitted", "Approved", "Rejected"}
+var validVCCItemStatuses = []string{"Draft", "Pending", "Approved", "Rejected"}
+
+func containsStr(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+// VCCIndex — Trainer: view own VCC (read-only).
+func (h *Handler) VCCIndex(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	vcc, err := h.store.GetLatestVCCForTeacher(r.Context(), user.PersonID)
+	if err == pgx.ErrNoRows {
+		h.render(w, "vcc-detail", map[string]any{"VCC": nil, "User": user, "IsAdmin": false})
+		return
+	}
+	if err != nil {
+		log.Printf("GetLatestVCCForTeacher(%d): %v", user.PersonID, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	h.render(w, "vcc-detail", map[string]any{"VCC": vcc, "User": user, "IsAdmin": false})
+}
+
+// AdminVCCs — Admin: list all teachers' VCCs.
+func (h *Handler) AdminVCCs(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	if user.Role != "Admin" {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	vccs, err := h.store.ListAllVCCs(r.Context())
+	if err != nil {
+		log.Printf("ListAllVCCs: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	h.render(w, "admin-vccs", map[string]any{"VCCs": vccs, "User": user})
+}
+
+// AdminVCCDetail — Admin: view and edit a specific VCC.
+func (h *Handler) AdminVCCDetail(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	if user.Role != "Admin" {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	vcc, err := h.store.GetVCC(r.Context(), id)
+	if err == pgx.ErrNoRows {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		log.Printf("GetVCC(%d): %v", id, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	flash := r.URL.Query().Get("flash")
+	h.render(w, "admin-vcc-detail", map[string]any{
+		"VCC": vcc, "User": user,
+		"VCCStatuses":  validVCCStatuses,
+		"ItemStatuses": validVCCItemStatuses,
+		"Flash":        flash,
+	})
+}
+
+// AdminVCCUpdateStatus — Admin: POST to update overall VCC status.
+func (h *Handler) AdminVCCUpdateStatus(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	if user.Role != "Admin" {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	status := r.FormValue("status")
+	if !containsStr(validVCCStatuses, status) {
+		http.Error(w, "invalid status", http.StatusBadRequest)
+		return
+	}
+	if err := h.store.UpdateVCCStatus(r.Context(), id, status); err != nil {
+		log.Printf("UpdateVCCStatus(%d): %v", id, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/admin/vccs/%d?flash=VCC+status+updated", id), http.StatusSeeOther)
+}
+
+// AdminVCCUnitUpdate — Admin: POST to update a unit's status.
+func (h *Handler) AdminVCCUnitUpdate(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	if user.Role != "Admin" {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	vccID, err1 := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	unitID, err2 := strconv.ParseInt(r.PathValue("uid"), 10, 64)
+	if err1 != nil || err2 != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	status := r.FormValue("status")
+	if !containsStr(validVCCItemStatuses, status) {
+		http.Error(w, "invalid status", http.StatusBadRequest)
+		return
+	}
+	if err := h.store.UpdateVCCUnitStatus(r.Context(), vccID, unitID, status); err != nil {
+		log.Printf("UpdateVCCUnitStatus(%d,%d): %v", vccID, unitID, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/admin/vccs/%d?flash=Unit+updated", vccID), http.StatusSeeOther)
+}
+
+// AdminVCCPQUpdate — Admin: POST to update a professional qualification's status.
+func (h *Handler) AdminVCCPQUpdate(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	if user.Role != "Admin" {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	vccID, err1 := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	pqID, err2 := strconv.ParseInt(r.PathValue("pid"), 10, 64)
+	if err1 != nil || err2 != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	status := r.FormValue("status")
+	if !containsStr(validVCCItemStatuses, status) {
+		http.Error(w, "invalid status", http.StatusBadRequest)
+		return
+	}
+	if err := h.store.UpdateVCCPQStatus(r.Context(), vccID, pqID, status); err != nil {
+		log.Printf("UpdateVCCPQStatus(%d,%d): %v", vccID, pqID, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/admin/vccs/%d?flash=Qualification+updated", vccID), http.StatusSeeOther)
 }

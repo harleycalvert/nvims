@@ -78,3 +78,19 @@ main {
 }
 
 .hidden { display: none; }
+
+/* VCC / general status badges */
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.status-approved  { background: #d4edda; color: #155724; }
+.status-draft     { background: #e2e3e5; color: #383d41; }
+.status-submitted { background: #cce5ff; color: #004085; }
+.status-pending   { background: #fff3cd; color: #856404; }
+.status-rejected  { background: #f8d7da; color: #721c24; }
+.status-other     { background: #e2e3e5; color: #383d41; }
