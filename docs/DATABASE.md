@@ -31,7 +31,7 @@ mapping to the AVETMISS NAT reporting files.
   - [13. Intakes & cohorts](#13-intakes--cohorts)
 - [Table reference](#table-reference)
 - [Data dictionary](#data-dictionary)
-  - Identity & reference: [`people`](#people) · [`students`](#students) · [`teachers`](#teachers) · [`staff`](#staff) · [`app_users`](#app_users) · [`teacher_yearly_balances`](#teacher_yearly_balances) · [`teacher_period_allocations`](#teacher_period_allocations) · [`student_guardians`](#student_guardians) · [`student_disabilities`](#student_disabilities) · [`student_prior_achievements`](#student_prior_achievements) · [`australian_states`](#australian_states) · [`disability_types`](#disability_types) · [`prior_educational_achievements`](#prior_educational_achievements) · [`highest_school_levels`](#highest_school_levels) · [`secondary_schools`](#secondary_schools) · [`faculties`](#faculties)
+  - Identity & reference: [`people`](#people) · [`students`](#students) · [`teachers`](#teachers) · [`teacher_availability`](#teacher_availability) · [`staff`](#staff) · [`staff_availability`](#staff_availability) · [`app_users`](#app_users) · [`teacher_yearly_balances`](#teacher_yearly_balances) · [`teacher_period_allocations`](#teacher_period_allocations) · [`student_guardians`](#student_guardians) · [`student_disabilities`](#student_disabilities) · [`student_prior_achievements`](#student_prior_achievements) · [`australian_states`](#australian_states) · [`disability_types`](#disability_types) · [`prior_educational_achievements`](#prior_educational_achievements) · [`highest_school_levels`](#highest_school_levels) · [`secondary_schools`](#secondary_schools) · [`faculties`](#faculties)
   - Curriculum: [`programs`](#programs) · [`subjects`](#subjects) · [`subject_programs`](#subject_programs)
   - Intakes & cohorts: [`program_intakes`](#program_intakes) · [`intake_groups`](#intake_groups)
   - Enrolment & extensions: [`student_course_enrollments`](#student_course_enrollments) · [`client_subject_enrolments`](#client_subject_enrolments) · [`apprenticeship_details`](#apprenticeship_details) · [`traineeship_details`](#traineeship_details) · [`training_plans`](#training_plans) · [`learning_access_plans`](#learning_access_plans) · [`vet_student_loans`](#vet_student_loans) · [`he_enrolment_details`](#he_enrolment_details) · [`enrollment_credit_claims`](#enrollment_credit_claims) · [`state_funding_details`](#state_funding_details)
@@ -814,7 +814,7 @@ Student-specific demographic and AVETMISS compliance data. Extends `people` via 
 
 #### `teachers`
 
-Teacher-specific employment and capacity data. Extends `people` via a shared PK (`teachers.id = people.id`). Stores the teacher's sector (`VET`/`HE`/`DUAL`), annual teaching hour cap (`default_max_hours_per_year`), optional per-period hour cap for HE/DUAL teachers (`max_hours_per_period`), employment status, and faculty assignment. Police check details are stored on `people`. The hour caps seed `teacher_yearly_balances` and `teacher_period_allocations` for enforcement by triggers. Referenced by `class_slots`, `session_teachers`, `workplans`, `timesheets`, `teacher_vccs`, and `teacher_currency_activities`.
+Teacher-specific employment and capacity data. Extends `people` via a shared PK (`teachers.id = people.id`). Stores the teacher's sector (`VET`/`HE`/`DUAL`), FTE (Full-Time Equivalent, 0.00–1.00), annual teaching hour cap (`default_max_hours_per_year`), optional per-period hour cap for HE/DUAL teachers (`max_hours_per_period`), employment status, and faculty assignment. Police check details are stored on `people`. The hour caps seed `teacher_yearly_balances` and `teacher_period_allocations` for enforcement by triggers. Availability by day of week is stored in `teacher_availability`. Referenced by `class_slots`, `session_teachers`, `workplans`, `timesheets`, `teacher_vccs`, and `teacher_currency_activities`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -824,6 +824,7 @@ Teacher-specific employment and capacity data. Extends `people` via a shared PK 
 | `teacher_email` | `varchar(100)` | no |  | UK |
 | `teacher_phone` | `varchar(15)` | yes |  |  |
 | `employment_status` | `public.employment_type` | no | `'Casual'` |  |
+| `fte` | `numeric(3,2)` | no | `1.00` |  |
 | `sector` | `public.teacher_sector` | no | `'VET'` |  |
 | `default_max_hours_per_year` | `numeric(6,2)` | no | `800.00` |  |
 | `max_hours_per_period` | `numeric(6,2)` | yes |  |  |
@@ -839,10 +840,11 @@ Teacher-specific employment and capacity data. Extends `people` via a shared PK 
 - `CONSTRAINT uq_teachers_email UNIQUE (teacher_email)`
 - `CONSTRAINT chk_teacher_max_hours CHECK (default_max_hours_per_year > 0)`
 - `CONSTRAINT chk_teacher_period_hours CHECK (max_hours_per_period IS NULL OR max_hours_per_period > 0)`
+- `CONSTRAINT chk_teacher_fte CHECK (fte >= 0.00 AND fte <= 1.00)`
 
 #### `staff`
 
-Support and administrative staff. Extends `people` via a shared PK (`staff.id = people.id`). Holds the staff number, staff email, phone, and faculty assignment. Police check details are stored on `people`. Staff appear as assessors on Learning Access Plans (`learning_access_plans.assessor_id`), support workers on classes (`class_support_staff`), recipients of bulk communications (`message_deliveries`), and audit actors (`app_users`).
+Support and administrative staff. Extends `people` via a shared PK (`staff.id = people.id`). Holds the staff number, staff email, phone, FTE (Full-Time Equivalent, 0.00–1.00), and faculty assignment. Police check details are stored on `people`. Availability by day of week is stored in `staff_availability`. Staff appear as assessors on Learning Access Plans (`learning_access_plans.assessor_id`), support workers on classes (`class_support_staff`), recipients of bulk communications (`message_deliveries`), and audit actors (`app_users`).
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -851,6 +853,7 @@ Support and administrative staff. Extends `people` via a shared PK (`staff.id = 
 | `staff_number` | `varchar(20)` | no |  | UK |
 | `staff_email` | `varchar(100)` | no |  | UK |
 | `staff_phone` | `varchar(15)` | yes |  |  |
+| `fte` | `numeric(3,2)` | no | `1.00` |  |
 
 *Constraints:*
 
@@ -859,6 +862,24 @@ Support and administrative staff. Extends `people` via a shared PK (`staff.id = 
 - `CONSTRAINT fk_staff_faculty FOREIGN KEY (faculty_id) REFERENCES public.faculties(id) ON DELETE SET NULL`
 - `CONSTRAINT uq_staff_number UNIQUE (staff_number)`
 - `CONSTRAINT uq_staff_email UNIQUE (staff_email)`
+- `CONSTRAINT chk_staff_fte CHECK (fte >= 0.00 AND fte <= 1.00)`
+
+#### `staff_availability`
+
+Days of the week a staff member is available to work. Each row marks one available day; days not represented are unavailable. `day_of_week` uses 0-based ISO weekday numbering: 0 = Monday, 1 = Tuesday, 2 = Wednesday, 3 = Thursday, 4 = Friday, 5 = Saturday, 6 = Sunday. The unique constraint prevents duplicate day entries per staff member.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `staff_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;staff |
+| `day_of_week` | `smallint` | no |  | UK (with staff_id) |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_staff_avail FOREIGN KEY (staff_id) REFERENCES public.staff(id) ON DELETE CASCADE`
+- `CONSTRAINT uq_staff_avail_day UNIQUE (staff_id, day_of_week)`
+- `CONSTRAINT chk_staff_avail_day CHECK (day_of_week BETWEEN 0 AND 6)`
 
 #### `app_users`
 
@@ -926,6 +947,23 @@ Per-academic-period hour cap and balance for HE/DUAL teachers who have `teachers
 - `CONSTRAINT chk_tpa_allocated CHECK (allocated_hours > 0)`
 - `CONSTRAINT chk_tpa_nonneg CHECK (booked_hours >= 0)`
 - `CONSTRAINT chk_tpa_cap CHECK (booked_hours <= allocated_hours)`
+
+#### `teacher_availability`
+
+Days of the week a teacher is available to work. Each row marks one available day; days not represented are unavailable. `day_of_week` uses 0-based ISO weekday numbering: 0 = Monday, 1 = Tuesday, 2 = Wednesday, 3 = Thursday, 4 = Friday, 5 = Saturday, 6 = Sunday. The unique constraint prevents duplicate day entries per teacher.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `teacher_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teachers |
+| `day_of_week` | `smallint` | no |  | UK (with teacher_id) |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_teacher_avail FOREIGN KEY (teacher_id) REFERENCES public.teachers(id) ON DELETE CASCADE`
+- `CONSTRAINT uq_teacher_avail_day UNIQUE (teacher_id, day_of_week)`
+- `CONSTRAINT chk_teacher_avail_day CHECK (day_of_week BETWEEN 0 AND 6)`
 
 #### `student_guardians`
 

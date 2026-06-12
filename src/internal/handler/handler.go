@@ -1453,6 +1453,12 @@ func (h *Handler) AdminSessions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var periodEndDate, periodEndDMY string
+	if selPeriod != nil {
+		periodEndDate = selPeriod.EndDate.Format("2006-01-02")
+		periodEndDMY = selPeriod.EndDate.Format("02/01/2006")
+	}
+
 	user, _ := auth.Current(r)
 	h.render(w, "admin-sessions", map[string]any{
 		"View":           view,
@@ -1467,8 +1473,27 @@ func (h *Handler) AdminSessions(w http.ResponseWriter, r *http.Request) {
 		"TeacherClasses": teacherClasses,
 		"Periods":        periods,
 		"SessionTypes":   sessionTypes,
+		"PeriodEndDate":  periodEndDate,
+		"PeriodEndDMY":   periodEndDMY,
 		"User":           user,
 	})
+}
+
+// checkSessionTimes returns an error if start/end are not valid HH:MM or end <= start.
+func checkSessionTimes(startTime, endTime string) error {
+	layout := "15:04"
+	st, err1 := time.Parse(layout, startTime)
+	et, err2 := time.Parse(layout, endTime)
+	if err1 != nil {
+		return fmt.Errorf("invalid start time %q", startTime)
+	}
+	if err2 != nil {
+		return fmt.Errorf("invalid end time %q", endTime)
+	}
+	if !et.After(st) {
+		return fmt.Errorf("end time must be after start time")
+	}
+	return nil
 }
 
 func (h *Handler) AdminSessionUpdate(w http.ResponseWriter, r *http.Request) {
@@ -1479,6 +1504,12 @@ func (h *Handler) AdminSessionUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, `{"error":"bad form"}`, http.StatusBadRequest)
+		return
+	}
+	if err := checkSessionTimes(r.FormValue("start_time"), r.FormValue("end_time")); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, `{"error":%q}`, err.Error())
 		return
 	}
 	if err := h.store.UpdateSession(r.Context(), id,
@@ -1581,7 +1612,11 @@ func (h *Handler) AdminSessionCreate(w http.ResponseWriter, r *http.Request) {
 	notes := strings.TrimSpace(r.FormValue("notes"))
 
 	if classID == 0 || sessionDate == "" || startTime == "" || endTime == "" {
-		http.Redirect(w, r, fmt.Sprintf("/admin/sessions?class_id=%d&error=missing", classID), http.StatusSeeOther)
+		http.Error(w, `{"error":"missing fields"}`, http.StatusBadRequest)
+		return
+	}
+	if err := checkSessionTimes(startTime, endTime); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
 		return
 	}
 	if sessionType == "" {
@@ -1594,6 +1629,31 @@ func (h *Handler) AdminSessionCreate(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, fmt.Sprintf("/admin/sessions?class_id=%d&error=db", classID), http.StatusSeeOther)
 		return
 	}
+
+	if r.FormValue("autofill") == "1" {
+		if periodEnd := r.FormValue("period_end"); periodEnd != "" {
+			firstDate, err1 := time.Parse("2006-01-02", sessionDate)
+			endDate, err2 := time.Parse("2006-01-02", periodEnd)
+			if err1 == nil && err2 == nil && endDate.After(firstDate) {
+				var inputs []store.SessionInput
+				for d := firstDate.AddDate(0, 0, 7); !d.After(endDate); d = d.AddDate(0, 0, 7) {
+					inputs = append(inputs, store.SessionInput{
+						Date:      d.Format("2006-01-02"),
+						StartTime: startTime,
+						EndTime:   endTime,
+						Type:      sessionType,
+						Notes:     notes,
+					})
+				}
+				if len(inputs) > 0 {
+					if _, err2 := h.store.BulkCreateSessions(r.Context(), classID, inputs); err2 != nil {
+						log.Printf("BulkCreateSessions (autofill): %v", err2)
+					}
+				}
+			}
+		}
+	}
+
 	http.Redirect(w, r, fmt.Sprintf("/admin/sessions?class_id=%d&saved=1", classID), http.StatusSeeOther)
 }
 

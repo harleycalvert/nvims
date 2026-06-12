@@ -384,6 +384,7 @@ CREATE TABLE IF NOT EXISTS public.teachers (
     teacher_email varchar(100) NOT NULL,
     teacher_phone varchar(15) NULL,
     employment_status public.employment_type NOT NULL DEFAULT 'Casual',
+    fte numeric(3,2) NOT NULL DEFAULT 1.00,            -- Full-Time Equivalent (0.00–1.00)
     sector public.teacher_sector NOT NULL DEFAULT 'VET',
     default_max_hours_per_year numeric(6,2) NOT NULL DEFAULT 800.00,
     max_hours_per_period numeric(6,2) NULL,       -- NULL = use annual cap only; set for semester/block contracts
@@ -395,7 +396,8 @@ CREATE TABLE IF NOT EXISTS public.teachers (
     CONSTRAINT uq_teachers_number UNIQUE (teacher_number),
     CONSTRAINT uq_teachers_email UNIQUE (teacher_email),
     CONSTRAINT chk_teacher_max_hours CHECK (default_max_hours_per_year > 0),
-    CONSTRAINT chk_teacher_period_hours CHECK (max_hours_per_period IS NULL OR max_hours_per_period > 0)
+    CONSTRAINT chk_teacher_period_hours CHECK (max_hours_per_period IS NULL OR max_hours_per_period > 0),
+    CONSTRAINT chk_teacher_fte CHECK (fte >= 0.00 AND fte <= 1.00)
 );
 
 -- Maintained per-year cache of teaching hours, sourced from sessions.
@@ -435,17 +437,43 @@ CREATE TABLE IF NOT EXISTS public.teacher_period_allocations (
     CONSTRAINT chk_tpa_cap CHECK (booked_hours <= allocated_hours)  -- hard per-period backstop
 );
 
+-- Days of the week a teacher is available to work.
+-- day_of_week: 0 = Monday … 6 = Sunday (ISO weekday, 0-based).
+CREATE TABLE IF NOT EXISTS public.teacher_availability (
+    id bigserial NOT NULL,
+    teacher_id bigint NOT NULL,
+    day_of_week smallint NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_teacher_avail FOREIGN KEY (teacher_id) REFERENCES public.teachers(id) ON DELETE CASCADE,
+    CONSTRAINT uq_teacher_avail_day UNIQUE (teacher_id, day_of_week),
+    CONSTRAINT chk_teacher_avail_day CHECK (day_of_week BETWEEN 0 AND 6)
+);
+
 CREATE TABLE IF NOT EXISTS public.staff (
     id bigint NOT NULL,                          -- shared PK: this IS people.id
     faculty_id bigint NULL,
     staff_number varchar(20) NOT NULL,
     staff_email varchar(100) NOT NULL,
     staff_phone varchar(15) NULL,
+    fte numeric(3,2) NOT NULL DEFAULT 1.00,            -- Full-Time Equivalent (0.00–1.00)
     PRIMARY KEY (id),
     CONSTRAINT fk_staff_people FOREIGN KEY (id) REFERENCES public.people(id) ON DELETE CASCADE,
     CONSTRAINT fk_staff_faculty FOREIGN KEY (faculty_id) REFERENCES public.faculties(id) ON DELETE SET NULL,
     CONSTRAINT uq_staff_number UNIQUE (staff_number),
-    CONSTRAINT uq_staff_email UNIQUE (staff_email)
+    CONSTRAINT uq_staff_email UNIQUE (staff_email),
+    CONSTRAINT chk_staff_fte CHECK (fte >= 0.00 AND fte <= 1.00)
+);
+
+-- Days of the week a staff member is available to work.
+-- day_of_week: 0 = Monday … 6 = Sunday (ISO weekday, 0-based).
+CREATE TABLE IF NOT EXISTS public.staff_availability (
+    id bigserial NOT NULL,
+    staff_id bigint NOT NULL,
+    day_of_week smallint NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_staff_avail FOREIGN KEY (staff_id) REFERENCES public.staff(id) ON DELETE CASCADE,
+    CONSTRAINT uq_staff_avail_day UNIQUE (staff_id, day_of_week),
+    CONSTRAINT chk_staff_avail_day CHECK (day_of_week BETWEEN 0 AND 6)
 );
 
 CREATE TABLE IF NOT EXISTS public.student_guardians (

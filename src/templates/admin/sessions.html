@@ -118,12 +118,22 @@
         <tbody id="sessions-tbody">
           {{range .Sessions}}
           <tr class="sess-row{{if .Cancelled}} sess-cancelled{{end}}" data-id="{{.ID}}">
-            <td><input class="sess-input si-date" type="text" name="session_date"
-                       value="{{dateDMY .SessionDate}}" placeholder="DD/MM/YYYY"
-                       pattern="\d{2}/\d{2}/\d{4}" size="10"></td>
+            <td><div class="date-wrap">
+              <input class="sess-input si-date" type="text" name="session_date"
+                     value="{{dateDMY .SessionDate}}" placeholder="DD/MM/YYYY" maxlength="10">
+              <input type="date" class="date-native" tabindex="-1" value="{{dateISO .SessionDate}}">
+            </div></td>
             <td class="sess-day">{{dateDayName .SessionDate}}</td>
-            <td><input class="sess-input si-time" type="time" name="start_time" value="{{timeShort .StartTime}}"></td>
-            <td><input class="sess-input si-time" type="time" name="end_time"   value="{{timeShort .EndTime}}"></td>
+            <td><div class="time-wrap">
+              <input class="sess-input si-time" type="text" name="start_time"
+                     value="{{timeShort .StartTime}}" placeholder="HH:MM" maxlength="5">
+              <input type="time" class="time-native" tabindex="-1" value="{{timeShort .StartTime}}">
+            </div></td>
+            <td><div class="time-wrap">
+              <input class="sess-input si-time" type="text" name="end_time"
+                     value="{{timeShort .EndTime}}" placeholder="HH:MM" maxlength="5">
+              <input type="time" class="time-native" tabindex="-1" value="{{timeShort .EndTime}}">
+            </div></td>
             <td class="sess-static">{{.ClassCode}}</td>
             <td>
               <select class="sess-input si-type" name="session_type">
@@ -141,6 +151,12 @@
           </tr>
           {{end}}
         </tbody>
+        <tfoot>
+          <tr class="sess-total-row">
+            <td colspan="2" class="sess-total-label">Contact hours</td>
+            <td colspan="9" class="sess-total-value"><span id="total-hours">—</span></td>
+          </tr>
+        </tfoot>
       </table>
     </div>
 
@@ -155,6 +171,8 @@
 (function () {
   const sessionTypes = [{{range $i,$t := .SessionTypes}}{{if $i}},{{end}}"{{$t}}"{{end}}];
   const allClasses   = [{{range $i,$c := .Classes}}{{if $i}},{{end}}{"id":{{$c.ID}},"label":"{{$c.ClassCode}} — {{$c.PeriodName}}"}{{end}}];
+  const periodEnd    = "{{.PeriodEndDate}}";
+  const periodEndDMY = "{{.PeriodEndDMY}}";
 
   /* ── navigation helpers ── */
   function currentView() {
@@ -165,7 +183,6 @@
     window.location.href = `/admin/sessions?view=${view}&id=${id}&period_id=${periodID}`;
   }
 
-  /* ── radio: toggle visible selector, then navigate ── */
   document.querySelectorAll('input[name=view]').forEach(radio => {
     radio.addEventListener('change', () => {
       const isTeacher = radio.value === 'teacher';
@@ -174,18 +191,16 @@
       const selID = isTeacher
         ? document.getElementById('teacher-select').value
         : document.getElementById('group-select').value;
-      const periodID = document.getElementById('period-select').value;
-      navigate(radio.value, selID, periodID);
+      navigate(radio.value, selID, document.getElementById('period-select').value);
     });
   });
 
-  /* ── entity / period selects navigate on change ── */
   ['teacher-select','group-select'].forEach(id => {
     document.getElementById(id)?.addEventListener('change', function() {
       navigate(currentView(), this.value, document.getElementById('period-select').value);
     });
   });
-  document.getElementById('period-select').addEventListener('change', function() {
+  document.getElementById('period-select')?.addEventListener('change', function() {
     navigate(currentView(),
       currentView() === 'teacher'
         ? document.getElementById('teacher-select').value
@@ -208,7 +223,58 @@
     return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
   }
 
-  /* ── editable table ── */
+  /* ── time validation ── */
+  function parseTime(t) {
+    if (!t) return null;
+    const m = t.match(/^([0-1]?\d|2[0-3]):([0-5]\d)$/);
+    return m ? +m[1] * 60 + +m[2] : null; // minutes since midnight
+  }
+  function validateTimes(tr) {
+    const startEl = tr.querySelector('[name=start_time]');
+    const endEl   = tr.querySelector('[name=end_time]');
+    const s = parseTime(startEl?.value);
+    const e = parseTime(endEl?.value);
+    let ok = true;
+    if (startEl) {
+      const bad = s === null;
+      startEl.classList.toggle('sess-invalid', bad);
+      startEl.title = bad ? 'Enter time as HH:MM (00:00 – 23:59)' : '';
+      if (bad) ok = false;
+    }
+    if (endEl) {
+      const bad = e === null || (s !== null && e <= s);
+      endEl.classList.toggle('sess-invalid', bad);
+      endEl.title = e === null
+        ? 'Enter time as HH:MM (00:00 – 23:59)'
+        : bad ? 'End time must be after start time' : '';
+      if (bad) ok = false;
+    }
+    return ok;
+  }
+
+  /* ── total hours ── */
+  function updateTotals() {
+    let totalMins = 0;
+    document.querySelectorAll('#sessions-tbody .sess-row').forEach(tr => {
+      if (tr.classList.contains('sess-cancelled')) return;
+      const s = tr.querySelector('[name=start_time]')?.value;
+      const e = tr.querySelector('[name=end_time]')?.value;
+      if (s && e && s.includes(':') && e.includes(':')) {
+        const [sh, sm] = s.split(':').map(Number);
+        const [eh, em] = e.split(':').map(Number);
+        const diff = (eh * 60 + em) - (sh * 60 + sm);
+        if (diff > 0) totalMins += diff;
+      }
+    });
+    const el = document.getElementById('total-hours');
+    if (!el) return;
+    if (totalMins === 0) { el.textContent = '—'; return; }
+    const h = Math.floor(totalMins / 60);
+    const m = totalMins % 60;
+    el.textContent = m > 0 ? `${h} h ${m} min` : `${h} h`;
+  }
+
+  /* ── editable table helpers ── */
   function typeOptions(selected) {
     return sessionTypes.map(t =>
       `<option value="${t}"${t === selected ? ' selected' : ''}>${t}</option>`
@@ -236,16 +302,21 @@
     const notes   = tr.querySelector('[name=notes]').value;
 
     if (!isoDate || !start || !end) return;
+    if (!validateTimes(tr)) return;
     setStatus(tr, 'saving');
 
     if (id === 'new') {
-      const classID = tr.querySelector('[name=class_id]')?.value;
+      const classID  = tr.querySelector('[name=class_id]')?.value;
       if (!classID) { setStatus(tr, 'error'); return; }
-      const body = new URLSearchParams({class_id: classID,
-        session_date: isoDate, start_time: start, end_time: end,
-        session_type: type, notes});
+      const autofill = document.getElementById('autofill-cb')?.checked ? '1' : '0';
+      const body = new URLSearchParams({
+        class_id: classID, session_date: isoDate,
+        start_time: start, end_time: end, session_type: type, notes,
+        autofill, period_end: periodEnd,
+      });
       try {
-        await fetch('/admin/sessions/new', {method:'POST', body});
+        const res = await fetch('/admin/sessions/new', {method:'POST', body});
+        if (!res.ok) { setStatus(tr, 'error'); return; }
         location.reload();
       } catch { setStatus(tr, 'error'); }
       return;
@@ -253,7 +324,8 @@
 
     const body = new URLSearchParams({
       session_date: isoDate, start_time: start, end_time: end,
-      session_type: type, notes});
+      session_type: type, notes,
+    });
     try {
       const res = await fetch(`/admin/sessions/${id}`, {method:'POST', body});
       if (!res.ok) throw new Error();
@@ -265,41 +337,96 @@
 
   async function deleteRow(tr) {
     const id = tr.dataset.id;
-    if (id === 'new') { tr.remove(); return; }
+    if (id === 'new') {
+      tr.remove();
+      document.getElementById('autofill-row')?.remove();
+      updateTotals();
+      return;
+    }
     if (!confirm('Delete this session?')) return;
     setStatus(tr, 'saving');
     try {
       const res = await fetch(`/admin/sessions/${id}/delete`, {method:'POST'});
       if (!res.ok) throw new Error();
       tr.remove();
+      updateTotals();
     } catch { setStatus(tr, 'error'); }
   }
 
   function attachRowListeners(tr) {
-    tr.querySelectorAll('select.sess-input, input[type=time].sess-input')
-      .forEach(el => el.addEventListener('change', () => saveRow(tr)));
-    tr.querySelectorAll('input[type=text].sess-input')
-      .forEach(el => el.addEventListener('blur', () => saveRow(tr)));
-    /* update day label when date blurs */
-    const dateInput = tr.querySelector('[name=session_date]');
-    dateInput?.addEventListener('blur', () => {
-      const day = tr.querySelector('.sess-day');
-      if (day) day.textContent = dayName(dmyToIso(dateInput.value));
+    /* date: text input shows DD/MM/YYYY; hidden date input provides the picker */
+    const dateText   = tr.querySelector('[name=session_date]');
+    const dateNative = dateText?.closest('.date-wrap')?.querySelector('.date-native');
+    if (dateText) {
+      dateText.addEventListener('click', () => {
+        if (dateNative) {
+          const iso = dmyToIso(dateText.value);
+          if (iso) dateNative.value = iso;
+          try { dateNative.showPicker(); } catch {}
+        }
+      });
+      dateText.addEventListener('blur', () => {
+        const iso = dmyToIso(dateText.value);
+        const day = tr.querySelector('.sess-day');
+        if (day && iso) day.textContent = dayName(iso);
+        if (iso) saveRow(tr);
+      });
+    }
+    if (dateNative) {
+      dateNative.addEventListener('change', () => {
+        if (!dateNative.value) return;
+        dateText.value = isoToDmy(dateNative.value);
+        const day = tr.querySelector('.sess-day');
+        if (day) day.textContent = dayName(dateNative.value);
+        saveRow(tr);
+      });
+    }
+    /* time: text input shows HH:MM; hidden time input provides the picker */
+    ['start_time','end_time'].forEach(name => {
+      const timeText   = tr.querySelector(`[name=${name}]`);
+      const timeNative = timeText?.closest('.time-wrap')?.querySelector('.time-native');
+      if (timeText) {
+        timeText.addEventListener('click', () => {
+          if (timeNative) {
+            if (timeText.value) timeNative.value = timeText.value;
+            try { timeNative.showPicker(); } catch {}
+          }
+        });
+        timeText.addEventListener('blur', () => { validateTimes(tr); saveRow(tr); updateTotals(); });
+      }
+      if (timeNative) {
+        timeNative.addEventListener('change', () => {
+          if (!timeNative.value) return;
+          timeText.value = timeNative.value; // always HH:MM regardless of browser display
+          saveRow(tr);
+          updateTotals();
+        });
+      }
     });
+    tr.querySelector('select[name=session_type]')?.addEventListener('change', () => saveRow(tr));
+    tr.querySelector('[name=notes]')?.addEventListener('blur', () => saveRow(tr));
     tr.querySelector('.sess-delete')?.addEventListener('click', () => deleteRow(tr));
   }
 
   document.querySelectorAll('#sessions-tbody .sess-row').forEach(attachRowListeners);
+  updateTotals();
 
   document.getElementById('btn-add-row')?.addEventListener('click', () => {
+    const tbody = document.getElementById('sessions-tbody');
+    tbody.querySelector('.sess-new')?.remove();
+    document.getElementById('autofill-row')?.remove();
+
     const tr = document.createElement('tr');
     tr.className = 'sess-row sess-new';
     tr.dataset.id = 'new';
     tr.innerHTML = `
-      <td><input class="sess-input si-date" type="text" name="session_date" placeholder="DD/MM/YYYY" size="10"></td>
+      <td><div class="date-wrap">
+        <input class="sess-input si-date" type="text" name="session_date" placeholder="DD/MM/YYYY" maxlength="10">
+        <input type="date" class="date-native" tabindex="-1">
+      </div></td>
       <td class="sess-day"></td>
-      <td><input class="sess-input si-time" type="time" name="start_time"></td>
-      <td><input class="sess-input si-time" type="time" name="end_time"></td>
+      <td><div class="time-wrap"><input class="sess-input si-time" type="text" name="start_time" placeholder="HH:MM" maxlength="5"><input type="time" class="time-native" tabindex="-1"></div></td>
+      <td><div class="time-wrap"><input class="sess-input si-time" type="text" name="end_time"   placeholder="HH:MM" maxlength="5"><input type="time" class="time-native" tabindex="-1"></div></td>
       <td><select class="sess-input si-class" name="class_id">${classOptions()}</select></td>
       <td><select class="sess-input si-type" name="session_type">${typeOptions('Scheduled')}</select></td>
       <td class="sess-static"></td>
@@ -310,8 +437,21 @@
         <span class="sess-status"></span>
         <button class="btn-danger-sm sess-delete" type="button">✕</button>
       </td>`;
-    document.getElementById('sessions-tbody').appendChild(tr);
+    tbody.appendChild(tr);
     attachRowListeners(tr);
+
+    /* show autofill row only for the first session in this period */
+    if (tbody.querySelectorAll('.sess-row:not(.sess-new)').length === 0 && periodEnd) {
+      const af = document.createElement('tr');
+      af.id = 'autofill-row';
+      af.innerHTML = `<td colspan="11" class="sess-autofill-cell">
+        <label class="sess-autofill-label">
+          <input type="checkbox" id="autofill-cb" checked>
+          Autofill weekly for the rest of the period${periodEndDMY ? ' (until ' + periodEndDMY + ')' : ''}
+        </label></td>`;
+      tbody.appendChild(af);
+    }
+
     tr.querySelector('[name=session_date]').focus();
   });
 })();
