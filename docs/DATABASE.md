@@ -2,7 +2,7 @@
 
 PostgreSQL schema for a national, potentially AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.31`: its entities, relationships, business rules, and the
+describes the design of `v0.32`: its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -2572,6 +2572,7 @@ TAE and training credentials declared in a VCC (shown under Teaching Qualificati
 | `qualification_code` | `varchar(30)` | no |  |  |
 | `qualification_title` | `varchar(200)` | no |  |  |
 | `institution` | `varchar(200)` | yes |  |  |
+| `aqf_level` | `smallint` | yes |  |  |
 | `status` | `varchar(20)` | no | `'Draft'` |  |
 | `approved_at` | `date` | yes |  |  |
 | `notes` | `text` | yes |  |  |
@@ -2582,6 +2583,7 @@ TAE and training credentials declared in a VCC (shown under Teaching Qualificati
 - `PRIMARY KEY (id)`
 - `CONSTRAINT fk_vcc_pq_vcc FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
 - `CONSTRAINT chk_vcc_pq_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))`
+- `CONSTRAINT chk_vcc_pq_aqf CHECK (aqf_level BETWEEN 1 AND 10)`
 
 #### `teacher_vcc_vocational_qualifications`
 
@@ -2594,6 +2596,7 @@ Industry and AQF vocational qualifications declared in a VCC (shown under Vocati
 | `qualification_code` | `varchar(30)` | no |  |  |
 | `qualification_title` | `varchar(200)` | no |  |  |
 | `institution` | `varchar(200)` | yes |  |  |
+| `aqf_level` | `smallint` | yes |  |  |
 | `status` | `varchar(20)` | no | `'Draft'` |  |
 | `approved_at` | `date` | yes |  |  |
 | `notes` | `text` | yes |  |  |
@@ -2604,6 +2607,7 @@ Industry and AQF vocational qualifications declared in a VCC (shown under Vocati
 - `PRIMARY KEY (id)`
 - `CONSTRAINT fk_vcc_vocqual_vcc FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
 - `CONSTRAINT chk_vcc_vocqual_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))`
+- `CONSTRAINT chk_vcc_vocqual_aqf CHECK (aqf_level BETWEEN 1 AND 10)`
 
 #### `teacher_vcc_courses`
 

@@ -1,0 +1,263 @@
+{{define "admin-enrollments"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS — Course Enrollments</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/sessions.css">
+  <link rel="stylesheet" href="/static/sidebar.css">
+  <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
+  <style>
+    .enrol-filter { margin-bottom: .75rem; }
+    .enrol-filter input { padding: .3rem .5rem; border: 1px solid #ccc; border-radius: 4px; width: 22rem; }
+    .enrol-student { min-width: 14rem; }
+    .enrol-program { min-width: 10rem; }
+    .enrol-date    { width: 8.5rem; }
+    .enrol-state   { width: 4rem; }
+    .enrol-cp      { width: 4.5rem; }
+    .enrol-contract { width: 9rem; }
+    .enrol-hidden  { display: none; }
+  </style>
+</head>
+<body>
+  {{template "sidebar" .}}
+  <div class="page-wrap">
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/admin">Administration</a>
+        <h1>Course Enrollments</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+
+  <main class="sessions-main">
+
+    <div class="sess-toolbar">
+      <a class="btn-secondary" href="/admin/people">People</a>
+      <a class="btn-secondary" href="/admin/programs">Programs</a>
+      <a class="btn-secondary" href="/admin/intake-groups">Intake Groups</a>
+    </div>
+
+    <div class="enrol-filter">
+      <input type="text" id="enrol-search" placeholder="Filter by student or program…" autocomplete="off">
+    </div>
+
+    <div class="table-wrap">
+      <table class="sessions-table" id="enrol-table">
+        <thead>
+          <tr>
+            <th class="td-left enrol-student">Student</th>
+            <th class="td-left enrol-program">Program</th>
+            <th>Group</th>
+            <th>Status</th>
+            <th>Commenced</th>
+            <th>Completed</th>
+            <th title="Funding state">State</th>
+            <th title="Commencing program indicator (AVETMISS)">CP</th>
+            <th title="Training contract ID">Contract</th>
+            <th title="Client apprenticeship ID">Appr.</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="enrol-tbody">
+          {{range .Enrollments}}
+          <tr class="sess-row" data-id="{{.ID}}">
+            <td class="enrol-student">
+              <span class="enrol-name">{{.StudentName}}</span>
+              <span class="enrol-num"> ({{.StudentNumber}})</span>
+              <input type="hidden" name="student_id" value="{{.StudentID}}">
+            </td>
+            <td class="enrol-program">
+              <span>{{.ProgramCode}}</span>
+              <input type="hidden" name="program_id" value="{{.ProgramID}}">
+            </td>
+            <td>
+              <select class="sess-input" name="intake_group_id">
+                <option value="0">— none —</option>
+                {{$gid := .IntakeGroupID}}
+                {{range $.Groups}}
+                <option value="{{.ID}}"{{if eq .ID $gid}} selected{{end}}>{{.GroupCode}}</option>
+                {{end}}
+              </select>
+            </td>
+            <td>
+              <select class="sess-input" name="enrollment_status">
+                <option value="Active"{{if eq .EnrollmentStatus "Active"}} selected{{end}}>Active</option>
+                <option value="Deferred"{{if eq .EnrollmentStatus "Deferred"}} selected{{end}}>Deferred</option>
+                <option value="Suspended"{{if eq .EnrollmentStatus "Suspended"}} selected{{end}}>Suspended</option>
+                <option value="Cancelled"{{if eq .EnrollmentStatus "Cancelled"}} selected{{end}}>Cancelled</option>
+                <option value="Completed"{{if eq .EnrollmentStatus "Completed"}} selected{{end}}>Completed</option>
+              </select>
+            </td>
+            <td><input class="sess-input enrol-date" type="date" name="commencement_date" value="{{.CommencementDate}}"></td>
+            <td><input class="sess-input enrol-date" type="date" name="completion_date" value="{{.CompletionDate}}"></td>
+            <td><input class="sess-input enrol-state" type="text" name="funding_state_code" value="{{.FundingStateCode}}" maxlength="3"></td>
+            <td>
+              <select class="sess-input enrol-cp" name="commencing_program_id">
+                {{$cp := .CommencingProgramID}}
+                <option value="3"{{if eq "3" $cp}} selected{{end}}>3 – Not</option>
+                <option value="4"{{if eq "4" $cp}} selected{{end}}>4 – Re</option>
+                <option value="8"{{if eq "8" $cp}} selected{{end}}>8 – Cont</option>
+              </select>
+            </td>
+            <td><input class="sess-input enrol-contract" type="text" name="training_contract_id" value="{{.TrainingContractID}}" maxlength="20"></td>
+            <td><input class="sess-input enrol-contract" type="text" name="client_apprenticeship_id" value="{{.ClientApprenticeshipID}}" maxlength="20"></td>
+            <td class="sess-actions">
+              <span class="sess-status"></span>
+              <button class="btn-danger-sm enrol-delete" type="button" title="Delete">✕</button>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sess-add-bar">
+      <button class="btn-primary btn-sm" id="btn-add-enrol" type="button">+ Enrol Student</button>
+    </div>
+
+  </main>
+
+<script>
+(function () {
+  const students = [{{range $i,$s := .Students}}{{if $i}},{{end}}{"id":{{$s.ID}},"num":{{printf "%q" $s.StudentNumber}},"name":{{printf "%q" $s.FullName}}}{{end}}];
+  const programs = [{{range $i,$p := .Programs}}{{if $i}},{{end}}{"id":{{$p.ID}},"code":{{printf "%q" $p.ProgramCode}},"name":{{printf "%q" $p.ProgramName}}}{{end}}];
+  const groups   = [{{range $i,$g := .Groups}}{{if $i}},{{end}}{"id":{{$g.ID}},"code":{{printf "%q" $g.GroupCode}}}{{end}}];
+
+  const statusOpts = ['Active','Deferred','Suspended','Cancelled','Completed'];
+
+  function groupOptions(selected) {
+    return '<option value="0">— none —</option>' +
+      groups.map(g => `<option value="${g.id}"${g.id === selected ? ' selected' : ''}>${g.code}</option>`).join('');
+  }
+  function statusOptions(selected) {
+    return statusOpts.map(s => `<option value="${s}"${s === selected ? ' selected' : ''}>${s}</option>`).join('');
+  }
+  function cpOptions(selected) {
+    return [['3','3 – Not'],['4','4 – Re'],['8','8 – Cont']].map(([v,l]) =>
+      `<option value="${v}"${v === selected ? ' selected' : ''}>${l}</option>`).join('');
+  }
+  function studentOptions() {
+    return '<option value="">— select student —</option>' +
+      students.map(s => `<option value="${s.id}">${s.name} (${s.num})</option>`).join('');
+  }
+  function programOptions() {
+    return '<option value="">— select program —</option>' +
+      programs.map(p => `<option value="${p.id}">${p.code} — ${p.name}</option>`).join('');
+  }
+
+  function setStatus(tr, state) {
+    const el = tr.querySelector('.sess-status');
+    el.className = 'sess-status sess-status-' + state;
+    el.textContent = state === 'saving' ? '…' : state === 'saved' ? '✓' : state === 'error' ? '!' : '';
+    if (state === 'saved') setTimeout(() => { el.textContent = ''; el.className = 'sess-status'; }, 1500);
+  }
+
+  function collectFields(tr) {
+    const q = name => tr.querySelector(`[name=${name}]`)?.value ?? '';
+    return {
+      student_id:              q('student_id'),
+      program_id:              q('program_id'),
+      intake_group_id:         q('intake_group_id'),
+      enrollment_status:       q('enrollment_status'),
+      commencement_date:       q('commencement_date'),
+      completion_date:         q('completion_date'),
+      funding_state_code:      q('funding_state_code'),
+      commencing_program_id:   q('commencing_program_id'),
+      training_contract_id:    q('training_contract_id'),
+      client_apprenticeship_id:q('client_apprenticeship_id'),
+    };
+  }
+
+  function isComplete(f) {
+    return f.student_id && f.program_id && f.commencement_date;
+  }
+
+  async function saveRow(tr) {
+    const id = tr.dataset.id;
+    const f  = collectFields(tr);
+    if (!isComplete(f)) return;
+    setStatus(tr, 'saving');
+    const url  = id === 'new' ? '/admin/enrollments/new' : `/admin/enrollments/${id}`;
+    const body = new URLSearchParams(f);
+    try {
+      const res = await fetch(url, { method: 'POST', body });
+      if (!res.ok) { setStatus(tr, 'error'); return; }
+      if (id === 'new') { location.reload(); return; }
+      setStatus(tr, 'saved');
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  async function deleteRow(tr) {
+    const id = tr.dataset.id;
+    if (id === 'new') { tr.remove(); return; }
+    if (!confirm('Delete this enrollment?')) return;
+    setStatus(tr, 'saving');
+    try {
+      const res = await fetch(`/admin/enrollments/${id}/delete`, { method: 'POST' });
+      if (!res.ok) { setStatus(tr, 'error'); return; }
+      tr.remove();
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  function attachRowListeners(tr) {
+    ['commencement_date','completion_date','funding_state_code',
+     'training_contract_id','client_apprenticeship_id'].forEach(name => {
+      tr.querySelector(`[name=${name}]`)?.addEventListener('blur', () => saveRow(tr));
+    });
+    ['student_id','program_id','intake_group_id','enrollment_status','commencing_program_id'].forEach(name => {
+      tr.querySelector(`[name=${name}]`)?.addEventListener('change', () => saveRow(tr));
+    });
+    tr.querySelector('.enrol-delete')?.addEventListener('click', () => deleteRow(tr));
+  }
+
+  document.querySelectorAll('#enrol-tbody .sess-row').forEach(attachRowListeners);
+
+  document.getElementById('btn-add-enrol')?.addEventListener('click', () => {
+    const tbody = document.getElementById('enrol-tbody');
+    tbody.querySelector('.sess-new')?.remove();
+    const today = new Date().toISOString().slice(0, 10);
+    const tr = document.createElement('tr');
+    tr.className = 'sess-row sess-new';
+    tr.dataset.id = 'new';
+    tr.innerHTML = `
+      <td><select class="sess-input" name="student_id" style="min-width:14rem">${studentOptions()}</select></td>
+      <td><select class="sess-input" name="program_id" style="min-width:10rem">${programOptions()}</select></td>
+      <td><select class="sess-input" name="intake_group_id">${groupOptions(0)}</select></td>
+      <td><select class="sess-input" name="enrollment_status">${statusOptions('Active')}</select></td>
+      <td><input class="sess-input enrol-date" type="date" name="commencement_date" value="${today}"></td>
+      <td><input class="sess-input enrol-date" type="date" name="completion_date"></td>
+      <td><input class="sess-input enrol-state" type="text" name="funding_state_code" value="VIC" maxlength="3"></td>
+      <td><select class="sess-input enrol-cp" name="commencing_program_id">${cpOptions('3')}</select></td>
+      <td><input class="sess-input enrol-contract" type="text" name="training_contract_id" maxlength="20"></td>
+      <td><input class="sess-input enrol-contract" type="text" name="client_apprenticeship_id" maxlength="20"></td>
+      <td class="sess-actions">
+        <span class="sess-status"></span>
+        <button class="btn-danger-sm enrol-delete" type="button" title="Remove">✕</button>
+      </td>`;
+    tbody.appendChild(tr);
+    attachRowListeners(tr);
+    tr.querySelector('[name=student_id]').focus();
+  });
+
+  // Client-side row filter
+  document.getElementById('enrol-search')?.addEventListener('input', function () {
+    const q = this.value.toLowerCase();
+    document.querySelectorAll('#enrol-tbody .sess-row').forEach(tr => {
+      const text = tr.textContent.toLowerCase();
+      tr.style.display = text.includes(q) ? '' : 'none';
+    });
+  });
+})();
+</script>
+  </div>
+</body>
+</html>{{end}}

@@ -151,6 +151,7 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 			"templates/admin/infra-locations.html",
 			"templates/admin/infra-buildings.html",
 			"templates/admin/infra-rooms.html",
+			"templates/admin/enrollments.html",
 		),
 	)
 	return &Handler{store: st, sessions: sessions, tmpl: tmpl}
@@ -2373,11 +2374,13 @@ func (h *Handler) VCCPQUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	approvedAt := parseDateField(r.FormValue("approved_at"))
+	aqfLevel, _ := strconv.Atoi(r.FormValue("aqf_level"))
 	if err := h.store.UpdateVCCPQ(r.Context(), user.PersonID, pqID,
 		code, title,
 		strings.TrimSpace(r.FormValue("institution")),
 		status, approvedAt,
 		strings.TrimSpace(r.FormValue("notes")),
+		aqfLevel,
 	); err != nil {
 		log.Printf("UpdateVCCPQ(%d,%d): %v", user.PersonID, pqID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
@@ -2469,11 +2472,13 @@ func (h *Handler) VCCVocQualUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	approvedAt := parseDateField(r.FormValue("approved_at"))
+	aqfLevel, _ := strconv.Atoi(r.FormValue("aqf_level"))
 	if err := h.store.UpdateVCCVocQual(r.Context(), user.PersonID, vqID,
 		code, title,
 		strings.TrimSpace(r.FormValue("institution")),
 		status, approvedAt,
 		strings.TrimSpace(r.FormValue("notes")),
+		aqfLevel,
 	); err != nil {
 		log.Printf("UpdateVCCVocQual(%d,%d): %v", user.PersonID, vqID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
@@ -2988,6 +2993,117 @@ func (h *Handler) AdminRoomDelete(w http.ResponseWriter, r *http.Request) {
 	if err := h.store.DeleteRoom(r.Context(), id); err != nil {
 		log.Printf("DeleteRoom(%d): %v", id, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+// ── Course Enrollments ────────────────────────────────────────────────────────
+
+func (h *Handler) AdminEnrollments(w http.ResponseWriter, r *http.Request) {
+	enrollments, err := h.store.ListEnrollments(r.Context())
+	if err != nil {
+		log.Printf("ListEnrollments: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	students, err := h.store.ListStudentsForSelect(r.Context())
+	if err != nil {
+		log.Printf("ListStudentsForSelect: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	programs, err := h.store.ListPrograms(r.Context())
+	if err != nil {
+		log.Printf("ListPrograms: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	groups, err := h.store.ListIntakeGroups(r.Context())
+	if err != nil {
+		log.Printf("ListIntakeGroups: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	user, _ := auth.Current(r)
+	h.render(w, "admin-enrollments", map[string]any{
+		"User":        user,
+		"Enrollments": enrollments,
+		"Students":    students,
+		"Programs":    programs,
+		"Groups":      groups,
+	})
+}
+
+func (h *Handler) AdminEnrollmentCreate(w http.ResponseWriter, r *http.Request) {
+	studentID, _ := strconv.ParseInt(r.FormValue("student_id"), 10, 64)
+	programID, _ := strconv.ParseInt(r.FormValue("program_id"), 10, 64)
+	intakeGroupID, _ := strconv.ParseInt(r.FormValue("intake_group_id"), 10, 64)
+	status := r.FormValue("enrollment_status")
+	if status == "" {
+		status = "Active"
+	}
+	commencementDate := r.FormValue("commencement_date")
+	completionDate := r.FormValue("completion_date")
+	fundingStateCode := r.FormValue("funding_state_code")
+	if fundingStateCode == "" {
+		fundingStateCode = "VIC"
+	}
+	commencingProgramID := r.FormValue("commencing_program_id")
+	if commencingProgramID == "" {
+		commencingProgramID = "3"
+	}
+	if studentID == 0 || programID == 0 || commencementDate == "" {
+		http.Error(w, "missing required fields", http.StatusBadRequest)
+		return
+	}
+	if _, err := h.store.CreateEnrollment(r.Context(),
+		studentID, programID, intakeGroupID,
+		status, commencementDate, completionDate, fundingStateCode, commencingProgramID,
+	); err != nil {
+		log.Printf("CreateEnrollment: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminEnrollmentUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id == 0 {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	intakeGroupID, _ := strconv.ParseInt(r.FormValue("intake_group_id"), 10, 64)
+	if err := h.store.UpdateEnrollment(r.Context(),
+		id, intakeGroupID,
+		r.FormValue("enrollment_status"),
+		r.FormValue("commencement_date"),
+		r.FormValue("completion_date"),
+		r.FormValue("funding_state_code"),
+		r.FormValue("commencing_program_id"),
+		r.FormValue("training_contract_id"),
+		r.FormValue("client_apprenticeship_id"),
+	); err != nil {
+		log.Printf("UpdateEnrollment(%d): %v", id, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminEnrollmentDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id == 0 {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if err := h.store.DeleteEnrollment(r.Context(), id); err != nil {
+		log.Printf("DeleteEnrollment(%d): %v", id, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

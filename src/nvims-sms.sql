@@ -1,6 +1,9 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.31, 2026-06-13
+-- AVETMISS-compliant SMS schema  --  version 0.32, 2026-06-13
 -- =========================================================================
+-- Changes from v0.31:
+--   1.  teacher_vcc_professional_qualifications: added aqf_level smallint NULL.
+--   2.  teacher_vcc_vocational_qualifications: added aqf_level smallint NULL.
 -- Changes from v0.30:
 --   1.  Replaced qual_type discriminator with a dedicated
 --       teacher_vcc_vocational_qualifications table (same schema as
@@ -2532,13 +2535,15 @@ CREATE TABLE IF NOT EXISTS public.teacher_vcc_professional_qualifications (
     qualification_code   varchar(30)  NOT NULL,
     qualification_title  varchar(200) NOT NULL,
     institution          varchar(200) NULL,
+    aqf_level            smallint     NULL,
     status               varchar(20)  NOT NULL DEFAULT 'Draft',
     approved_at          date         NULL,
     notes                text         NULL,
     created_at           timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     CONSTRAINT fk_vcc_pq_vcc    FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE,
-    CONSTRAINT chk_vcc_pq_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))
+    CONSTRAINT chk_vcc_pq_status CHECK (status IN ('Draft','Pending','Approved','Rejected')),
+    CONSTRAINT chk_vcc_pq_aqf    CHECK (aqf_level BETWEEN 1 AND 10)
 );
 
 -- Industry/AQF qualifications declared in a VCC (separate from TAE teaching quals).
@@ -2548,13 +2553,15 @@ CREATE TABLE IF NOT EXISTS public.teacher_vcc_vocational_qualifications (
     qualification_code   varchar(30)  NOT NULL,
     qualification_title  varchar(200) NOT NULL,
     institution          varchar(200) NULL,
+    aqf_level            smallint     NULL,
     status               varchar(20)  NOT NULL DEFAULT 'Draft',
     approved_at          date         NULL,
     notes                text         NULL,
     created_at           timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     CONSTRAINT fk_vcc_vocqual_vcc    FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE,
-    CONSTRAINT chk_vcc_vocqual_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))
+    CONSTRAINT chk_vcc_vocqual_status CHECK (status IN ('Draft','Pending','Approved','Rejected')),
+    CONSTRAINT chk_vcc_vocqual_aqf    CHECK (aqf_level BETWEEN 1 AND 10)
 );
 
 -- Courses (qualifications) the teacher is mapped to deliver in this VCC.
@@ -2791,6 +2798,15 @@ CREATE INDEX IF NOT EXISTS idx_room_issues_status
     ON public.room_issues(room_id, status);
 
 -- =========================================================================
+-- Migration: v0.31 → v0.32  (also safe on a fresh v0.32 database)
+-- =========================================================================
+ALTER TABLE public.teacher_vcc_professional_qualifications ADD COLUMN IF NOT EXISTS aqf_level smallint NULL;
+ALTER TABLE public.teacher_vcc_vocational_qualifications   ADD COLUMN IF NOT EXISTS aqf_level smallint NULL;
+ALTER TABLE public.teacher_vcc_professional_qualifications DROP CONSTRAINT IF EXISTS chk_vcc_pq_aqf;
+ALTER TABLE public.teacher_vcc_professional_qualifications ADD CONSTRAINT chk_vcc_pq_aqf CHECK (aqf_level BETWEEN 1 AND 10);
+ALTER TABLE public.teacher_vcc_vocational_qualifications   DROP CONSTRAINT IF EXISTS chk_vcc_vocqual_aqf;
+ALTER TABLE public.teacher_vcc_vocational_qualifications   ADD CONSTRAINT chk_vcc_vocqual_aqf CHECK (aqf_level BETWEEN 1 AND 10);
+
 -- Migration: v0.30 → v0.31  (also safe on a fresh v0.31 database)
 -- =========================================================================
 -- Step 1: create the new vocational qualifications table (IF NOT EXISTS — safe on fresh DB)

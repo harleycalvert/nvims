@@ -1143,7 +1143,7 @@ func (s *Store) CreateProgram(ctx context.Context, facultyID int64, programCode,
 
 func (s *Store) ListDeliveryLocations(ctx context.Context) ([]DeliveryLocationRow, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, suburb, state_code, postcode FROM public.delivery_locations ORDER BY name
+		SELECT id, name, COALESCE(suburb,''), COALESCE(state_code,''), COALESCE(postcode,'') FROM public.delivery_locations ORDER BY name
 	`)
 	if err != nil {
 		return nil, err
@@ -2141,6 +2141,7 @@ type VCCPQ struct {
 	Code        string
 	Title       string
 	Institution string
+	AQFLevel    int // 0 = not set (NULL in DB)
 	Status      string
 	ApprovedAt  time.Time // zero means not set
 	Notes       string
@@ -2208,7 +2209,7 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 	// Teaching qualifications
 	pqRows, err := s.pool.Query(ctx, `
 		SELECT id, qualification_code, qualification_title, COALESCE(institution,''),
-		       status, approved_at, COALESCE(notes,'')
+		       COALESCE(aqf_level, 0), status, approved_at, COALESCE(notes,'')
 		FROM teacher_vcc_professional_qualifications
 		WHERE vcc_id = $1 ORDER BY id
 	`, id)
@@ -2219,7 +2220,7 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 	for pqRows.Next() {
 		var pq VCCPQ
 		var at pgtype.Date
-		if err := pqRows.Scan(&pq.ID, &pq.Code, &pq.Title, &pq.Institution, &pq.Status, &at, &pq.Notes); err != nil {
+		if err := pqRows.Scan(&pq.ID, &pq.Code, &pq.Title, &pq.Institution, &pq.AQFLevel, &pq.Status, &at, &pq.Notes); err != nil {
 			pqRows.Close()
 			return nil, err
 		}
@@ -2269,7 +2270,7 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 	// Vocational qualifications
 	vqRows, err := s.pool.Query(ctx, `
 		SELECT id, qualification_code, qualification_title, COALESCE(institution,''),
-		       status, approved_at, COALESCE(notes,'')
+		       COALESCE(aqf_level, 0), status, approved_at, COALESCE(notes,'')
 		FROM teacher_vcc_vocational_qualifications
 		WHERE vcc_id = $1 ORDER BY id
 	`, id)
@@ -2280,7 +2281,7 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 	for vqRows.Next() {
 		var vq VCCPQ
 		var at pgtype.Date
-		if err := vqRows.Scan(&vq.ID, &vq.Code, &vq.Title, &vq.Institution, &vq.Status, &at, &vq.Notes); err != nil {
+		if err := vqRows.Scan(&vq.ID, &vq.Code, &vq.Title, &vq.Institution, &vq.AQFLevel, &vq.Status, &at, &vq.Notes); err != nil {
 			vqRows.Close()
 			return nil, err
 		}
@@ -2463,8 +2464,12 @@ func (s *Store) UpdateVCCUnit(ctx context.Context, teacherID, unitID int64,
 }
 
 func (s *Store) UpdateVCCPQ(ctx context.Context, teacherID, pqID int64,
-	code, title, institution, status string, approvedAt pgtype.Date, notes string,
+	code, title, institution, status string, approvedAt pgtype.Date, notes string, aqfLevel int,
 ) error {
+	var aqf pgtype.Int2
+	if aqfLevel > 0 {
+		aqf = pgtype.Int2{Int16: int16(aqfLevel), Valid: true}
+	}
 	_, err := s.pool.Exec(ctx, `
 		UPDATE teacher_vcc_professional_qualifications
 		SET qualification_code  = $1,
@@ -2472,10 +2477,11 @@ func (s *Store) UpdateVCCPQ(ctx context.Context, teacherID, pqID int64,
 		    institution         = NULLIF($3, ''),
 		    status              = $4,
 		    approved_at         = $5,
-		    notes               = NULLIF($6, '')
+		    notes               = NULLIF($6, ''),
+		    aqf_level           = $9
 		WHERE id = $7
 		  AND vcc_id IN (SELECT id FROM teacher_vccs WHERE teacher_id = $8)
-	`, code, title, institution, status, approvedAt, notes, pqID, teacherID)
+	`, code, title, institution, status, approvedAt, notes, pqID, teacherID, aqf)
 	return err
 }
 
@@ -2506,8 +2512,12 @@ func (s *Store) CreateVCCVocQual(ctx context.Context, teacherID int64, code, tit
 }
 
 func (s *Store) UpdateVCCVocQual(ctx context.Context, teacherID, vqID int64,
-	code, title, institution, status string, approvedAt pgtype.Date, notes string,
+	code, title, institution, status string, approvedAt pgtype.Date, notes string, aqfLevel int,
 ) error {
+	var aqf pgtype.Int2
+	if aqfLevel > 0 {
+		aqf = pgtype.Int2{Int16: int16(aqfLevel), Valid: true}
+	}
 	_, err := s.pool.Exec(ctx, `
 		UPDATE teacher_vcc_vocational_qualifications
 		SET qualification_code  = $1,
@@ -2515,10 +2525,11 @@ func (s *Store) UpdateVCCVocQual(ctx context.Context, teacherID, vqID int64,
 		    institution         = NULLIF($3, ''),
 		    status              = $4,
 		    approved_at         = $5,
-		    notes               = NULLIF($6, '')
+		    notes               = NULLIF($6, ''),
+		    aqf_level           = $9
 		WHERE id = $7
 		  AND vcc_id IN (SELECT id FROM teacher_vccs WHERE teacher_id = $8)
-	`, code, title, institution, status, approvedAt, notes, vqID, teacherID)
+	`, code, title, institution, status, approvedAt, notes, vqID, teacherID, aqf)
 	return err
 }
 
@@ -2576,6 +2587,150 @@ func (s *Store) DeletePQDocument(ctx context.Context, teacherID, docID int64) er
 	_, err := s.pool.Exec(ctx, `
 		DELETE FROM teacher_documents WHERE id = $1 AND teacher_id = $2
 	`, docID, teacherID)
+	return err
+}
+
+// ── Course Enrollments ────────────────────────────────────────────────────────
+
+type StudentSelectRow struct {
+	ID            int64
+	StudentNumber string
+	FullName      string
+}
+
+type EnrollmentRow struct {
+	ID                     int64
+	StudentID              int64
+	StudentNumber          string
+	StudentName            string
+	ProgramID              int64
+	ProgramCode            string
+	ProgramName            string
+	IntakeGroupID          int64
+	IntakeGroupCode        string
+	EnrollmentStatus       string
+	CommencementDate       string
+	CompletionDate         string
+	FundingStateCode       string
+	CommencingProgramID    string
+	TrainingContractID     string
+	ClientApprenticeshipID string
+}
+
+func (s *Store) ListStudentsForSelect(ctx context.Context) ([]StudentSelectRow, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT s.id, s.student_number, p.family_name || ', ' || p.first_given_name
+		FROM public.students s
+		JOIN public.people p ON p.id = s.id
+		WHERE s.deleted_at IS NULL
+		ORDER BY p.family_name, p.first_given_name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []StudentSelectRow
+	for rows.Next() {
+		var r StudentSelectRow
+		if err := rows.Scan(&r.ID, &r.StudentNumber, &r.FullName); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ListEnrollments(ctx context.Context) ([]EnrollmentRow, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT sce.id,
+		       sce.student_id,
+		       s.student_number,
+		       p.family_name || ', ' || p.first_given_name,
+		       sce.program_id,
+		       pr.program_code,
+		       pr.program_name,
+		       COALESCE(sce.intake_group_id, 0),
+		       COALESCE(ig.group_code, ''),
+		       sce.enrollment_status,
+		       TO_CHAR(sce.commencement_date, 'YYYY-MM-DD'),
+		       COALESCE(TO_CHAR(sce.completion_date, 'YYYY-MM-DD'), ''),
+		       sce.funding_state_code,
+		       sce.commencing_program_id,
+		       COALESCE(sce.training_contract_id, ''),
+		       COALESCE(sce.client_apprenticeship_id, '')
+		FROM public.student_course_enrollments sce
+		JOIN public.students s ON s.id = sce.student_id
+		JOIN public.people p ON p.id = sce.student_id
+		JOIN public.programs pr ON pr.id = sce.program_id
+		LEFT JOIN public.intake_groups ig ON ig.id = sce.intake_group_id
+		WHERE sce.deleted_at IS NULL
+		ORDER BY p.family_name, p.first_given_name, pr.program_code
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []EnrollmentRow
+	for rows.Next() {
+		var r EnrollmentRow
+		if err := rows.Scan(
+			&r.ID, &r.StudentID, &r.StudentNumber, &r.StudentName,
+			&r.ProgramID, &r.ProgramCode, &r.ProgramName,
+			&r.IntakeGroupID, &r.IntakeGroupCode,
+			&r.EnrollmentStatus, &r.CommencementDate, &r.CompletionDate,
+			&r.FundingStateCode, &r.CommencingProgramID,
+			&r.TrainingContractID, &r.ClientApprenticeshipID,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) CreateEnrollment(ctx context.Context,
+	studentID, programID, intakeGroupID int64,
+	status, commencementDate, completionDate, fundingStateCode, commencingProgramID string,
+) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO public.student_course_enrollments
+		    (student_id, program_id, intake_group_id, enrollment_status,
+		     commencement_date, completion_date, funding_state_code, commencing_program_id)
+		VALUES ($1, $2, NULLIF($3, 0), $4, $5::date, NULLIF($6, '')::date, $7, $8)
+		RETURNING id
+	`, studentID, programID, intakeGroupID, status,
+		commencementDate, completionDate, fundingStateCode, commencingProgramID,
+	).Scan(&id)
+	return id, err
+}
+
+func (s *Store) UpdateEnrollment(ctx context.Context,
+	id, intakeGroupID int64,
+	status, commencementDate, completionDate, fundingStateCode, commencingProgramID,
+	trainingContractID, clientApprenticeshipID string,
+) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.student_course_enrollments SET
+		    intake_group_id          = NULLIF($2, 0),
+		    enrollment_status        = $3,
+		    commencement_date        = $4::date,
+		    completion_date          = NULLIF($5, '')::date,
+		    funding_state_code       = $6,
+		    commencing_program_id    = $7,
+		    training_contract_id     = NULLIF($8, ''),
+		    client_apprenticeship_id = NULLIF($9, '')
+		WHERE id = $1 AND deleted_at IS NULL
+	`, id, intakeGroupID, status, commencementDate, completionDate,
+		fundingStateCode, commencingProgramID, trainingContractID, clientApprenticeshipID,
+	)
+	return err
+}
+
+func (s *Store) DeleteEnrollment(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.student_course_enrollments SET deleted_at = NOW() WHERE id = $1
+	`, id)
 	return err
 }
 

@@ -69,6 +69,22 @@
               <input type="text" name="institution" value="{{.Institution}}" maxlength="200" class="vcc-input">
             </label>
             <label class="vcc-field vcc-field-sm">
+              <span>AQF Level</span>
+              <select name="aqf_level" class="vcc-input">
+                <option value="0"{{if eq .AQFLevel 0}} selected{{end}}>—</option>
+                <option value="1"{{if eq .AQFLevel 1}} selected{{end}}>1 — Certificate I</option>
+                <option value="2"{{if eq .AQFLevel 2}} selected{{end}}>2 — Certificate II</option>
+                <option value="3"{{if eq .AQFLevel 3}} selected{{end}}>3 — Certificate III</option>
+                <option value="4"{{if eq .AQFLevel 4}} selected{{end}}>4 — Certificate IV</option>
+                <option value="5"{{if eq .AQFLevel 5}} selected{{end}}>5 — Diploma</option>
+                <option value="6"{{if eq .AQFLevel 6}} selected{{end}}>6 — Adv. Diploma</option>
+                <option value="7"{{if eq .AQFLevel 7}} selected{{end}}>7 — Bachelor</option>
+                <option value="8"{{if eq .AQFLevel 8}} selected{{end}}>8 — Grad. Cert / Dip</option>
+                <option value="9"{{if eq .AQFLevel 9}} selected{{end}}>9 — Masters</option>
+                <option value="10"{{if eq .AQFLevel 10}} selected{{end}}>10 — Doctoral</option>
+              </select>
+            </label>
+            <label class="vcc-field vcc-field-sm">
               <span>Status</span>
               <select name="status" class="vcc-input">
                 {{$s := .Status}}
@@ -250,6 +266,7 @@
       qualification_code:  g('qualification_code').trim(),
       qualification_title: g('qualification_title').trim(),
       institution:         g('institution').trim(),
+      aqf_level:           g('aqf_level'),
       status:              g('status'),
       approved_at:         g('approved_at'),
       notes:               g('notes').trim(),
@@ -410,6 +427,22 @@
           <label class="vcc-field vcc-field-md">
             <span>Institution / RTO</span>
             <input type="text" name="institution" value="" maxlength="200" class="vcc-input">
+          </label>
+          <label class="vcc-field vcc-field-sm">
+            <span>AQF Level</span>
+            <select name="aqf_level" class="vcc-input">
+              <option value="0" selected>—</option>
+              <option value="1">1 — Certificate I</option>
+              <option value="2">2 — Certificate II</option>
+              <option value="3">3 — Certificate III</option>
+              <option value="4">4 — Certificate IV</option>
+              <option value="5">5 — Diploma</option>
+              <option value="6">6 — Adv. Diploma</option>
+              <option value="7">7 — Bachelor</option>
+              <option value="8">8 — Grad. Cert / Dip</option>
+              <option value="9">9 — Masters</option>
+              <option value="10">10 — Doctoral</option>
+            </select>
           </label>
           <label class="vcc-field vcc-field-sm">
             <span>Status</span>

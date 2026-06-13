@@ -83,12 +83,42 @@
 
     <div class="sidebar-subnav" id="subnav-admin">
       <a class="sidebar-item sidebar-subitem" href="/admin/people" data-path="/admin/people">People</a>
-      <a class="sidebar-item sidebar-subitem" href="/admin/programs" data-path="/admin/programs">Programs &amp; Classes</a>
-      <a class="sidebar-item sidebar-subitem" href="/admin/infrastructure" data-path="/admin/infra">RTO Infrastructure</a>
-      <span class="sidebar-item sidebar-subitem sidebar-disabled">System Users</span>
+      <a class="sidebar-item sidebar-subitem" href="/admin/programs" data-path="/admin/programs">Programs &amp; Delivery</a>
+      <a class="sidebar-item sidebar-subitem" href="/admin/enrollments" data-path="/admin/enrollments">Enrolments</a>
+    </div>
+
+    <a class="sidebar-item" href="/admin/infrastructure" data-path="/admin/infrastructure" data-label="Infrastructure">
+      <span class="sidebar-icon">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="1" y="9" width="5" height="6" rx="1"/>
+          <rect x="10" y="9" width="5" height="6" rx="1"/>
+          <rect x="5" y="4" width="6" height="5" rx="1"/>
+          <path d="M8 1v3M3.5 9V7a.5.5 0 01.5-.5h8a.5.5 0 01.5.5v2"/>
+        </svg>
+      </span>
+      <span class="sidebar-item-label">Infrastructure</span>
+    </a>
+
+    <div class="sidebar-subnav" id="subnav-infra">
+      <a class="sidebar-item sidebar-subitem" href="/admin/infrastructure/orgs" data-path="/admin/infrastructure/orgs">Training Organisations</a>
+      <a class="sidebar-item sidebar-subitem" href="/admin/infrastructure/locations" data-path="/admin/infrastructure/locations">Delivery Locations</a>
+      <a class="sidebar-item sidebar-subitem" href="/admin/infrastructure/buildings" data-path="/admin/infrastructure/buildings">Buildings</a>
+      <a class="sidebar-item sidebar-subitem" href="/admin/infrastructure/rooms" data-path="/admin/infrastructure/rooms">Rooms</a>
     </div>
 
     <div class="sidebar-section">System</div>
+
+    <span class="sidebar-item sidebar-disabled">
+      <span class="sidebar-icon">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="8" cy="5" r="2.5"/>
+          <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/>
+        </svg>
+      </span>
+      <span class="sidebar-item-label">System Users</span>
+    </span>
+
+    <div class="sidebar-section">Tools</div>
 
     <a class="sidebar-item" href="/backup" data-path="/backup" data-label="Database Backup">
       <span class="sidebar-icon">
