@@ -1,6 +1,17 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.25, 2026-06-12
+-- AVETMISS-compliant SMS schema  --  version 0.26, 2026-06-13
 -- =========================================================================
+-- Changes from v0.25:
+--   1.  teacher_documents: added external_url varchar(2048) NULL for linking
+--       to digital badges, eQuals transcripts, or other verification pages.
+--   2.  rooms: added is_computer_lab boolean NOT NULL DEFAULT false.
+--   3.  room_computer_lab_specs: new table — hardware profile for lab rooms
+--       (workstations, ram_gb, has_microphone, has_webcam).
+--   4.  room_lab_software: new table — software titles installed per lab room.
+--   5.  room_issues: new table — fault/maintenance issues per room with
+--       Open/Investigating/Resolved workflow.
+--   6.  person_location_preferences: new table — per-person ranked delivery
+--       location preferences; equal ranks permitted.
 -- Changes from v0.24:
 --   1.  app_users.role (single varchar) replaced by app_user_roles table.
 --       A user may hold multiple roles simultaneously (e.g. Trainer + Student).
@@ -661,6 +672,20 @@ CREATE TABLE IF NOT EXISTS public.delivery_locations (
     CONSTRAINT uq_delivery_loc_per_org UNIQUE (training_org_id, delivery_loc_id)
 );
 
+-- A person's ranked delivery location preferences. Equal ranks are allowed
+-- (e.g. two locations both ranked 2). One row per person+location pair.
+CREATE TABLE IF NOT EXISTS public.person_location_preferences (
+    id                   bigserial NOT NULL,
+    person_id            bigint    NOT NULL,
+    delivery_location_id bigint    NOT NULL,
+    preference_rank      smallint  NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uq_person_location_pref   UNIQUE (person_id, delivery_location_id),
+    CONSTRAINT fk_plp_person             FOREIGN KEY (person_id)            REFERENCES public.people(id)             ON DELETE CASCADE,
+    CONSTRAINT fk_plp_delivery_location  FOREIGN KEY (delivery_location_id) REFERENCES public.delivery_locations(id) ON DELETE CASCADE,
+    CONSTRAINT chk_plp_rank              CHECK (preference_rank >= 1)
+);
+
 CREATE TABLE IF NOT EXISTS public.buildings (
     id bigserial NOT NULL,
     delivery_location_id bigint NOT NULL,
@@ -670,15 +695,57 @@ CREATE TABLE IF NOT EXISTS public.buildings (
 );
 
 CREATE TABLE IF NOT EXISTS public.rooms (
-    id bigserial NOT NULL,
-    building_id bigint NOT NULL,
-    room_name varchar(50) NOT NULL,
-    capacity integer NOT NULL,
-    room_type varchar(30) NOT NULL DEFAULT 'Classroom',
-    is_active boolean NOT NULL DEFAULT true,
+    id              bigserial    NOT NULL,
+    building_id     bigint       NOT NULL,
+    room_name       varchar(50)  NOT NULL,
+    capacity        integer      NOT NULL,
+    room_type       varchar(30)  NOT NULL DEFAULT 'Classroom',
+    is_active       boolean      NOT NULL DEFAULT true,
+    is_computer_lab boolean      NOT NULL DEFAULT false,
     PRIMARY KEY (id),
     CONSTRAINT uq_room_per_building UNIQUE (building_id, room_name),
     CONSTRAINT chk_rooms_capacity CHECK (capacity > 0)
+);
+
+-- Hardware profile for computer lab rooms (one row per lab room).
+CREATE TABLE IF NOT EXISTS public.room_computer_lab_specs (
+    id              bigserial NOT NULL,
+    room_id         bigint    NOT NULL,
+    workstations    smallint  NULL,
+    ram_gb          smallint  NULL,
+    has_microphone  boolean   NOT NULL DEFAULT false,
+    has_webcam      boolean   NOT NULL DEFAULT false,
+    notes           text      NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uq_lab_specs_room   UNIQUE (room_id),
+    CONSTRAINT fk_lab_specs_room   FOREIGN KEY (room_id) REFERENCES public.rooms(id) ON DELETE CASCADE
+);
+
+-- Software installed in a computer lab room.
+CREATE TABLE IF NOT EXISTS public.room_lab_software (
+    id            bigserial    NOT NULL,
+    room_id       bigint       NOT NULL,
+    software_name varchar(150) NOT NULL,
+    version       varchar(50)  NULL,
+    licence_type  varchar(50)  NULL,
+    notes         text         NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_lab_software_room FOREIGN KEY (room_id) REFERENCES public.rooms(id) ON DELETE CASCADE
+);
+
+-- Issues reported for any room (faults, maintenance, AV problems, etc.).
+CREATE TABLE IF NOT EXISTS public.room_issues (
+    id          bigserial    NOT NULL,
+    room_id     bigint       NOT NULL,
+    title       varchar(200) NOT NULL,
+    description text         NULL,
+    status      varchar(20)  NOT NULL DEFAULT 'Open',
+    reported_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    resolved_at timestamp with time zone NULL,
+    notes       text         NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_room_issue_room    FOREIGN KEY (room_id) REFERENCES public.rooms(id) ON DELETE CASCADE,
+    CONSTRAINT chk_room_issue_status CHECK (status IN ('Open', 'Investigating', 'Resolved'))
 );
 
 -- =========================================================================
@@ -2657,5 +2724,17 @@ CREATE INDEX IF NOT EXISTS idx_teacher_currency_type_status
 
 CREATE INDEX IF NOT EXISTS idx_tcul_activity
     ON public.teacher_currency_unit_links(currency_activity_id);
+
+CREATE INDEX IF NOT EXISTS idx_plp_person
+    ON public.person_location_preferences(person_id);
+
+CREATE INDEX IF NOT EXISTS idx_lab_software_room
+    ON public.room_lab_software(room_id);
+
+CREATE INDEX IF NOT EXISTS idx_room_issues_room
+    ON public.room_issues(room_id);
+
+CREATE INDEX IF NOT EXISTS idx_room_issues_status
+    ON public.room_issues(room_id, status);
 
 COMMIT;

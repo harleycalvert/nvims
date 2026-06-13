@@ -2,7 +2,7 @@
 
 PostgreSQL schema for a national, potentially AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.25`: its entities, relationships, business rules, and the
+describes the design of `v0.26`: its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -35,7 +35,7 @@ mapping to the AVETMISS NAT reporting files.
   - Curriculum: [`programs`](#programs) · [`subjects`](#subjects) · [`subject_programs`](#subject_programs)
   - Intakes & cohorts: [`program_intakes`](#program_intakes) · [`intake_groups`](#intake_groups)
   - Enrolment & extensions: [`student_course_enrollments`](#student_course_enrollments) · [`client_subject_enrolments`](#client_subject_enrolments) · [`apprenticeship_details`](#apprenticeship_details) · [`traineeship_details`](#traineeship_details) · [`training_plans`](#training_plans) · [`learning_access_plans`](#learning_access_plans) · [`vet_student_loans`](#vet_student_loans) · [`he_enrolment_details`](#he_enrolment_details) · [`enrollment_credit_claims`](#enrollment_credit_claims) · [`state_funding_details`](#state_funding_details)
-  - RTO infrastructure: [`training_orgs`](#training_orgs) · [`delivery_locations`](#delivery_locations) · [`buildings`](#buildings) · [`rooms`](#rooms) · [`employers`](#employers) · [`employer_workplaces`](#employer_workplaces) · [`aasn_providers`](#aasn_providers)
+  - RTO infrastructure: [`training_orgs`](#training_orgs) · [`delivery_locations`](#delivery_locations) · [`person_location_preferences`](#person_location_preferences) · [`buildings`](#buildings) · [`rooms`](#rooms) · [`room_computer_lab_specs`](#room_computer_lab_specs) · [`room_lab_software`](#room_lab_software) · [`room_issues`](#room_issues) · [`employers`](#employers) · [`employer_workplaces`](#employer_workplaces) · [`aasn_providers`](#aasn_providers)
   - Timetabling: [`academic_periods`](#academic_periods) · [`classes`](#classes) · [`class_subjects`](#class_subjects) · [`class_enrollments`](#class_enrollments) · [`class_slots`](#class_slots) · [`class_sessions`](#class_sessions) · [`session_teachers`](#session_teachers) · [`session_attendance`](#session_attendance) · [`class_support_staff`](#class_support_staff) · [`class_exceptions`](#class_exceptions)
   - Holidays: [`holiday_rules`](#holiday_rules) · [`holiday_observances`](#holiday_observances)
   - Communications: [`message_templates`](#message_templates) · [`message_campaigns`](#message_campaigns) · [`message_deliveries`](#message_deliveries) · [`messages`](#messages) · [`message_recipients`](#message_recipients)
@@ -621,7 +621,11 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 |---|---|---|
 | `training_orgs` | The RTO (NAT00010). | → `australian_states` |
 | `delivery_locations` | Delivery/campus locations (NAT00020). | → `training_orgs`, `australian_states` |
-| `buildings`, `rooms` | Physical spaces for timetabling. | `buildings`→`delivery_locations`; `rooms`→`buildings` |
+| `person_location_preferences` | A person's ranked delivery location preferences. Equal ranks are allowed. | →&nbsp;`people`, `delivery_locations` |
+| `buildings`, `rooms` | Physical spaces for timetabling. `is_computer_lab` flags lab rooms. | `buildings`→`delivery_locations`; `rooms`→`buildings` |
+| `room_computer_lab_specs` | Hardware profile for a computer lab room (RAM, microphone, webcam, workstation count). | →&nbsp;`rooms` |
+| `room_lab_software` | Software titles installed in a computer lab room. | →&nbsp;`rooms` |
+| `room_issues` | Faults and maintenance issues reported for any room, with Open/Investigating/Resolved workflow. | →&nbsp;`rooms` |
 | `employers`, `employer_workplaces` | Apprenticeship/traineeship workplaces. | `employer_workplaces`→`employers` |
 | `aasn_providers` | Australian Apprenticeship Support Network providers. | — |
 
@@ -708,7 +712,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 
 ## Data dictionary
 
-Every table and column, generated from `v0.24`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
+Every table and column, generated from `v0.26`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
 
 ### Identity & reference
 
@@ -1582,6 +1586,27 @@ Campus or delivery site locations (AVETMISS NAT00020). Each location belongs to 
 - `CONSTRAINT uq_delivery_loc_per_org UNIQUE (training_org_id, delivery_loc_id)`
 - `CONSTRAINT fk_delivery_loc_parent FOREIGN KEY (training_org_id) REFERENCES training_orgs (id) ON DELETE CASCADE`
 
+#### `person_location_preferences`
+
+A person's ranked delivery location preferences. Each row records one location with a `preference_rank` (1 = most preferred). Equal ranks are permitted — two locations can both be rank 2. One row per person+location pair. References `people` and `delivery_locations`.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `person_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;people |
+| `delivery_location_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;delivery_locations |
+| `preference_rank` | `smallint` | no |  |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT uq_person_location_pref UNIQUE (person_id, delivery_location_id)`
+- `CONSTRAINT fk_plp_person FOREIGN KEY (person_id) REFERENCES public.people(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_plp_delivery_location FOREIGN KEY (delivery_location_id) REFERENCES public.delivery_locations(id) ON DELETE CASCADE`
+- `CONSTRAINT chk_plp_rank CHECK (preference_rank >= 1)`
+
+*Indexes:* `idx_plp_person (person_id)`
+
 #### `buildings`
 
 Physical buildings within a delivery location. Groups rooms for timetabling. References `delivery_locations`; parent of `rooms`.
@@ -1600,7 +1625,7 @@ Physical buildings within a delivery location. Groups rooms for timetabling. Ref
 
 #### `rooms`
 
-Classrooms and other spaces within a building. Each room has a capacity, type (Classroom, Lab, Workshop, etc.), and active flag. Referenced by `class_slots` and `class_sessions` for double-booking prevention via exclusion constraints.
+Classrooms and other spaces within a building. Each room has a capacity, type (Classroom, Lab, Workshop, etc.), and active flag. `is_computer_lab` marks rooms that have a computer lab hardware profile in `room_computer_lab_specs`. Referenced by `class_slots` and `class_sessions` for double-booking prevention via exclusion constraints.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1610,6 +1635,7 @@ Classrooms and other spaces within a building. Each room has a capacity, type (C
 | `capacity` | `integer` | no |  |  |
 | `room_type` | `varchar(30)` | no | `'Classroom'` |  |
 | `is_active` | `boolean` | no | `true` |  |
+| `is_computer_lab` | `boolean` | no | `false` |  |
 
 *Constraints:*
 
@@ -1617,6 +1643,69 @@ Classrooms and other spaces within a building. Each room has a capacity, type (C
 - `CONSTRAINT uq_room_per_building UNIQUE (building_id, room_name)`
 - `CONSTRAINT chk_rooms_capacity CHECK (capacity > 0)`
 - `CONSTRAINT fk_room_parent FOREIGN KEY (building_id) REFERENCES buildings (id) ON DELETE CASCADE`
+
+#### `room_computer_lab_specs`
+
+Hardware profile for a computer lab room — one row per room where `is_computer_lab = true`. Stores workstation count, per-workstation RAM, and peripheral flags. References `rooms`.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `room_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;rooms |
+| `workstations` | `smallint` | yes |  |  |
+| `ram_gb` | `smallint` | yes |  |  |
+| `has_microphone` | `boolean` | no | `false` |  |
+| `has_webcam` | `boolean` | no | `false` |  |
+| `notes` | `text` | yes |  |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT uq_lab_specs_room UNIQUE (room_id)`
+- `CONSTRAINT fk_lab_specs_room FOREIGN KEY (room_id) REFERENCES public.rooms(id) ON DELETE CASCADE`
+
+#### `room_lab_software`
+
+Software titles installed in a computer lab room. Multiple rows per room. `version` and `licence_type` are optional. References `rooms`.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `room_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;rooms |
+| `software_name` | `varchar(150)` | no |  |  |
+| `version` | `varchar(50)` | yes |  |  |
+| `licence_type` | `varchar(50)` | yes |  |  |
+| `notes` | `text` | yes |  |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_lab_software_room FOREIGN KEY (room_id) REFERENCES public.rooms(id) ON DELETE CASCADE`
+
+*Indexes:* `idx_lab_software_room (room_id)`
+
+#### `room_issues`
+
+Faults, maintenance requests, and AV/equipment problems reported for any room. Status moves through Open → Investigating → Resolved. `resolved_at` is set when status reaches Resolved. References `rooms`.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `room_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;rooms |
+| `title` | `varchar(200)` | no |  |  |
+| `description` | `text` | yes |  |  |
+| `status` | `varchar(20)` | no | `'Open'` |  |
+| `reported_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+| `resolved_at` | `timestamp with time zone` | yes |  |  |
+| `notes` | `text` | yes |  |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_room_issue_room FOREIGN KEY (room_id) REFERENCES public.rooms(id) ON DELETE CASCADE`
+- `CONSTRAINT chk_room_issue_status CHECK (status IN ('Open', 'Investigating', 'Resolved'))`
+
+*Indexes:* `idx_room_issues_room (room_id)` · `idx_room_issues_status (room_id, status)`
 
 #### `employers`
 
