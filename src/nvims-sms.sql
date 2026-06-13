@@ -1,6 +1,10 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.27, 2026-06-13
+-- AVETMISS-compliant SMS schema  --  version 0.28, 2026-06-13
 -- =========================================================================
+-- Changes from v0.27:
+--   1.  buildings: added address text NULL, suburb varchar(50) NULL,
+--       state_code varchar(3) NULL (FK → australian_states), and
+--       postcode varchar(4) NULL for buildings at distinct street addresses.
 -- Changes from v0.26:
 --   1.  delivery_locations: added latitude numeric(9,6) NULL and
 --       longitude numeric(9,6) NULL for GPS coordinates.
@@ -702,6 +706,10 @@ CREATE TABLE IF NOT EXISTS public.buildings (
     id                   bigserial    NOT NULL,
     delivery_location_id bigint       NOT NULL,
     building_name        varchar(50)  NOT NULL,
+    address              text         NULL,
+    suburb               varchar(50)  NULL,
+    state_code           varchar(3)   NULL,
+    postcode             varchar(4)   NULL,
     latitude             numeric(9,6) NULL,
     longitude            numeric(9,6) NULL,
     PRIMARY KEY (id),
@@ -1657,6 +1665,7 @@ ALTER TABLE IF EXISTS public.class_slots              ADD CONSTRAINT fk_cs_room 
 
 ALTER TABLE IF EXISTS public.delivery_locations       ADD CONSTRAINT fk_delivery_loc_parent FOREIGN KEY (training_org_id) REFERENCES public.training_orgs(id) ON DELETE CASCADE;
 ALTER TABLE IF EXISTS public.buildings                ADD CONSTRAINT fk_building_parent FOREIGN KEY (delivery_location_id) REFERENCES public.delivery_locations(id) ON DELETE CASCADE;
+ALTER TABLE IF EXISTS public.buildings                ADD CONSTRAINT fk_building_state  FOREIGN KEY (state_code) REFERENCES public.australian_states(state_code);
 ALTER TABLE IF EXISTS public.rooms                    ADD CONSTRAINT fk_room_parent    FOREIGN KEY (building_id) REFERENCES public.buildings(id) ON DELETE CASCADE;
 ALTER TABLE IF EXISTS public.learning_access_plans    ADD CONSTRAINT fk_lap_assessor   FOREIGN KEY (assessor_id) REFERENCES public.staff(id) ON DELETE RESTRICT;
 

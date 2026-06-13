@@ -30,6 +30,10 @@
           <tr>
             <th class="td-left">Location</th>
             <th class="td-left">Building Name</th>
+            <th class="td-left">Address</th>
+            <th class="td-left">Suburb</th>
+            <th>State</th>
+            <th>Postcode</th>
             <th style="width:50px"></th>
           </tr>
         </thead>
@@ -37,12 +41,22 @@
           {{range .Buildings}}
           <tr class="sess-row" data-id="{{.ID}}">
             <td>
-              <select class="sess-input" name="delivery_location_id" style="width:200px">
+              <select class="sess-input" name="delivery_location_id" style="width:180px">
                 {{$lid := .LocationID}}
                 {{range $.Locations}}<option value="{{.ID}}"{{if eq .ID $lid}} selected{{end}}>{{.Name}}</option>{{end}}
               </select>
             </td>
-            <td><input class="sess-input" type="text" name="building_name" value="{{.BuildingName}}" maxlength="50" style="width:240px"></td>
+            <td><input class="sess-input" type="text" name="building_name" value="{{.BuildingName}}" maxlength="50" style="width:160px"></td>
+            <td><input class="sess-input" type="text" name="address"       value="{{.Address}}"      maxlength="200" style="width:180px"></td>
+            <td><input class="sess-input" type="text" name="suburb"        value="{{.Suburb}}"       maxlength="50"  style="width:110px"></td>
+            <td>
+              <select class="sess-input" name="state_code" style="width:62px">
+                <option value=""></option>
+                {{$sc := .StateCode}}
+                {{range $.States}}<option value="{{.}}"{{if eq . $sc}} selected{{end}}>{{.}}</option>{{end}}
+              </select>
+            </td>
+            <td><input class="sess-input" type="text" name="postcode" value="{{.Postcode}}" maxlength="4" style="width:52px"></td>
             <td class="sess-actions">
               <span class="sess-status"></span>
               <button class="btn-danger-sm" type="button" data-delete title="Delete">✕</button>
@@ -59,7 +73,8 @@
 
 <script>
 (function () {
-  const locs = [{{range $i,$l := .Locations}}{{if $i}},{{end}}{"id":{{$l.ID}},"name":{{printf "%q" $l.Name}}}{{end}}];
+  const locs     = [{{range $i,$l := .Locations}}{{if $i}},{{end}}{"id":{{$l.ID}},"name":"{{$l.Name}}"}{{end}}];
+  const auStates = [{{range $i,$s := .States}}{{if $i}},{{end}}"{{$s}}"{{end}}];
 
   function setInd(tr, state) {
     const el = tr.querySelector('.sess-status');
@@ -71,7 +86,9 @@
   function g(tr, name) { return tr.querySelector(`[name=${name}]`)?.value?.trim() ?? ''; }
 
   function collect(tr) {
-    return { delivery_location_id: g(tr,'delivery_location_id'), building_name: g(tr,'building_name') };
+    return { delivery_location_id: g(tr,'delivery_location_id'), building_name: g(tr,'building_name'),
+             address: g(tr,'address'), suburb: g(tr,'suburb'),
+             state_code: g(tr,'state_code'), postcode: g(tr,'postcode') };
   }
   function isComplete(f) { return f.delivery_location_id && f.building_name; }
 
@@ -100,8 +117,8 @@
   }
 
   function attachListeners(tr) {
-    tr.querySelector('[name=building_name]')?.addEventListener('blur', () => saveRow(tr));
-    tr.querySelector('[name=delivery_location_id]')?.addEventListener('change', () => saveRow(tr));
+    tr.querySelectorAll('input[type=text]').forEach(el => el.addEventListener('blur', () => saveRow(tr)));
+    tr.querySelectorAll('select').forEach(el => el.addEventListener('change', () => saveRow(tr)));
     tr.querySelector('[data-delete]')?.addEventListener('click', () => deleteRow(tr));
   }
   document.querySelectorAll('#buildings-tbody .sess-row').forEach(attachListeners);
@@ -109,12 +126,17 @@
   document.getElementById('btn-add-building')?.addEventListener('click', () => {
     const tbody = document.getElementById('buildings-tbody');
     tbody.querySelector('.sess-new')?.remove();
-    const locOpts = locs.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
+    const locOpts   = locs.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
+    const stateOpts = [''].concat(auStates).map(s => `<option value="${s}">${s}</option>`).join('');
     const tr = document.createElement('tr');
     tr.className = 'sess-row sess-new'; tr.dataset.id = 'new';
     tr.innerHTML = `
-      <td><select class="sess-input" name="delivery_location_id" style="width:200px">${locOpts}</select></td>
-      <td><input class="sess-input" type="text" name="building_name" placeholder="e.g. Building A" maxlength="50" style="width:240px"></td>
+      <td><select class="sess-input" name="delivery_location_id" style="width:180px">${locOpts}</select></td>
+      <td><input class="sess-input" type="text" name="building_name" placeholder="e.g. Building A" maxlength="50"  style="width:160px"></td>
+      <td><input class="sess-input" type="text" name="address"       placeholder="Street address"   maxlength="200" style="width:180px"></td>
+      <td><input class="sess-input" type="text" name="suburb"        placeholder="Suburb"           maxlength="50"  style="width:110px"></td>
+      <td><select class="sess-input" name="state_code" style="width:62px">${stateOpts}</select></td>
+      <td><input class="sess-input" type="text" name="postcode"      placeholder="3000"             maxlength="4"   style="width:52px"></td>
       <td class="sess-actions"><span class="sess-status"></span>
         <button class="btn-danger-sm" type="button" data-delete title="Remove">✕</button></td>`;
     tbody.appendChild(tr);

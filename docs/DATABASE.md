@@ -2,7 +2,7 @@
 
 PostgreSQL schema for a national, potentially AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.27`: its entities, relationships, business rules, and the
+describes the design of `v0.28`: its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -712,7 +712,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 
 ## Data dictionary
 
-Every table and column, generated from `v0.27`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
+Every table and column, generated from `v0.28`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
 
 ### Identity & reference
 
@@ -1613,13 +1613,17 @@ A person's ranked delivery location preferences. Each row records one location w
 
 #### `buildings`
 
-Physical buildings within a delivery location. Groups rooms for timetabling. `latitude` and `longitude` allow precise pin placement (e.g. building entrance) when a campus has multiple structures. References `delivery_locations`; parent of `rooms`.
+Physical buildings within a delivery location. Groups rooms for timetabling. Address fields are optional — leave blank when the building shares its campus address — but useful when a campus spans multiple street addresses (e.g. RMIT city buildings across different blocks). `latitude` and `longitude` allow precise pin placement (e.g. building entrance) when a campus has multiple structures. References `delivery_locations`; parent of `rooms`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
 | `delivery_location_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;delivery_locations |
 | `building_name` | `varchar(50)` | no |  |  |
+| `address` | `text` | yes |  |  |
+| `suburb` | `varchar(50)` | yes |  |  |
+| `state_code` | `varchar(3)` | yes |  | FK&nbsp;&rarr;&nbsp;australian_states |
+| `postcode` | `varchar(4)` | yes |  |  |
 | `latitude` | `numeric(9,6)` | yes |  |  |
 | `longitude` | `numeric(9,6)` | yes |  |  |
 
@@ -1628,6 +1632,7 @@ Physical buildings within a delivery location. Groups rooms for timetabling. `la
 - `PRIMARY KEY (id)`
 - `CONSTRAINT uq_building_per_campus UNIQUE (delivery_location_id, building_name)`
 - `CONSTRAINT fk_building_parent FOREIGN KEY (delivery_location_id) REFERENCES delivery_locations (id) ON DELETE CASCADE`
+- `CONSTRAINT fk_building_state FOREIGN KEY (state_code) REFERENCES australian_states (state_code)`
 
 #### `rooms`
 

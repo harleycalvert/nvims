@@ -1276,6 +1276,10 @@ type BuildingRow struct {
 	LocationID   int64
 	LocationName string
 	BuildingName string
+	Address      string
+	Suburb       string
+	StateCode    string
+	Postcode     string
 }
 
 type RoomRow struct {
@@ -1619,7 +1623,9 @@ func (s *Store) DeleteDeliveryLocation(ctx context.Context, id int64) error {
 
 func (s *Store) ListBuildings(ctx context.Context) ([]BuildingRow, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT b.id, b.delivery_location_id, dl.name, b.building_name
+		SELECT b.id, b.delivery_location_id, dl.name, b.building_name,
+		       COALESCE(b.address,''), COALESCE(b.suburb,''),
+		       COALESCE(b.state_code,''), COALESCE(b.postcode,'')
 		FROM public.buildings b
 		JOIN public.delivery_locations dl ON dl.id = b.delivery_location_id
 		ORDER BY dl.name, b.building_name
@@ -1631,7 +1637,8 @@ func (s *Store) ListBuildings(ctx context.Context) ([]BuildingRow, error) {
 	var out []BuildingRow
 	for rows.Next() {
 		var r BuildingRow
-		if err := rows.Scan(&r.ID, &r.LocationID, &r.LocationName, &r.BuildingName); err != nil {
+		if err := rows.Scan(&r.ID, &r.LocationID, &r.LocationName, &r.BuildingName,
+			&r.Address, &r.Suburb, &r.StateCode, &r.Postcode); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -1639,20 +1646,24 @@ func (s *Store) ListBuildings(ctx context.Context) ([]BuildingRow, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) CreateBuilding(ctx context.Context, locationID int64, name string) (int64, error) {
+func (s *Store) CreateBuilding(ctx context.Context, locationID int64, name, address, suburb, stateCode, postcode string) (int64, error) {
 	var id int64
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO public.buildings (delivery_location_id, building_name)
-		VALUES ($1, $2)
+		INSERT INTO public.buildings (delivery_location_id, building_name, address, suburb, state_code, postcode)
+		VALUES ($1, $2, NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), NULLIF($6,''))
 		RETURNING id
-	`, locationID, name).Scan(&id)
+	`, locationID, name, address, suburb, stateCode, postcode).Scan(&id)
 	return id, err
 }
 
-func (s *Store) UpdateBuilding(ctx context.Context, id, locationID int64, name string) error {
+func (s *Store) UpdateBuilding(ctx context.Context, id, locationID int64, name, address, suburb, stateCode, postcode string) error {
 	_, err := s.pool.Exec(ctx, `
-		UPDATE public.buildings SET delivery_location_id=$2, building_name=$3 WHERE id=$1
-	`, id, locationID, name)
+		UPDATE public.buildings
+		SET delivery_location_id=$2, building_name=$3,
+		    address=NULLIF($4,''), suburb=NULLIF($5,''),
+		    state_code=NULLIF($6,''), postcode=NULLIF($7,'')
+		WHERE id=$1
+	`, id, locationID, name, address, suburb, stateCode, postcode)
 	return err
 }
 

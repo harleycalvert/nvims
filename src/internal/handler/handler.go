@@ -2449,6 +2449,7 @@ func (h *Handler) AdminInfraBuildings(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "admin-infra-buildings", map[string]any{
 		"Buildings": buildings,
 		"Locations": locations,
+		"States":    auStates,
 		"User":      user,
 	})
 }
@@ -2654,7 +2655,11 @@ func (h *Handler) AdminBuildingCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"delivery_location_id and building_name are required"}`, http.StatusBadRequest)
 		return
 	}
-	_, err := h.store.CreateBuilding(r.Context(), locationID, name)
+	address   := strings.TrimSpace(r.FormValue("address"))
+	suburb    := strings.TrimSpace(r.FormValue("suburb"))
+	stateCode := strings.TrimSpace(r.FormValue("state_code"))
+	postcode  := strings.TrimSpace(r.FormValue("postcode"))
+	_, err := h.store.CreateBuilding(r.Context(), locationID, name, address, suburb, stateCode, postcode)
 	if err != nil {
 		log.Printf("CreateBuilding: %v", err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
@@ -2680,7 +2685,11 @@ func (h *Handler) AdminBuildingUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"delivery_location_id and building_name are required"}`, http.StatusBadRequest)
 		return
 	}
-	if err := h.store.UpdateBuilding(r.Context(), id, locationID, name); err != nil {
+	address   := strings.TrimSpace(r.FormValue("address"))
+	suburb    := strings.TrimSpace(r.FormValue("suburb"))
+	stateCode := strings.TrimSpace(r.FormValue("state_code"))
+	postcode  := strings.TrimSpace(r.FormValue("postcode"))
+	if err := h.store.UpdateBuilding(r.Context(), id, locationID, name, address, suburb, stateCode, postcode); err != nil {
 		log.Printf("UpdateBuilding(%d): %v", id, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
