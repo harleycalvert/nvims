@@ -1,0 +1,192 @@
+/* ── Sidebar layout ── */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: 220px;
+  background: #1e293b;
+  color: #cbd5e1;
+  display: flex;
+  flex-direction: column;
+  z-index: 200;
+  transition: width 0.2s ease;
+  overflow: hidden;
+}
+
+html[data-sidebar="closed"] .sidebar { width: 48px; }
+
+.page-wrap {
+  margin-left: 220px;
+  transition: margin-left 0.2s ease;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+html[data-sidebar="closed"] .page-wrap { margin-left: 48px; }
+
+/* ── Brand ── */
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 14px;
+  border-bottom: 1px solid #334155;
+  text-decoration: none;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.sidebar-brand-mark {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  background: #3b82f6;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -0.5px;
+}
+.sidebar-brand-text {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f1f5f9;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+html[data-sidebar="closed"] .sidebar-brand-text { opacity: 0; }
+
+/* ── Toggle button ── */
+.sidebar-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 9px 14px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid #334155;
+  color: #94a3b8;
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+.sidebar-toggle:hover { color: #e2e8f0; background: #0f172a; }
+.sidebar-toggle-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  transition: opacity 0.15s;
+}
+html[data-sidebar="closed"] .sidebar-toggle-label { opacity: 0; }
+.sidebar-toggle-arrow {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+html[data-sidebar="closed"] .sidebar-toggle-arrow { transform: rotate(180deg); }
+
+/* ── Nav ── */
+.sidebar-nav {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px 0 12px;
+}
+.sidebar-nav::-webkit-scrollbar { width: 4px; }
+.sidebar-nav::-webkit-scrollbar-track { background: transparent; }
+.sidebar-nav::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+
+/* ── Section header ── */
+.sidebar-section {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #94a3b8;
+  padding: 10px 14px 3px;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+html[data-sidebar="closed"] .sidebar-section { opacity: 0; pointer-events: none; }
+
+/* ── Nav item ── */
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  text-decoration: none;
+  color: #cbd5e1;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background 0.1s, color 0.1s;
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  position: relative;
+}
+.sidebar-item:hover { background: #334155; color: #e2e8f0; }
+.sidebar-item.active { color: #93c5fd; background: rgba(59,130,246,0.12); }
+.sidebar-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: #3b82f6;
+}
+
+/* ── Sub-items ── */
+.sidebar-subnav { overflow: hidden; transition: max-height 0.2s ease; }
+.sidebar-item.sidebar-subitem {
+  padding: 6px 14px 6px 42px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+.sidebar-item.sidebar-subitem:hover { color: #e2e8f0; }
+.sidebar-item.sidebar-subitem.active { color: #93c5fd; }
+.sidebar-item.sidebar-disabled { opacity: 0.4; cursor: default; pointer-events: none; }
+
+html[data-sidebar="closed"] .sidebar-subnav { display: none; }
+html[data-sidebar="closed"] .sidebar-section { display: none; }
+
+/* ── Icon ── */
+.sidebar-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sidebar-icon svg { width: 16px; height: 16px; }
+.sidebar-item-label { transition: opacity 0.15s; }
+html[data-sidebar="closed"] .sidebar-item-label { opacity: 0; }
+
+/* ── Tooltip in collapsed state ── */
+html[data-sidebar="closed"] .sidebar-item { position: relative; }
+html[data-sidebar="closed"] .sidebar-item:not(.sidebar-subitem):hover::after {
+  content: attr(data-label);
+  position: fixed;
+  left: 54px;
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  border: 1px solid #334155;
+  z-index: 300;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}

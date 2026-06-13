@@ -1,0 +1,133 @@
+{{define "sidebar"}}
+<nav class="sidebar" id="nvims-sidebar">
+
+  <a class="sidebar-brand" href="/">
+    <div class="sidebar-brand-mark">N</div>
+    <span class="sidebar-brand-text">NVIMS-SMS</span>
+  </a>
+
+  <button class="sidebar-toggle" id="sidebar-toggle" type="button">
+    <span class="sidebar-toggle-label">Collapse</span>
+    <svg class="sidebar-toggle-arrow" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10 3L5 8l5 5"/>
+    </svg>
+  </button>
+
+  <div class="sidebar-nav">
+
+    <a class="sidebar-item" href="/" data-path="/" data-exact="true" data-label="Home">
+      <span class="sidebar-icon">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 7L8 2l6 5v7H10V9H6v5H2z"/>
+        </svg>
+      </span>
+      <span class="sidebar-item-label">Home</span>
+    </a>
+
+    <div class="sidebar-section">Content</div>
+
+    <a class="sidebar-item" href="/timetable" data-path="/timetable" data-label="Timetable">
+      <span class="sidebar-icon">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="3" width="12" height="11" rx="1"/>
+          <path d="M5 1v3M11 1v3M2 7h12"/>
+        </svg>
+      </span>
+      <span class="sidebar-item-label">Timetable</span>
+    </a>
+
+    <a class="sidebar-item" href="/register" data-path="/register" data-label="Attendance Register">
+      <span class="sidebar-icon">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="2" width="10" height="12" rx="1"/>
+          <path d="M6 2a1 1 0 000 2h4a1 1 0 000-2H6z"/>
+          <path d="M5 9l2 2 4-4"/>
+        </svg>
+      </span>
+      <span class="sidebar-item-label">Attendance Register</span>
+    </a>
+
+    <div class="sidebar-section">VCC</div>
+
+    <a class="sidebar-item" href="/vcc" data-path="/vcc" data-exact="true" data-label="VCC">
+      <span class="sidebar-icon">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 4L1 7.5 8 11l7-3.5z"/>
+          <path d="M4 9.5V13c0 .8 1.8 1.5 4 1.5s4-.7 4-1.5V9.5"/>
+        </svg>
+      </span>
+      <span class="sidebar-item-label">VCC Overview</span>
+    </a>
+
+    <div class="sidebar-subnav" id="subnav-vcc">
+      <a class="sidebar-item sidebar-subitem" href="/vcc/detail#teaching-quals" data-path="/vcc/detail">Teaching Qualifications</a>
+      <a class="sidebar-item sidebar-subitem" href="/vcc/vocational-evidence" data-path="/vcc/vocational-evidence">Vocational Evidence</a>
+      <a class="sidebar-item sidebar-subitem" href="/vcc/detail#programs" data-path="/vcc/detail">Programs I Teach</a>
+      <span class="sidebar-item sidebar-subitem sidebar-disabled">Industry Currency</span>
+      <span class="sidebar-item sidebar-subitem sidebar-disabled">VET Knowledge Currency</span>
+      <span class="sidebar-item sidebar-subitem sidebar-disabled">VCC History</span>
+      <span class="sidebar-item sidebar-subitem sidebar-disabled">Document Library</span>
+    </div>
+
+    <div class="sidebar-section">Administration</div>
+
+    <a class="sidebar-item" href="/admin" data-path="/admin" data-exact="true" data-label="Administration">
+      <span class="sidebar-icon">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="8" cy="8" r="2.5"/>
+          <path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.1 3.1l1.1 1.1M11.8 11.8l1.1 1.1M3.1 12.9l1.1-1.1M11.8 4.2l1.1-1.1"/>
+        </svg>
+      </span>
+      <span class="sidebar-item-label">Administration</span>
+    </a>
+
+    <div class="sidebar-subnav" id="subnav-admin">
+      <a class="sidebar-item sidebar-subitem" href="/admin/people" data-path="/admin/people">People</a>
+      <a class="sidebar-item sidebar-subitem" href="/admin/programs" data-path="/admin/programs">Programs &amp; Classes</a>
+      <a class="sidebar-item sidebar-subitem" href="/admin/infrastructure" data-path="/admin/infra">RTO Infrastructure</a>
+      <span class="sidebar-item sidebar-subitem sidebar-disabled">System Users</span>
+    </div>
+
+    <div class="sidebar-section">System</div>
+
+    <a class="sidebar-item" href="/backup" data-path="/backup" data-label="Database Backup">
+      <span class="sidebar-icon">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 2v9M5 8l3 3 3-3"/>
+          <path d="M2 13v1a1 1 0 001 1h10a1 1 0 001-1v-1"/>
+        </svg>
+      </span>
+      <span class="sidebar-item-label">Database Backup</span>
+    </a>
+
+  </div>
+</nav>
+
+<script>
+(function () {
+  const STORAGE_KEY = 'nvims-sidebar';
+  const html   = document.documentElement;
+  const toggle = document.getElementById('sidebar-toggle');
+  const label  = toggle.querySelector('.sidebar-toggle-label');
+
+  function setState(open) {
+    html.dataset.sidebar = open ? 'open' : 'closed';
+    label.textContent = open ? 'Collapse' : 'Expand';
+    localStorage.setItem(STORAGE_KEY, open ? 'open' : 'closed');
+  }
+
+  toggle.addEventListener('click', () => setState(html.dataset.sidebar !== 'open'));
+
+  // Active highlighting
+  const path = location.pathname;
+  document.querySelectorAll('.sidebar-item[data-path]').forEach(item => {
+    const p     = item.dataset.path;
+    const exact = item.dataset.exact === 'true';
+    if (exact ? path === p : path.startsWith(p)) item.classList.add('active');
+  });
+
+  // Keep label in sync with restored state (set in <head> before body)
+  if (html.dataset.sidebar !== 'open') label.textContent = 'Expand';
+})();
+</script>
+{{end}}

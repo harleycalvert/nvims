@@ -125,6 +125,7 @@ func main() {
 	mux.HandleFunc("POST /result/publish", protect(h.PublishResult))
 	mux.HandleFunc("POST /result/publish-sc", protect(h.PublishSCColumn))
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+	mux.Handle("GET /img/", http.StripPrefix("/img/", http.FileServer(http.Dir("img"))))
 
 	addr := ":8080"
 	log.Printf("listening on http://localhost%s", addr)

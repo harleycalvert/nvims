@@ -141,6 +141,7 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 			"templates/admin/intake-groups.html",
 			"templates/admin/sessions.html",
 			"templates/backup.html",
+			"templates/partials/sidebar.html",
 			"templates/vcc/menu.html",
 			"templates/vcc/vocational-evidence.html",
 			"templates/vcc/detail.html",

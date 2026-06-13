@@ -8,9 +8,10 @@ body {
 }
 
 header {
-  background: #1a4480;
-  color: #fff;
+  background: #1e293b;
+  color: #f1f5f9;
   padding: 10px 24px 8px;
+  border-bottom: 1px solid #334155;
 }
 
 .header-top {
@@ -26,13 +27,13 @@ header {
 }
 
 .header-home {
-  font-size: 11px;
-  color: rgba(255,255,255,0.65);
+  font-size: 14px;
+  color: #94a3b8;
   text-decoration: none;
   letter-spacing: 0.04em;
 }
 
-.header-home:hover { color: #fff; }
+.header-home:hover { color: #cbd5e1; }
 
 header h1 {
   font-size: 1.25rem;
@@ -49,12 +50,13 @@ header h1 {
 
 .header-fullname {
   font-size: 12px;
-  opacity: 0.85;
+  color: #94a3b8;
 }
 
 .header-role {
   font-size: 11px;
-  background: rgba(255,255,255,0.2);
+  color: #cbd5e1;
+  background: #334155;
   padding: 1px 7px;
   border-radius: 10px;
 }
@@ -62,15 +64,18 @@ header h1 {
 .btn-signout {
   padding: 4px 12px;
   background: transparent;
-  color: #fff;
-  border: 1px solid rgba(255,255,255,0.5);
+  color: #94a3b8;
+  border: 1px solid #334155;
   border-radius: 4px;
   font-size: 12px;
   cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
 }
 
 .btn-signout:hover {
-  background: rgba(255,255,255,0.15);
+  background: #334155;
+  color: #e2e8f0;
+  border-color: #475569;
 }
 
 main {

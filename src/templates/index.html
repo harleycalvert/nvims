@@ -7,8 +7,12 @@
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/register.css">
   <script src="https://unpkg.com/htmx.org@1.9.12" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="/static/sidebar.css">
+  <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
 </head>
 <body>
+  {{template "sidebar" .}}
+  <div class="page-wrap">
   <header>
     <div class="header-top">
       <div class="header-title-group">
@@ -144,6 +148,17 @@
   let _currentSID = null;
   const _cache = {};
 
+  function _randomPhoto() {
+    const n = String(Math.floor(Math.random() * 9)).padStart(2, '0');
+    const img = document.getElementById('sp-photo-img');
+    const ph  = document.getElementById('sp-no-photo');
+    img.src = '/img/' + n + '.png';
+    img.classList.remove('hidden');
+    ph.classList.add('hidden');
+  }
+
+  _randomPhoto();
+
   function _drawBar(barID, slices, legendID) {
     const bar = document.getElementById(barID);
     if (!bar) return;
@@ -264,6 +279,7 @@
     // View switch — hide panel and clear whole cache so next click re-fetches
     if (target === document.getElementById('view-panel')) {
       document.getElementById('student-panel').classList.add('hidden');
+      _randomPhoto();
       Object.keys(_cache).forEach(k => delete _cache[k]);
       return;
     }
@@ -287,5 +303,6 @@
   });
 })();
 </script>
+  </div>
 </body>
 </html>{{end}}

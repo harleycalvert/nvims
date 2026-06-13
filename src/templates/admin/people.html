@@ -6,8 +6,12 @@
   <title>NVIMS-SMS — People</title>
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/sidebar.css">
+  <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
 </head>
 <body>
+  {{template "sidebar" .}}
+  <div class="page-wrap">
   <header>
     <div class="header-top">
       <div class="header-title-group">
@@ -95,5 +99,6 @@
       }
     })();
   </script>
+  </div>
 </body>
 </html>{{end}}

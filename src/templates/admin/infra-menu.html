@@ -6,8 +6,12 @@
   <title>NVIMS-SMS — RTO Infrastructure</title>
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/menu.css">
+  <link rel="stylesheet" href="/static/sidebar.css">
+  <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
 </head>
 <body>
+  {{template "sidebar" .}}
+  <div class="page-wrap">
   <header>
     <div class="header-top">
       <div class="header-title-group">
@@ -53,5 +57,6 @@
       </a>
     </div>
   </main>
+  </div>
 </body>
 </html>{{end}}
