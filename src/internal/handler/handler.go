@@ -2399,7 +2399,7 @@ func (h *Handler) VCCPQCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"code and title required"}`, http.StatusBadRequest)
 		return
 	}
-	pq, err := h.store.CreateVCCPQ(r.Context(), user.PersonID, "Teaching", code, title,
+	pq, err := h.store.CreateVCCPQ(r.Context(), user.PersonID, code, title,
 		strings.TrimSpace(r.FormValue("institution")))
 	if err != nil {
 		log.Printf("CreateVCCPQ(%d): %v", user.PersonID, err)
@@ -2439,7 +2439,7 @@ func (h *Handler) VCCVocQualCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"code and title required"}`, http.StatusBadRequest)
 		return
 	}
-	pq, err := h.store.CreateVCCPQ(r.Context(), user.PersonID, "Vocational", code, title,
+	vq, err := h.store.CreateVCCVocQual(r.Context(), user.PersonID, code, title,
 		strings.TrimSpace(r.FormValue("institution")))
 	if err != nil {
 		log.Printf("CreateVCCVocQual(%d): %v", user.PersonID, err)
@@ -2447,7 +2447,83 @@ func (h *Handler) VCCVocQualCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"id":%d,"code":%q,"title":%q,"status":%q}`, pq.ID, pq.Code, pq.Title, pq.Status)
+	fmt.Fprintf(w, `{"id":%d,"code":%q,"title":%q,"status":%q}`, vq.ID, vq.Code, vq.Title, vq.Status)
+}
+
+func (h *Handler) VCCVocQualUpdate(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	vqID, err := strconv.ParseInt(r.PathValue("pid"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	code := strings.TrimSpace(r.FormValue("qualification_code"))
+	title := strings.TrimSpace(r.FormValue("qualification_title"))
+	status := r.FormValue("status")
+	if code == "" || title == "" || !containsStr(validVCCItemStatuses, status) {
+		http.Error(w, `{"error":"missing required fields"}`, http.StatusBadRequest)
+		return
+	}
+	approvedAt := parseDateField(r.FormValue("approved_at"))
+	if err := h.store.UpdateVCCVocQual(r.Context(), user.PersonID, vqID,
+		code, title,
+		strings.TrimSpace(r.FormValue("institution")),
+		status, approvedAt,
+		strings.TrimSpace(r.FormValue("notes")),
+	); err != nil {
+		log.Printf("UpdateVCCVocQual(%d,%d): %v", user.PersonID, vqID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) VCCVocQualAddDoc(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	vqID, err := strconv.ParseInt(r.PathValue("pid"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	title := strings.TrimSpace(r.FormValue("title"))
+	if title == "" {
+		http.Error(w, `{"error":"title required"}`, http.StatusBadRequest)
+		return
+	}
+	doc, err := h.store.CreateVocQualDocument(r.Context(), user.PersonID, vqID,
+		title, strings.TrimSpace(r.FormValue("external_url")))
+	if err != nil {
+		log.Printf("CreateVocQualDocument(%d,%d): %v", user.PersonID, vqID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"id":%d,"title":%q,"external_url":%q}`, doc.ID, doc.Title, doc.ExternalURL)
+}
+
+func (h *Handler) VCCVocQualDeleteDoc(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	docID, err := strconv.ParseInt(r.PathValue("did"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := h.store.DeletePQDocument(r.Context(), user.PersonID, docID); err != nil {
+		log.Printf("DeleteVocQualDoc(%d,%d): %v", user.PersonID, docID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
 func (h *Handler) VCCPQAddDoc(w http.ResponseWriter, r *http.Request) {

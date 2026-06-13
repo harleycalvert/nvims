@@ -1,11 +1,14 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.30, 2026-06-13
+-- AVETMISS-compliant SMS schema  --  version 0.31, 2026-06-13
 -- =========================================================================
+-- Changes from v0.30:
+--   1.  Replaced qual_type discriminator with a dedicated
+--       teacher_vcc_vocational_qualifications table (same schema as
+--       teacher_vcc_professional_qualifications, no qual_type column).
+--   2.  teacher_document_connections: added vcc_vocational_qual_id FK and
+--       updated num_nonnulls check to include it.
 -- Changes from v0.29:
---   1.  teacher_vcc_professional_qualifications: added qual_type varchar(20)
---       NOT NULL DEFAULT 'Teaching' to distinguish Teaching qualifications
---       (TAE/training) from Vocational qualifications (industry/AQF).
---       CHECK (qual_type IN ('Teaching','Vocational')).
+--   1.  teacher_vcc_professional_qualifications: added qual_type (now removed).
 -- Changes from v0.28:
 --   1.  teacher_documents: document_url and file_name made nullable to
 --       support link-only documents (title + external_url, no file upload)
@@ -2526,18 +2529,32 @@ CREATE OR REPLACE TRIGGER trg_touch_teacher_vccs
 CREATE TABLE IF NOT EXISTS public.teacher_vcc_professional_qualifications (
     id                   bigserial    NOT NULL,
     vcc_id               bigint       NOT NULL,
-    qual_type            varchar(20)  NOT NULL DEFAULT 'Teaching',
     qualification_code   varchar(30)  NOT NULL,
     qualification_title  varchar(200) NOT NULL,
     institution          varchar(200) NULL,
-    status               varchar(20)  NOT NULL DEFAULT 'Pending',
+    status               varchar(20)  NOT NULL DEFAULT 'Draft',
     approved_at          date         NULL,
     notes                text         NULL,
     created_at           timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    CONSTRAINT fk_vcc_pq_vcc       FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE,
-    CONSTRAINT chk_vcc_pq_status   CHECK (status IN ('Draft','Pending','Approved','Rejected')),
-    CONSTRAINT chk_vcc_pq_qual_type CHECK (qual_type IN ('Teaching','Vocational'))
+    CONSTRAINT fk_vcc_pq_vcc    FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE,
+    CONSTRAINT chk_vcc_pq_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))
+);
+
+-- Industry/AQF qualifications declared in a VCC (separate from TAE teaching quals).
+CREATE TABLE IF NOT EXISTS public.teacher_vcc_vocational_qualifications (
+    id                   bigserial    NOT NULL,
+    vcc_id               bigint       NOT NULL,
+    qualification_code   varchar(30)  NOT NULL,
+    qualification_title  varchar(200) NOT NULL,
+    institution          varchar(200) NULL,
+    status               varchar(20)  NOT NULL DEFAULT 'Draft',
+    approved_at          date         NULL,
+    notes                text         NULL,
+    created_at           timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_vcc_vocqual_vcc    FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE,
+    CONSTRAINT chk_vcc_vocqual_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))
 );
 
 -- Courses (qualifications) the teacher is mapped to deliver in this VCC.
@@ -2620,13 +2637,15 @@ CREATE TABLE IF NOT EXISTS public.teacher_document_connections (
     id                       bigserial NOT NULL,
     document_id              bigint    NOT NULL,
     vcc_professional_qual_id bigint    NULL,
+    vcc_vocational_qual_id   bigint    NULL,
     vcc_unit_id              bigint    NULL,
     vcc_currency_activity_id bigint    NULL,
     PRIMARY KEY (id),
-    CONSTRAINT fk_tdc_document FOREIGN KEY (document_id)              REFERENCES public.teacher_documents(id)                      ON DELETE CASCADE,
-    CONSTRAINT fk_tdc_pq       FOREIGN KEY (vcc_professional_qual_id) REFERENCES public.teacher_vcc_professional_qualifications(id) ON DELETE CASCADE,
-    CONSTRAINT fk_tdc_unit     FOREIGN KEY (vcc_unit_id)              REFERENCES public.teacher_vcc_units(id)                      ON DELETE CASCADE,
-    CONSTRAINT chk_tdc_target  CHECK (num_nonnulls(vcc_professional_qual_id, vcc_unit_id, vcc_currency_activity_id) = 1)
+    CONSTRAINT fk_tdc_document  FOREIGN KEY (document_id)              REFERENCES public.teacher_documents(id)                        ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_pq        FOREIGN KEY (vcc_professional_qual_id) REFERENCES public.teacher_vcc_professional_qualifications(id)   ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_vocqual   FOREIGN KEY (vcc_vocational_qual_id)   REFERENCES public.teacher_vcc_vocational_qualifications(id)     ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_unit      FOREIGN KEY (vcc_unit_id)              REFERENCES public.teacher_vcc_units(id)                        ON DELETE CASCADE,
+    CONSTRAINT chk_tdc_target   CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id) = 1)
 );
 
 -- =========================================================================
@@ -2772,14 +2791,61 @@ CREATE INDEX IF NOT EXISTS idx_room_issues_status
     ON public.room_issues(room_id, status);
 
 -- =========================================================================
--- Migration: v0.29 → v0.30  (run on existing databases)
+-- Migration: v0.30 → v0.31  (also safe on a fresh v0.31 database)
 -- =========================================================================
-ALTER TABLE public.teacher_vcc_professional_qualifications
-  ADD COLUMN IF NOT EXISTS qual_type varchar(20) NOT NULL DEFAULT 'Teaching';
-ALTER TABLE public.teacher_vcc_professional_qualifications
-  DROP CONSTRAINT IF EXISTS chk_vcc_pq_qual_type;
-ALTER TABLE public.teacher_vcc_professional_qualifications
-  ADD CONSTRAINT chk_vcc_pq_qual_type CHECK (qual_type IN ('Teaching','Vocational'));
+-- Step 1: create the new vocational qualifications table (IF NOT EXISTS — safe on fresh DB)
+CREATE TABLE IF NOT EXISTS public.teacher_vcc_vocational_qualifications (
+    id bigserial NOT NULL, vcc_id bigint NOT NULL,
+    qualification_code varchar(30) NOT NULL, qualification_title varchar(200) NOT NULL,
+    institution varchar(200) NULL, status varchar(20) NOT NULL DEFAULT 'Draft',
+    approved_at date NULL, notes text NULL,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_vcc_vocqual_vcc    FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE,
+    CONSTRAINT chk_vcc_vocqual_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))
+);
+-- Step 2: add new FK column to connections (IF NOT EXISTS — safe on fresh DB)
+ALTER TABLE public.teacher_document_connections
+  ADD COLUMN IF NOT EXISTS vcc_vocational_qual_id bigint NULL;
+-- Steps 3–4: data migration — only needed when upgrading from v0.30 where qual_type existed
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name   = 'teacher_vcc_professional_qualifications'
+          AND column_name  = 'qual_type'
+    ) THEN
+        INSERT INTO public.teacher_vcc_vocational_qualifications
+               (id, vcc_id, qualification_code, qualification_title, institution, status, approved_at, notes, created_at)
+        SELECT  id, vcc_id, qualification_code, qualification_title, institution, status, approved_at, notes, created_at
+        FROM public.teacher_vcc_professional_qualifications WHERE qual_type = 'Vocational';
+
+        UPDATE public.teacher_document_connections
+          SET vcc_vocational_qual_id = vcc_professional_qual_id,
+              vcc_professional_qual_id = NULL
+          WHERE vcc_professional_qual_id IN (
+            SELECT id FROM public.teacher_vcc_professional_qualifications WHERE qual_type = 'Vocational'
+          );
+
+        DELETE FROM public.teacher_vcc_professional_qualifications WHERE qual_type = 'Vocational';
+        EXECUTE 'ALTER TABLE public.teacher_vcc_professional_qualifications DROP COLUMN IF EXISTS qual_type';
+    END IF;
+END $$;
+-- Step 5: FK and check constraints — DROP IF EXISTS then ADD, so safe on both fresh and upgrade
+ALTER TABLE public.teacher_document_connections DROP CONSTRAINT IF EXISTS fk_tdc_vocqual;
+ALTER TABLE public.teacher_document_connections
+  ADD CONSTRAINT fk_tdc_vocqual FOREIGN KEY (vcc_vocational_qual_id)
+    REFERENCES public.teacher_vcc_vocational_qualifications(id) ON DELETE CASCADE;
+ALTER TABLE public.teacher_document_connections DROP CONSTRAINT IF EXISTS chk_tdc_target;
+ALTER TABLE public.teacher_document_connections
+  ADD CONSTRAINT chk_tdc_target CHECK (
+    num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id) = 1
+  );
+
+-- =========================================================================
+-- Migration: v0.29 → v0.30  (superseded by v0.31 — skip if going straight to v0.31)
+-- =========================================================================
 
 -- =========================================================================
 -- Migration: v0.28 → v0.29  (run on existing databases)

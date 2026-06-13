@@ -243,7 +243,7 @@
     acc.classList.toggle('open', !isOpen);
   });
 
-  // ── Save a vocational qual (uses same /vcc/pqs/{id} route as teaching quals) ──
+  // ── Save a vocational qual ──
   function saveVQ(acc) {
     const g = n => acc.querySelector(`[name="${n}"]`)?.value ?? '';
     const fields = {
@@ -256,7 +256,7 @@
     };
     if (!fields.qualification_code || !fields.qualification_title) return;
     const ind = acc.querySelector('.vcc-ind');
-    postSave('/vcc/pqs/' + acc.dataset.id, fields, ind);
+    postSave('/vcc/vocquals/' + acc.dataset.id, fields, ind);
   }
 
   function autoRevertToDraft(acc) {
@@ -278,7 +278,7 @@
       : `<span class="vcc-doc-name">${esc(d.title)}</span>`;
     row.innerHTML += `<button type="button" class="vcc-doc-del" title="Remove">&times;</button>`;
     row.querySelector('.vcc-doc-del').addEventListener('click', () => {
-      fetch('/vcc/pqs/' + acc.dataset.id + '/docs/' + d.id + '/delete', {method:'POST'})
+      fetch('/vcc/vocquals/' + acc.dataset.id + '/docs/' + d.id + '/delete', {method:'POST'})
         .then(r => { if (r.ok) row.remove(); });
     });
     list.appendChild(row);
@@ -298,7 +298,7 @@
     acc.querySelectorAll('.vcc-doc-del').forEach(btn => {
       const row = btn.closest('.vcc-doc-row');
       btn.addEventListener('click', () => {
-        fetch('/vcc/pqs/' + acc.dataset.id + '/docs/' + row.dataset.docId + '/delete', {method:'POST'})
+        fetch('/vcc/vocquals/' + acc.dataset.id + '/docs/' + row.dataset.docId + '/delete', {method:'POST'})
           .then(r => { if (r.ok) row.remove(); });
       });
     });
@@ -325,7 +325,7 @@
       if (!title) { errEl.textContent = 'Document name required'; return; }
       errEl.textContent = '';
       try {
-        const res = await fetch('/vcc/pqs/' + acc.dataset.id + '/docs', {
+        const res = await fetch('/vcc/vocquals/' + acc.dataset.id + '/docs', {
           method: 'POST',
           body: new URLSearchParams({title, external_url: urlInp.value.trim()}),
         });

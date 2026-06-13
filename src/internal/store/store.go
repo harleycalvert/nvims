@@ -2138,7 +2138,6 @@ type VCCDocument struct {
 
 type VCCPQ struct {
 	ID          int64
-	QualType    string // "Teaching" | "Vocational"
 	Code        string
 	Title       string
 	Institution string
@@ -2206,45 +2205,39 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 		v.ApprovedAt = approvedAt.Time
 	}
 
-	// PQs (Teaching) and VocQuals (Vocational) — same table, partitioned by qual_type
+	// Teaching qualifications
 	pqRows, err := s.pool.Query(ctx, `
-		SELECT id, qual_type, qualification_code, qualification_title, COALESCE(institution,''),
+		SELECT id, qualification_code, qualification_title, COALESCE(institution,''),
 		       status, approved_at, COALESCE(notes,'')
 		FROM teacher_vcc_professional_qualifications
-		WHERE vcc_id = $1 ORDER BY qual_type, id
+		WHERE vcc_id = $1 ORDER BY id
 	`, id)
 	if err != nil {
 		return nil, err
 	}
-	// [typeIdx, sliceIdx]: typeIdx 0=Teaching, 1=Vocational
-	pqMap := map[int64][2]int{}
+	pqMap := map[int64]int{}
 	for pqRows.Next() {
 		var pq VCCPQ
 		var at pgtype.Date
-		if err := pqRows.Scan(&pq.ID, &pq.QualType, &pq.Code, &pq.Title, &pq.Institution, &pq.Status, &at, &pq.Notes); err != nil {
+		if err := pqRows.Scan(&pq.ID, &pq.Code, &pq.Title, &pq.Institution, &pq.Status, &at, &pq.Notes); err != nil {
 			pqRows.Close()
 			return nil, err
 		}
 		if at.Valid {
 			pq.ApprovedAt = at.Time
 		}
-		if pq.QualType == "Vocational" {
-			pqMap[pq.ID] = [2]int{1, len(v.VocQuals)}
-			v.VocQuals = append(v.VocQuals, pq)
-		} else {
-			pqMap[pq.ID] = [2]int{0, len(v.PQs)}
-			v.PQs = append(v.PQs, pq)
-		}
+		pqMap[pq.ID] = len(v.PQs)
+		v.PQs = append(v.PQs, pq)
 	}
 	if err := pqRows.Err(); err != nil {
 		return nil, err
 	}
 
-	// Documents for all PQ types
-	if len(pqMap) > 0 {
-		pqIDs := make([]int64, 0, len(pqMap))
-		for id := range pqMap {
-			pqIDs = append(pqIDs, id)
+	// Teaching qual documents
+	if len(v.PQs) > 0 {
+		pqIDs := make([]int64, len(v.PQs))
+		for i, pq := range v.PQs {
+			pqIDs[i] = pq.ID
 		}
 		dRows, err := s.pool.Query(ctx, `
 			SELECT tdc.vcc_professional_qual_id, td.id, td.title, td.file_category,
@@ -2264,15 +2257,72 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 				dRows.Close()
 				return nil, err
 			}
-			if pos, ok := pqMap[pqID]; ok {
-				if pos[0] == 1 {
-					v.VocQuals[pos[1]].Documents = append(v.VocQuals[pos[1]].Documents, d)
-				} else {
-					v.PQs[pos[1]].Documents = append(v.PQs[pos[1]].Documents, d)
-				}
+			if idx, ok := pqMap[pqID]; ok {
+				v.PQs[idx].Documents = append(v.PQs[idx].Documents, d)
 			}
 		}
 		if err := dRows.Err(); err != nil {
+			return nil, err
+		}
+	}
+
+	// Vocational qualifications
+	vqRows, err := s.pool.Query(ctx, `
+		SELECT id, qualification_code, qualification_title, COALESCE(institution,''),
+		       status, approved_at, COALESCE(notes,'')
+		FROM teacher_vcc_vocational_qualifications
+		WHERE vcc_id = $1 ORDER BY id
+	`, id)
+	if err != nil {
+		return nil, err
+	}
+	vqMap := map[int64]int{}
+	for vqRows.Next() {
+		var vq VCCPQ
+		var at pgtype.Date
+		if err := vqRows.Scan(&vq.ID, &vq.Code, &vq.Title, &vq.Institution, &vq.Status, &at, &vq.Notes); err != nil {
+			vqRows.Close()
+			return nil, err
+		}
+		if at.Valid {
+			vq.ApprovedAt = at.Time
+		}
+		vqMap[vq.ID] = len(v.VocQuals)
+		v.VocQuals = append(v.VocQuals, vq)
+	}
+	if err := vqRows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Vocational qual documents
+	if len(v.VocQuals) > 0 {
+		vqIDs := make([]int64, len(v.VocQuals))
+		for i, vq := range v.VocQuals {
+			vqIDs[i] = vq.ID
+		}
+		vdRows, err := s.pool.Query(ctx, `
+			SELECT tdc.vcc_vocational_qual_id, td.id, td.title, td.file_category,
+			       COALESCE(td.year_of_document, 0), COALESCE(td.document_url, ''), COALESCE(td.external_url, '')
+			FROM teacher_document_connections tdc
+			JOIN teacher_documents td ON td.id = tdc.document_id
+			WHERE tdc.vcc_vocational_qual_id = ANY($1)
+			ORDER BY tdc.vcc_vocational_qual_id, td.id
+		`, vqIDs)
+		if err != nil {
+			return nil, err
+		}
+		for vdRows.Next() {
+			var vqID int64
+			var d VCCDocument
+			if err := vdRows.Scan(&vqID, &d.ID, &d.Title, &d.Category, &d.Year, &d.URL, &d.ExternalURL); err != nil {
+				vdRows.Close()
+				return nil, err
+			}
+			if idx, ok := vqMap[vqID]; ok {
+				v.VocQuals[idx].Documents = append(v.VocQuals[idx].Documents, d)
+			}
+		}
+		if err := vdRows.Err(); err != nil {
 			return nil, err
 		}
 	}
@@ -2429,17 +2479,72 @@ func (s *Store) UpdateVCCPQ(ctx context.Context, teacherID, pqID int64,
 	return err
 }
 
-func (s *Store) CreateVCCPQ(ctx context.Context, teacherID int64, qualType, code, title, institution string) (VCCPQ, error) {
+func (s *Store) CreateVCCPQ(ctx context.Context, teacherID int64, code, title, institution string) (VCCPQ, error) {
 	var pq VCCPQ
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO teacher_vcc_professional_qualifications
-		       (vcc_id, qual_type, qualification_code, qualification_title, institution, status)
-		SELECT id, $2, $3, $4, NULLIF($5,''), 'Draft'
+		       (vcc_id, qualification_code, qualification_title, institution, status)
+		SELECT id, $2, $3, NULLIF($4,''), 'Draft'
 		FROM teacher_vccs WHERE teacher_id = $1
 		ORDER BY calendar_year DESC, version DESC LIMIT 1
-		RETURNING id, qual_type, qualification_code, qualification_title, COALESCE(institution,''), status
-	`, teacherID, qualType, code, title, institution).Scan(&pq.ID, &pq.QualType, &pq.Code, &pq.Title, &pq.Institution, &pq.Status)
+		RETURNING id, qualification_code, qualification_title, COALESCE(institution,''), status
+	`, teacherID, code, title, institution).Scan(&pq.ID, &pq.Code, &pq.Title, &pq.Institution, &pq.Status)
 	return pq, err
+}
+
+func (s *Store) CreateVCCVocQual(ctx context.Context, teacherID int64, code, title, institution string) (VCCPQ, error) {
+	var vq VCCPQ
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO teacher_vcc_vocational_qualifications
+		       (vcc_id, qualification_code, qualification_title, institution, status)
+		SELECT id, $2, $3, NULLIF($4,''), 'Draft'
+		FROM teacher_vccs WHERE teacher_id = $1
+		ORDER BY calendar_year DESC, version DESC LIMIT 1
+		RETURNING id, qualification_code, qualification_title, COALESCE(institution,''), status
+	`, teacherID, code, title, institution).Scan(&vq.ID, &vq.Code, &vq.Title, &vq.Institution, &vq.Status)
+	return vq, err
+}
+
+func (s *Store) UpdateVCCVocQual(ctx context.Context, teacherID, vqID int64,
+	code, title, institution, status string, approvedAt pgtype.Date, notes string,
+) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE teacher_vcc_vocational_qualifications
+		SET qualification_code  = $1,
+		    qualification_title = $2,
+		    institution         = NULLIF($3, ''),
+		    status              = $4,
+		    approved_at         = $5,
+		    notes               = NULLIF($6, '')
+		WHERE id = $7
+		  AND vcc_id IN (SELECT id FROM teacher_vccs WHERE teacher_id = $8)
+	`, code, title, institution, status, approvedAt, notes, vqID, teacherID)
+	return err
+}
+
+func (s *Store) CreateVocQualDocument(ctx context.Context, teacherID, vqID int64, title, externalURL string) (VCCDocument, error) {
+	var d VCCDocument
+	d.Title = title
+	d.ExternalURL = externalURL
+	d.Category = "Other"
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO teacher_documents (teacher_id, title, file_category, external_url)
+		SELECT $1, $2, 'Other', NULLIF($3,'')
+		WHERE EXISTS (
+			SELECT 1 FROM teacher_vcc_vocational_qualifications vq
+			JOIN teacher_vccs tv ON tv.id = vq.vcc_id
+			WHERE vq.id = $4 AND tv.teacher_id = $1
+		)
+		RETURNING id
+	`, teacherID, title, externalURL, vqID).Scan(&d.ID)
+	if err != nil {
+		return VCCDocument{}, err
+	}
+	_, err = s.pool.Exec(ctx, `
+		INSERT INTO teacher_document_connections (document_id, vcc_vocational_qual_id)
+		VALUES ($1, $2)
+	`, d.ID, vqID)
+	return d, err
 }
 
 func (s *Store) CreatePQDocument(ctx context.Context, teacherID, pqID int64, title, externalURL string) (VCCDocument, error) {

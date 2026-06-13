@@ -2,7 +2,7 @@
 
 PostgreSQL schema for a national, potentially AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.30`: its entities, relationships, business rules, and the
+describes the design of `v0.31`: its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -43,7 +43,7 @@ mapping to the AVETMISS NAT reporting files.
   - Workplan: [`workplans`](#workplans) · [`workplan_approvals`](#workplan_approvals) · [`workplan_entries`](#workplan_entries)
   - Timesheet: [`pay_periods`](#pay_periods) · [`timesheets`](#timesheets) · [`timesheet_entries`](#timesheet_entries)
   - Employment services: [`student_employment_services`](#student_employment_services) · [`student_employment_registrations`](#student_employment_registrations)
-  - VCC: [`teacher_vccs`](#teacher_vccs) · [`teacher_vcc_professional_qualifications`](#teacher_vcc_professional_qualifications) · [`teacher_vcc_courses`](#teacher_vcc_courses) · [`teacher_vcc_units`](#teacher_vcc_units) · [`teacher_documents`](#teacher_documents) · [`teacher_document_connections`](#teacher_document_connections) · [`teacher_currency_activities`](#teacher_currency_activities) · [`teacher_currency_unit_links`](#teacher_currency_unit_links) · [`teacher_vcc_profiling`](#teacher_vcc_profiling)
+  - VCC: [`teacher_vccs`](#teacher_vccs) · [`teacher_vcc_professional_qualifications`](#teacher_vcc_professional_qualifications) · [`teacher_vcc_vocational_qualifications`](#teacher_vcc_vocational_qualifications) · [`teacher_vcc_courses`](#teacher_vcc_courses) · [`teacher_vcc_units`](#teacher_vcc_units) · [`teacher_documents`](#teacher_documents) · [`teacher_document_connections`](#teacher_document_connections) · [`teacher_currency_activities`](#teacher_currency_activities) · [`teacher_currency_unit_links`](#teacher_currency_unit_links) · [`teacher_vcc_profiling`](#teacher_vcc_profiling)
 - [Business rules & constraints](#business-rules--constraints)
 - [Functions & triggers](#functions--triggers)
 - [AVETMISS NAT file mapping](#avetmiss-nat-file-mapping)
@@ -699,11 +699,12 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | Table | Purpose | Key relationships |
 |---|---|---|
 | `teacher_vccs` | VCC document per teacher per year, versioned, with Draft→Submitted→Approved workflow. | → `teachers`, `app_users` (supervisor, approver) |
-| `teacher_vcc_professional_qualifications` | Teacher's own credentials (TAE, degrees, industry certs). | → `teacher_vccs` |
+| `teacher_vcc_professional_qualifications` | Teacher's TAE and training credentials declared in a VCC. | → `teacher_vccs` |
+| `teacher_vcc_vocational_qualifications` | Teacher's industry/AQF vocational qualifications declared in a VCC. | → `teacher_vccs` |
 | `teacher_vcc_courses` | Courses the teacher is mapped to deliver in a VCC; optionally linked to `programs`. | → `teacher_vccs`, `programs` |
 | `teacher_vcc_units` | Units teacher has currency for, with competency method and justification. Multiple rows per unit allowed. | → `teacher_vccs`, `teacher_vcc_courses`, `subjects` |
 | `teacher_documents` | Per-teacher document library (testamurs, transcripts, credentials, other evidence). | → `teachers` |
-| `teacher_document_connections` | Links a document to exactly one VCC entity (professional qual, unit, or currency activity). `num_nonnulls = 1` enforced. | → `teacher_documents`, `teacher_vcc_professional_qualifications`, `teacher_vcc_units`, `teacher_currency_activities` |
+| `teacher_document_connections` | Links a document to exactly one VCC entity (professional qual, vocational qual, unit, or currency activity). `num_nonnulls = 1` enforced. | → `teacher_documents`, `teacher_vcc_professional_qualifications`, `teacher_vcc_vocational_qualifications`, `teacher_vcc_units`, `teacher_currency_activities` |
 | `teacher_currency_activities` | Vocational and professional currency point records with activity detail and approval tracking. Professional-specific fields (`domain_name`, `program_type`, etc.) are nullable columns on the same table. | → `teachers` |
 | `teacher_currency_unit_links` | "Related Unit/s" M2M between currency activities and subjects. | → `teacher_currency_activities`, `subjects` |
 | `teacher_vcc_profiling` | Spider/radar-chart dimension scores (self, supervisor, business ideal) per VCC version. PK is `(vcc_id, dimension)`. | → `teacher_vccs` |
@@ -2561,17 +2562,16 @@ Annual Vocational Competency & Currency document per teacher, versioned to allow
 
 #### `teacher_vcc_professional_qualifications`
 
-Teacher's own credentials declared in a VCC. `qual_type` partitions the table into two logical categories: `'Teaching'` (TAE/training qualifications, shown under Teaching Qualifications) and `'Vocational'` (industry AQF qualifications, shown under Vocational Evidence → Vocational Qualifications). Each row has a code, title, institution, and approval status (Draft → Pending → Approved → Rejected). Linked to evidence documents via `teacher_document_connections`. References `teacher_vccs`.
+TAE and training credentials declared in a VCC (shown under Teaching Qualifications). Each row has a code, title, institution, and approval status (Draft → Pending → Approved → Rejected). Linked to evidence documents via `teacher_document_connections`. References `teacher_vccs`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
 | `vcc_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teacher_vccs |
-| `qual_type` | `varchar(20)` | no | `'Teaching'` |  |
 | `qualification_code` | `varchar(30)` | no |  |  |
 | `qualification_title` | `varchar(200)` | no |  |  |
 | `institution` | `varchar(200)` | yes |  |  |
-| `status` | `varchar(20)` | no | `'Pending'` |  |
+| `status` | `varchar(20)` | no | `'Draft'` |  |
 | `approved_at` | `date` | yes |  |  |
 | `notes` | `text` | yes |  |  |
 | `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
@@ -2581,7 +2581,28 @@ Teacher's own credentials declared in a VCC. `qual_type` partitions the table in
 - `PRIMARY KEY (id)`
 - `CONSTRAINT fk_vccpq_vcc FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
 - `CONSTRAINT chk_vccpq_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))`
-- `CONSTRAINT chk_vcc_pq_qual_type CHECK (qual_type IN ('Teaching','Vocational'))`
+
+#### `teacher_vcc_vocational_qualifications`
+
+Industry and AQF vocational qualifications declared in a VCC (shown under Vocational Evidence → Vocational Qualifications). Separate table from `teacher_vcc_professional_qualifications` to allow independent schema evolution (e.g. AQF level, industry body). Same structure. Linked to evidence documents via `teacher_document_connections`. References `teacher_vccs`.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `vcc_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teacher_vccs |
+| `qualification_code` | `varchar(30)` | no |  |  |
+| `qualification_title` | `varchar(200)` | no |  |  |
+| `institution` | `varchar(200)` | yes |  |  |
+| `status` | `varchar(20)` | no | `'Draft'` |  |
+| `approved_at` | `date` | yes |  |  |
+| `notes` | `text` | yes |  |  |
+| `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_vcc_vocqual_vcc FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
+- `CONSTRAINT chk_vcc_vocqual_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))`
 
 #### `teacher_vcc_courses`
 
@@ -2660,13 +2681,14 @@ Per-teacher document library: testamurs, transcripts, accreditations, registrati
 
 #### `teacher_document_connections`
 
-Links a teacher document to exactly one VCC entity: a professional qualification, a VCC unit, or a currency activity. The `num_nonnulls(vcc_professional_qual_id, vcc_unit_id, vcc_currency_activity_id) = 1` constraint enforces the single-target rule — one document connection always points to exactly one entity. References `teacher_documents` and the target entity.
+Links a teacher document to exactly one VCC entity: a professional qualification, a vocational qualification, a VCC unit, or a currency activity. The `num_nonnulls(...4 columns...) = 1` constraint enforces the single-target rule — one document connection always points to exactly one entity. References `teacher_documents` and the target entity.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
 | `document_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teacher_documents |
 | `vcc_professional_qual_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_vcc_professional_qualifications |
+| `vcc_vocational_qual_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_vcc_vocational_qualifications |
 | `vcc_unit_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_vcc_units |
 | `vcc_currency_activity_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_currency_activities |
 
@@ -2675,9 +2697,10 @@ Links a teacher document to exactly one VCC entity: a professional qualification
 - `PRIMARY KEY (id)`
 - `CONSTRAINT fk_tdc_document FOREIGN KEY (document_id) REFERENCES public.teacher_documents(id) ON DELETE CASCADE`
 - `CONSTRAINT fk_tdc_pq FOREIGN KEY (vcc_professional_qual_id) REFERENCES public.teacher_vcc_professional_qualifications(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_tdc_vocqual FOREIGN KEY (vcc_vocational_qual_id) REFERENCES public.teacher_vcc_vocational_qualifications(id) ON DELETE CASCADE`
 - `CONSTRAINT fk_tdc_unit FOREIGN KEY (vcc_unit_id) REFERENCES public.teacher_vcc_units(id) ON DELETE CASCADE`
 - `CONSTRAINT fk_tdc_activity FOREIGN KEY (vcc_currency_activity_id) REFERENCES public.teacher_currency_activities(id) ON DELETE CASCADE`
-- `CONSTRAINT chk_tdc_target CHECK (num_nonnulls(vcc_professional_qual_id, vcc_unit_id, vcc_currency_activity_id) = 1)`
+- `CONSTRAINT chk_tdc_target CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id) = 1)`
 
 #### `teacher_currency_activities`
 
