@@ -1245,9 +1245,49 @@ type PeriodListRow struct {
 }
 
 type TrainingOrgRow struct {
-	ID   int64
-	Code string
-	Name string
+	ID          int64
+	Code        string
+	Name        string
+	OrgType     string
+	Address     string
+	Suburb      string
+	StateCode   string
+	Postcode    string
+	ContactName string
+	Telephone   string
+	Email       string
+}
+
+type DeliveryLocationFull struct {
+	ID            int64
+	TrainingOrgID int64
+	OrgName       string
+	LocID         string
+	Name          string
+	IsVirtual     bool
+	Address       string
+	Suburb        string
+	StateCode     string
+	Postcode      string
+}
+
+type BuildingRow struct {
+	ID           int64
+	LocationID   int64
+	LocationName string
+	BuildingName string
+}
+
+type RoomRow struct {
+	ID            int64
+	BuildingID    int64
+	BuildingName  string
+	LocationName  string
+	RoomName      string
+	Capacity      int
+	RoomType      string
+	IsActive      bool
+	IsComputerLab bool
 }
 
 type ProgramIntakeRow struct {
@@ -1459,7 +1499,9 @@ func (s *Store) DeletePeriod(ctx context.Context, id int64) error {
 
 func (s *Store) ListTrainingOrgs(ctx context.Context) ([]TrainingOrgRow, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, training_org_id, training_org_name
+		SELECT id, training_org_id, training_org_name, training_org_type,
+		       address_first_line, suburb, state_code, postcode,
+		       COALESCE(contact_name,''), COALESCE(telephone,''), COALESCE(email,'')
 		FROM public.training_orgs
 		ORDER BY training_org_name
 	`)
@@ -1470,7 +1512,9 @@ func (s *Store) ListTrainingOrgs(ctx context.Context) ([]TrainingOrgRow, error) 
 	var out []TrainingOrgRow
 	for rows.Next() {
 		var r TrainingOrgRow
-		if err := rows.Scan(&r.ID, &r.Code, &r.Name); err != nil {
+		if err := rows.Scan(&r.ID, &r.Code, &r.Name, &r.OrgType,
+			&r.Address, &r.Suburb, &r.StateCode, &r.Postcode,
+			&r.ContactName, &r.Telephone, &r.Email); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -1478,14 +1522,216 @@ func (s *Store) ListTrainingOrgs(ctx context.Context) ([]TrainingOrgRow, error) 
 	return out, rows.Err()
 }
 
-func (s *Store) CreateDeliveryLocation(ctx context.Context, trainingOrgID int64, locID, name, address, suburb, stateCode, postcode, postcodeOverride string) (int64, error) {
+func (s *Store) CreateTrainingOrg(ctx context.Context, code, name, orgType, address, suburb, stateCode, postcode, contactName, telephone, email string) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO public.training_orgs
+		    (training_org_id, training_org_name, training_org_type,
+		     address_first_line, suburb, state_code, postcode,
+		     contact_name, telephone, email)
+		VALUES ($1, $2, $3, $4, $5, $6, $7,
+		        NULLIF($8,''), NULLIF($9,''), NULLIF($10,''))
+		RETURNING id
+	`, code, name, orgType, address, suburb, stateCode, postcode,
+		contactName, telephone, email).Scan(&id)
+	return id, err
+}
+
+func (s *Store) UpdateTrainingOrg(ctx context.Context, id int64, code, name, orgType, address, suburb, stateCode, postcode, contactName, telephone, email string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.training_orgs SET
+		    training_org_id   = $2,
+		    training_org_name = $3,
+		    training_org_type = $4,
+		    address_first_line= $5,
+		    suburb            = $6,
+		    state_code        = $7,
+		    postcode          = $8,
+		    contact_name      = NULLIF($9,''),
+		    telephone         = NULLIF($10,''),
+		    email             = NULLIF($11,'')
+		WHERE id = $1
+	`, id, code, name, orgType, address, suburb, stateCode, postcode,
+		contactName, telephone, email)
+	return err
+}
+
+func (s *Store) DeleteTrainingOrg(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM public.training_orgs WHERE id=$1`, id)
+	return err
+}
+
+func (s *Store) ListDeliveryLocationsFull(ctx context.Context) ([]DeliveryLocationFull, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT dl.id, dl.training_org_id, t.training_org_name,
+		       dl.delivery_loc_id, dl.name,
+		       COALESCE(dl.is_virtual, false),
+		       COALESCE(dl.address,''), COALESCE(dl.suburb,''),
+		       COALESCE(dl.state_code,''), COALESCE(dl.postcode,'')
+		FROM public.delivery_locations dl
+		JOIN public.training_orgs t ON t.id = dl.training_org_id
+		ORDER BY t.training_org_name, dl.name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DeliveryLocationFull
+	for rows.Next() {
+		var r DeliveryLocationFull
+		if err := rows.Scan(&r.ID, &r.TrainingOrgID, &r.OrgName,
+			&r.LocID, &r.Name, &r.IsVirtual,
+			&r.Address, &r.Suburb, &r.StateCode, &r.Postcode); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) UpdateDeliveryLocation(ctx context.Context, id, trainingOrgID int64, locID, name string, isVirtual bool, address, suburb, stateCode, postcode string) error {
+	var addrVal, suburbVal, stateVal, postcodeVal any
+	if isVirtual {
+		addrVal, suburbVal, stateVal, postcodeVal = nil, nil, nil, nil
+	} else {
+		addrVal, suburbVal, stateVal, postcodeVal = address, suburb, stateCode, postcode
+	}
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.delivery_locations SET
+		    training_org_id  = $2,
+		    delivery_loc_id  = $3,
+		    name             = $4,
+		    is_virtual       = $5,
+		    address          = $6,
+		    suburb           = $7,
+		    state_code       = $8,
+		    postcode         = $9
+		WHERE id = $1
+	`, id, trainingOrgID, locID, name, isVirtual,
+		addrVal, suburbVal, stateVal, postcodeVal)
+	return err
+}
+
+func (s *Store) DeleteDeliveryLocation(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM public.delivery_locations WHERE id=$1`, id)
+	return err
+}
+
+func (s *Store) ListBuildings(ctx context.Context) ([]BuildingRow, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT b.id, b.delivery_location_id, dl.name, b.building_name
+		FROM public.buildings b
+		JOIN public.delivery_locations dl ON dl.id = b.delivery_location_id
+		ORDER BY dl.name, b.building_name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []BuildingRow
+	for rows.Next() {
+		var r BuildingRow
+		if err := rows.Scan(&r.ID, &r.LocationID, &r.LocationName, &r.BuildingName); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) CreateBuilding(ctx context.Context, locationID int64, name string) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO public.buildings (delivery_location_id, building_name)
+		VALUES ($1, $2)
+		RETURNING id
+	`, locationID, name).Scan(&id)
+	return id, err
+}
+
+func (s *Store) UpdateBuilding(ctx context.Context, id, locationID int64, name string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.buildings SET delivery_location_id=$2, building_name=$3 WHERE id=$1
+	`, id, locationID, name)
+	return err
+}
+
+func (s *Store) DeleteBuilding(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM public.buildings WHERE id=$1`, id)
+	return err
+}
+
+func (s *Store) ListRooms(ctx context.Context) ([]RoomRow, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT r.id, r.building_id, b.building_name, dl.name,
+		       r.room_name, r.capacity,
+		       COALESCE(r.room_type,'Classroom'),
+		       COALESCE(r.is_active, true),
+		       COALESCE(r.is_computer_lab, false)
+		FROM public.rooms r
+		JOIN public.buildings b ON b.id = r.building_id
+		JOIN public.delivery_locations dl ON dl.id = b.delivery_location_id
+		ORDER BY dl.name, b.building_name, r.room_name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RoomRow
+	for rows.Next() {
+		var r RoomRow
+		if err := rows.Scan(&r.ID, &r.BuildingID, &r.BuildingName, &r.LocationName,
+			&r.RoomName, &r.Capacity, &r.RoomType, &r.IsActive, &r.IsComputerLab); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) CreateRoom(ctx context.Context, buildingID int64, name, roomType string, capacity int, isActive, isComputerLab bool) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO public.rooms (building_id, room_name, room_type, capacity, is_active, is_computer_lab)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id
+	`, buildingID, name, roomType, capacity, isActive, isComputerLab).Scan(&id)
+	return id, err
+}
+
+func (s *Store) UpdateRoom(ctx context.Context, id, buildingID int64, name, roomType string, capacity int, isActive, isComputerLab bool) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.rooms SET
+		    building_id    = $2,
+		    room_name      = $3,
+		    room_type      = $4,
+		    capacity       = $5,
+		    is_active      = $6,
+		    is_computer_lab= $7
+		WHERE id = $1
+	`, id, buildingID, name, roomType, capacity, isActive, isComputerLab)
+	return err
+}
+
+func (s *Store) DeleteRoom(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM public.rooms WHERE id=$1`, id)
+	return err
+}
+
+func (s *Store) CreateDeliveryLocation(ctx context.Context, trainingOrgID int64, locID, name string, isVirtual bool, address, suburb, stateCode, postcode string) (int64, error) {
+	var addrVal, suburbVal, stateVal, postcodeVal any
+	if isVirtual {
+		addrVal, suburbVal, stateVal, postcodeVal = nil, nil, nil, nil
+	} else {
+		addrVal, suburbVal, stateVal, postcodeVal = address, suburb, stateCode, postcode
+	}
 	var id int64
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO public.delivery_locations
-		    (training_org_id, delivery_loc_id, name, address, suburb, state_code, postcode, postcode_override)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8,''))
+		    (training_org_id, delivery_loc_id, name, is_virtual, address, suburb, state_code, postcode)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id
-	`, trainingOrgID, locID, name, address, suburb, stateCode, postcode, postcodeOverride).Scan(&id)
+	`, trainingOrgID, locID, name, isVirtual, addrVal, suburbVal, stateVal, postcodeVal).Scan(&id)
 	return id, err
 }
 

@@ -1,6 +1,11 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.26, 2026-06-13
+-- AVETMISS-compliant SMS schema  --  version 0.27, 2026-06-13
 -- =========================================================================
+-- Changes from v0.26:
+--   1.  delivery_locations: added latitude numeric(9,6) NULL and
+--       longitude numeric(9,6) NULL for GPS coordinates.
+--   2.  buildings: added latitude numeric(9,6) NULL and
+--       longitude numeric(9,6) NULL for GPS coordinates.
 -- Changes from v0.25:
 --   1.  teacher_documents: added external_url varchar(2048) NULL for linking
 --       to digital badges, eQuals transcripts, or other verification pages.
@@ -657,19 +662,26 @@ CREATE TABLE IF NOT EXISTS public.training_orgs (
 );
 
 CREATE TABLE IF NOT EXISTS public.delivery_locations (
-    id bigserial NOT NULL,
-    training_org_id bigint NOT NULL,
-    delivery_loc_id varchar(30) NOT NULL,
-    name varchar(100) NOT NULL,
-    address text NOT NULL,
-    suburb varchar(50) NOT NULL,
-    state_code varchar(3) NOT NULL,
-    postcode varchar(4) NOT NULL,
+    id              bigserial    NOT NULL,
+    training_org_id bigint       NOT NULL,
+    delivery_loc_id varchar(30)  NOT NULL,
+    name            varchar(100) NOT NULL,
+    is_virtual      boolean      NOT NULL DEFAULT false,
+    address         text         NULL,
+    suburb          varchar(50)  NULL,
+    state_code      varchar(3)   NULL,
+    postcode        varchar(4)   NULL,
     postcode_override varchar(4) NULL,
-    country_id varchar(4) NOT NULL DEFAULT '1101',
+    country_id      varchar(4)   NOT NULL DEFAULT '1101',
+    latitude        numeric(9,6) NULL,
+    longitude       numeric(9,6) NULL,
     PRIMARY KEY (id),
-    CONSTRAINT fk_loc_state FOREIGN KEY (state_code) REFERENCES public.australian_states(state_code),
-    CONSTRAINT uq_delivery_loc_per_org UNIQUE (training_org_id, delivery_loc_id)
+    CONSTRAINT fk_loc_state          FOREIGN KEY (state_code) REFERENCES public.australian_states(state_code),
+    CONSTRAINT uq_delivery_loc_per_org UNIQUE (training_org_id, delivery_loc_id),
+    CONSTRAINT chk_loc_physical_fields CHECK (
+        is_virtual = true OR
+        (address IS NOT NULL AND suburb IS NOT NULL AND state_code IS NOT NULL AND postcode IS NOT NULL)
+    )
 );
 
 -- A person's ranked delivery location preferences. Equal ranks are allowed
@@ -687,9 +699,11 @@ CREATE TABLE IF NOT EXISTS public.person_location_preferences (
 );
 
 CREATE TABLE IF NOT EXISTS public.buildings (
-    id bigserial NOT NULL,
-    delivery_location_id bigint NOT NULL,
-    building_name varchar(50) NOT NULL,
+    id                   bigserial    NOT NULL,
+    delivery_location_id bigint       NOT NULL,
+    building_name        varchar(50)  NOT NULL,
+    latitude             numeric(9,6) NULL,
+    longitude            numeric(9,6) NULL,
     PRIMARY KEY (id),
     CONSTRAINT uq_building_per_campus UNIQUE (delivery_location_id, building_name)
 );

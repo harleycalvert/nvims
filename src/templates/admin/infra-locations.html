@@ -1,0 +1,162 @@
+{{define "admin-infra-locations"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS-SMS — Delivery Locations</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/sessions.css">
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/admin/infrastructure">RTO Infrastructure</a>
+        <h1>Delivery Locations</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+
+  <main class="sessions-main">
+    <div class="table-wrap">
+      <table class="sessions-table">
+        <thead>
+          <tr>
+            <th>Org</th>
+            <th class="td-left">Loc ID</th>
+            <th class="td-left">Name</th>
+            <th title="Virtual location (Online, Workplace, etc.)">Virtual</th>
+            <th class="td-left">Address</th>
+            <th class="td-left">Suburb</th>
+            <th>State</th>
+            <th>Postcode</th>
+            <th style="width:50px"></th>
+          </tr>
+        </thead>
+        <tbody id="locs-tbody">
+          {{range .Locations}}
+          <tr class="sess-row" data-id="{{.ID}}">
+            <td>
+              <select class="sess-input" name="training_org_id" style="width:100px">
+                {{$oid := .TrainingOrgID}}
+                {{range $.Orgs}}<option value="{{.ID}}"{{if eq .ID $oid}} selected{{end}}>{{.Code}}</option>{{end}}
+              </select>
+            </td>
+            <td><input class="sess-input" type="text" name="delivery_loc_id" value="{{.LocID}}"  maxlength="30"  style="width:100px;font-family:monospace"></td>
+            <td><input class="sess-input" type="text" name="name"            value="{{.Name}}"   maxlength="100" style="width:200px"></td>
+            <td style="text-align:center"><input type="checkbox" name="is_virtual"{{if .IsVirtual}} checked{{end}}></td>
+            <td><input class="sess-input" type="text" name="address"         value="{{.Address}}" maxlength="200" style="width:180px"></td>
+            <td><input class="sess-input" type="text" name="suburb"          value="{{.Suburb}}"  maxlength="50"  style="width:110px"></td>
+            <td>
+              <select class="sess-input" name="state_code" style="width:62px">
+                <option value=""></option>
+                {{$sc := .StateCode}}
+                {{range $.States}}<option value="{{.}}"{{if eq . $sc}} selected{{end}}>{{.}}</option>{{end}}
+              </select>
+            </td>
+            <td><input class="sess-input" type="text" name="postcode" value="{{.Postcode}}" maxlength="4" style="width:52px"></td>
+            <td class="sess-actions">
+              <span class="sess-status"></span>
+              <button class="btn-danger-sm" type="button" data-delete title="Delete">✕</button>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    <div class="sess-add-bar">
+      <button class="btn-primary btn-sm" id="btn-add-loc" type="button">+ Add Location</button>
+    </div>
+  </main>
+
+<script>
+(function () {
+  const auStates = [{{range $i,$s := .States}}{{if $i}},{{end}}"{{$s}}"{{end}}];
+  const orgs     = [{{range $i,$o := .Orgs}}{{if $i}},{{end}}{"id":{{$o.ID}},"code":{{printf "%q" $o.Code}}}{{end}}];
+
+  function setInd(tr, state) {
+    const el = tr.querySelector('.sess-status');
+    el.className = 'sess-status' + (state ? ' sess-status-' + state : '');
+    el.textContent = state === 'saving' ? '…' : state === 'saved' ? '✓' : state === 'error' ? '!' : '';
+    if (state === 'saved') setTimeout(() => { el.textContent = ''; el.className = 'sess-status'; }, 1500);
+  }
+
+  function g(tr, name) { return tr.querySelector(`[name=${name}]`)?.value?.trim() ?? ''; }
+  function cb(tr, name) { return tr.querySelector(`[name=${name}]`)?.checked ? '1' : '0'; }
+
+  function collect(tr) {
+    return { training_org_id: g(tr,'training_org_id'), delivery_loc_id: g(tr,'delivery_loc_id'),
+             name: g(tr,'name'), is_virtual: cb(tr,'is_virtual'),
+             address: g(tr,'address'), suburb: g(tr,'suburb'),
+             state_code: g(tr,'state_code'), postcode: g(tr,'postcode') };
+  }
+  function isComplete(f) {
+    if (!f.training_org_id || !f.delivery_loc_id || !f.name) return false;
+    if (f.is_virtual === '0' && (!f.address || !f.suburb || !f.state_code || !f.postcode)) return false;
+    return true;
+  }
+
+  async function saveRow(tr) {
+    const f = collect(tr);
+    if (!isComplete(f)) return;
+    setInd(tr, 'saving');
+    const url = tr.dataset.id === 'new' ? '/admin/locs/new' : `/admin/locs/${tr.dataset.id}`;
+    try {
+      const res = await fetch(url, { method: 'POST', body: new URLSearchParams(f) });
+      if (!res.ok) { setInd(tr, 'error'); return; }
+      if (tr.dataset.id === 'new') { location.reload(); return; }
+      setInd(tr, 'saved');
+    } catch { setInd(tr, 'error'); }
+  }
+
+  async function deleteRow(tr) {
+    if (tr.dataset.id === 'new') { tr.remove(); return; }
+    if (!confirm('Delete this location?')) return;
+    setInd(tr, 'saving');
+    try {
+      const res = await fetch(`/admin/locs/${tr.dataset.id}/delete`, { method: 'POST' });
+      if (!res.ok) { setInd(tr, 'error'); return; }
+      tr.remove();
+    } catch { setInd(tr, 'error'); }
+  }
+
+  function attachListeners(tr) {
+    tr.querySelectorAll('input[type=text]').forEach(el => el.addEventListener('blur', () => saveRow(tr)));
+    tr.querySelectorAll('select').forEach(el => el.addEventListener('change', () => saveRow(tr)));
+    tr.querySelector('[name=is_virtual]')?.addEventListener('change', () => saveRow(tr));
+    tr.querySelector('[data-delete]')?.addEventListener('click', () => deleteRow(tr));
+  }
+  document.querySelectorAll('#locs-tbody .sess-row').forEach(attachListeners);
+
+  document.getElementById('btn-add-loc')?.addEventListener('click', () => {
+    const tbody = document.getElementById('locs-tbody');
+    tbody.querySelector('.sess-new')?.remove();
+    const orgOpts    = orgs.map(o => `<option value="${o.id}">${o.code}</option>`).join('');
+    const stateOpts  = [''].concat(auStates).map(s => `<option value="${s}">${s}</option>`).join('');
+    const tr = document.createElement('tr');
+    tr.className = 'sess-row sess-new'; tr.dataset.id = 'new';
+    tr.innerHTML = `
+      <td><select class="sess-input" name="training_org_id" style="width:100px">${orgOpts}</select></td>
+      <td><input class="sess-input" type="text" name="delivery_loc_id" placeholder="CHI-DAN"        maxlength="30"  style="width:100px;font-family:monospace"></td>
+      <td><input class="sess-input" type="text" name="name"            placeholder="Location name"  maxlength="100" style="width:200px"></td>
+      <td style="text-align:center"><input type="checkbox" name="is_virtual"></td>
+      <td><input class="sess-input" type="text" name="address"         placeholder="Street address" maxlength="200" style="width:180px"></td>
+      <td><input class="sess-input" type="text" name="suburb"          placeholder="Suburb"         maxlength="50"  style="width:110px"></td>
+      <td><select class="sess-input" name="state_code" style="width:62px">${stateOpts}</select></td>
+      <td><input class="sess-input" type="text" name="postcode"        placeholder="3000"           maxlength="4"   style="width:52px"></td>
+      <td class="sess-actions"><span class="sess-status"></span>
+        <button class="btn-danger-sm" type="button" data-delete title="Remove">✕</button></td>`;
+    tbody.appendChild(tr);
+    attachListeners(tr);
+    tr.querySelector('[name=delivery_loc_id]').focus();
+  });
+})();
+</script>
+</body>
+</html>{{end}}

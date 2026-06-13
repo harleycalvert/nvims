@@ -1,0 +1,154 @@
+{{define "admin-infra-orgs"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS-SMS — Training Organisations</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/sessions.css">
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/admin/infrastructure">RTO Infrastructure</a>
+        <h1>Training Organisations</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+
+  <main class="sessions-main">
+    <div class="table-wrap">
+      <table class="sessions-table">
+        <thead>
+          <tr>
+            <th class="td-left">Code</th>
+            <th class="td-left">Name</th>
+            <th>Type</th>
+            <th class="td-left">Address</th>
+            <th class="td-left">Suburb</th>
+            <th>State</th>
+            <th>Postcode</th>
+            <th class="td-left">Contact</th>
+            <th class="td-left">Phone</th>
+            <th class="td-left">Email</th>
+            <th style="width:50px"></th>
+          </tr>
+        </thead>
+        <tbody id="orgs-tbody">
+          {{range .Orgs}}
+          <tr class="sess-row" data-id="{{.ID}}">
+            <td><input class="sess-input" type="text" name="org_code"     value="{{.Code}}"        maxlength="30"  style="width:80px;font-family:monospace"></td>
+            <td><input class="sess-input" type="text" name="org_name"     value="{{.Name}}"        maxlength="100" style="width:200px"></td>
+            <td><input class="sess-input" type="text" name="org_type"     value="{{.OrgType}}"     maxlength="2"   style="width:42px;text-align:center"></td>
+            <td><input class="sess-input" type="text" name="address"      value="{{.Address}}"     maxlength="50"  style="width:180px"></td>
+            <td><input class="sess-input" type="text" name="suburb"       value="{{.Suburb}}"      maxlength="50"  style="width:110px"></td>
+            <td>
+              <select class="sess-input" name="state_code" style="width:62px">
+                {{$sc := .StateCode}}
+                {{range $.States}}<option value="{{.}}"{{if eq . $sc}} selected{{end}}>{{.}}</option>{{end}}
+              </select>
+            </td>
+            <td><input class="sess-input" type="text" name="postcode"     value="{{.Postcode}}"    maxlength="4"   style="width:52px"></td>
+            <td><input class="sess-input" type="text" name="contact_name" value="{{.ContactName}}" maxlength="100" style="width:140px"></td>
+            <td><input class="sess-input" type="text" name="telephone"    value="{{.Telephone}}"   maxlength="20"  style="width:110px"></td>
+            <td><input class="sess-input" type="text" name="email"        value="{{.Email}}"       maxlength="100" style="width:180px"></td>
+            <td class="sess-actions">
+              <span class="sess-status"></span>
+              <button class="btn-danger-sm" type="button" data-delete title="Delete">✕</button>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    <div class="sess-add-bar">
+      <button class="btn-primary btn-sm" id="btn-add-org" type="button">+ Add Organisation</button>
+    </div>
+  </main>
+
+<script>
+(function () {
+  const auStates = [{{range $i,$s := .States}}{{if $i}},{{end}}"{{$s}}"{{end}}];
+
+  function setInd(tr, state) {
+    const el = tr.querySelector('.sess-status');
+    el.className = 'sess-status' + (state ? ' sess-status-' + state : '');
+    el.textContent = state === 'saving' ? '…' : state === 'saved' ? '✓' : state === 'error' ? '!' : '';
+    if (state === 'saved') setTimeout(() => { el.textContent = ''; el.className = 'sess-status'; }, 1500);
+  }
+
+  function g(tr, name) { return tr.querySelector(`[name=${name}]`)?.value?.trim() ?? ''; }
+
+  function collect(tr) {
+    return { org_code: g(tr,'org_code'), org_name: g(tr,'org_name'), org_type: g(tr,'org_type'),
+             address: g(tr,'address'), suburb: g(tr,'suburb'),
+             state_code: g(tr,'state_code'), postcode: g(tr,'postcode'),
+             contact_name: g(tr,'contact_name'), telephone: g(tr,'telephone'), email: g(tr,'email') };
+  }
+  function isComplete(f) { return f.org_code && f.org_name && f.org_type && f.address && f.suburb && f.state_code && f.postcode; }
+
+  async function saveRow(tr) {
+    const f = collect(tr);
+    if (!isComplete(f)) return;
+    setInd(tr, 'saving');
+    const url = tr.dataset.id === 'new' ? '/admin/orgs/new' : `/admin/orgs/${tr.dataset.id}`;
+    try {
+      const res = await fetch(url, { method: 'POST', body: new URLSearchParams(f) });
+      if (!res.ok) { setInd(tr, 'error'); return; }
+      if (tr.dataset.id === 'new') { location.reload(); return; }
+      setInd(tr, 'saved');
+    } catch { setInd(tr, 'error'); }
+  }
+
+  async function deleteRow(tr) {
+    if (tr.dataset.id === 'new') { tr.remove(); return; }
+    if (!confirm('Delete this organisation?')) return;
+    setInd(tr, 'saving');
+    try {
+      const res = await fetch(`/admin/orgs/${tr.dataset.id}/delete`, { method: 'POST' });
+      if (!res.ok) { setInd(tr, 'error'); return; }
+      tr.remove();
+    } catch { setInd(tr, 'error'); }
+  }
+
+  function attachListeners(tr) {
+    tr.querySelectorAll('input[type=text]').forEach(el => el.addEventListener('blur', () => saveRow(tr)));
+    tr.querySelectorAll('select').forEach(el => el.addEventListener('change', () => saveRow(tr)));
+    tr.querySelector('[data-delete]')?.addEventListener('click', () => deleteRow(tr));
+  }
+  document.querySelectorAll('#orgs-tbody .sess-row').forEach(attachListeners);
+
+  document.getElementById('btn-add-org')?.addEventListener('click', () => {
+    const tbody = document.getElementById('orgs-tbody');
+    tbody.querySelector('.sess-new')?.remove();
+    const stateOpts = [''].concat(auStates).map(s => `<option value="${s}">${s}</option>`).join('');
+    const tr = document.createElement('tr');
+    tr.className = 'sess-row sess-new'; tr.dataset.id = 'new';
+    tr.innerHTML = `
+      <td><input class="sess-input" type="text" name="org_code"     placeholder="e.g. 3077"          maxlength="30"  style="width:80px;font-family:monospace"></td>
+      <td><input class="sess-input" type="text" name="org_name"     placeholder="Organisation name"   maxlength="100" style="width:200px"></td>
+      <td><input class="sess-input" type="text" name="org_type"     placeholder="70"                  maxlength="2"   style="width:42px;text-align:center"></td>
+      <td><input class="sess-input" type="text" name="address"      placeholder="Street address"      maxlength="50"  style="width:180px"></td>
+      <td><input class="sess-input" type="text" name="suburb"       placeholder="Suburb"              maxlength="50"  style="width:110px"></td>
+      <td><select class="sess-input" name="state_code" style="width:62px">${stateOpts}</select></td>
+      <td><input class="sess-input" type="text" name="postcode"     placeholder="3000"                maxlength="4"   style="width:52px"></td>
+      <td><input class="sess-input" type="text" name="contact_name" placeholder="Contact name"        maxlength="100" style="width:140px"></td>
+      <td><input class="sess-input" type="text" name="telephone"    placeholder="Phone"               maxlength="20"  style="width:110px"></td>
+      <td><input class="sess-input" type="text" name="email"        placeholder="Email"               maxlength="100" style="width:180px"></td>
+      <td class="sess-actions"><span class="sess-status"></span>
+        <button class="btn-danger-sm" type="button" data-delete title="Remove">✕</button></td>`;
+    tbody.appendChild(tr);
+    attachListeners(tr);
+    tr.querySelector('[name=org_code]').focus();
+  });
+})();
+</script>
+</body>
+</html>{{end}}

@@ -142,6 +142,11 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 			"templates/admin/sessions.html",
 			"templates/backup.html",
 			"templates/vcc/detail.html",
+			"templates/admin/infra-menu.html",
+			"templates/admin/infra-orgs.html",
+			"templates/admin/infra-locations.html",
+			"templates/admin/infra-buildings.html",
+			"templates/admin/infra-rooms.html",
 		),
 	)
 	return &Handler{store: st, sessions: sessions, tmpl: tmpl}
@@ -1554,8 +1559,8 @@ func (h *Handler) AdminLocationCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err := h.store.CreateDeliveryLocation(r.Context(),
-		f.TrainingOrgID, f.LocID, f.Name, f.Address,
-		f.Suburb, f.StateCode, f.Postcode, f.PostcodeOverride)
+		f.TrainingOrgID, f.LocID, f.Name, false,
+		f.Address, f.Suburb, f.StateCode, f.Postcode)
 	if err != nil {
 		log.Printf("CreateDeliveryLocation: %v", err)
 		renderErr("Could not save — check the location ID is not already in use for this organisation.")
@@ -2237,6 +2242,8 @@ func parseIDs(vals []string) []int64 {
 
 var validVCCStatuses = []string{"Draft", "Submitted", "Approved", "Rejected"}
 var validVCCItemStatuses = []string{"Draft", "Pending", "Approved", "Rejected"}
+
+var roomTypes = []string{"Classroom", "Computer Lab", "Seminar Room", "Workshop", "Lecture Theatre", "Other"}
 var validVCCMethods = []string{
 	"I hold the current unit of competency",
 	"I hold a superseded and equivalent unit of competency",
@@ -2374,4 +2381,400 @@ func parseDateField(s string) pgtype.Date {
 		return pgtype.Date{}
 	}
 	return pgtype.Date{Time: t, Valid: true}
+}
+
+func parseInt(s string) int {
+	v, _ := strconv.Atoi(strings.TrimSpace(s))
+	return v
+}
+
+// ── Admin / Infrastructure ─────────────────────────────────────────────────
+
+func (h *Handler) AdminInfrastructure(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	h.render(w, "admin-infra-menu", map[string]any{"User": user})
+}
+
+func (h *Handler) AdminInfraOrgs(w http.ResponseWriter, r *http.Request) {
+	orgs, err := h.store.ListTrainingOrgs(r.Context())
+	if err != nil {
+		log.Printf("ListTrainingOrgs: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	user, _ := auth.Current(r)
+	h.render(w, "admin-infra-orgs", map[string]any{
+		"Orgs":   orgs,
+		"States": auStates,
+		"User":   user,
+	})
+}
+
+func (h *Handler) AdminInfraLocations(w http.ResponseWriter, r *http.Request) {
+	locations, err := h.store.ListDeliveryLocationsFull(r.Context())
+	if err != nil {
+		log.Printf("ListDeliveryLocationsFull: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	orgs, err := h.store.ListTrainingOrgs(r.Context())
+	if err != nil {
+		log.Printf("ListTrainingOrgs: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	user, _ := auth.Current(r)
+	h.render(w, "admin-infra-locations", map[string]any{
+		"Locations": locations,
+		"Orgs":      orgs,
+		"States":    auStates,
+		"User":      user,
+	})
+}
+
+func (h *Handler) AdminInfraBuildings(w http.ResponseWriter, r *http.Request) {
+	buildings, err := h.store.ListBuildings(r.Context())
+	if err != nil {
+		log.Printf("ListBuildings: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	locations, err := h.store.ListDeliveryLocationsFull(r.Context())
+	if err != nil {
+		log.Printf("ListDeliveryLocationsFull: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	user, _ := auth.Current(r)
+	h.render(w, "admin-infra-buildings", map[string]any{
+		"Buildings": buildings,
+		"Locations": locations,
+		"User":      user,
+	})
+}
+
+func (h *Handler) AdminInfraRooms(w http.ResponseWriter, r *http.Request) {
+	rooms, err := h.store.ListRooms(r.Context())
+	if err != nil {
+		log.Printf("ListRooms: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	buildings, err := h.store.ListBuildings(r.Context())
+	if err != nil {
+		log.Printf("ListBuildings: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	user, _ := auth.Current(r)
+	h.render(w, "admin-infra-rooms", map[string]any{
+		"Rooms":     rooms,
+		"Buildings": buildings,
+		"RoomTypes": roomTypes,
+		"User":      user,
+	})
+}
+
+// ── Admin / Training Orgs ──────────────────────────────────────────────────
+
+func (h *Handler) AdminOrgCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	code       := strings.TrimSpace(r.FormValue("org_code"))
+	name       := strings.TrimSpace(r.FormValue("org_name"))
+	orgType    := strings.TrimSpace(r.FormValue("org_type"))
+	address    := strings.TrimSpace(r.FormValue("address"))
+	suburb     := strings.TrimSpace(r.FormValue("suburb"))
+	stateCode  := strings.TrimSpace(r.FormValue("state_code"))
+	postcode   := strings.TrimSpace(r.FormValue("postcode"))
+	contact    := strings.TrimSpace(r.FormValue("contact_name"))
+	telephone  := strings.TrimSpace(r.FormValue("telephone"))
+	email      := strings.TrimSpace(r.FormValue("email"))
+
+	if code == "" || name == "" || orgType == "" || address == "" || suburb == "" || stateCode == "" || postcode == "" {
+		http.Error(w, `{"error":"missing required fields"}`, http.StatusBadRequest)
+		return
+	}
+	_, err := h.store.CreateTrainingOrg(r.Context(), code, name, orgType, address, suburb, stateCode, postcode, contact, telephone, email)
+	if err != nil {
+		log.Printf("CreateTrainingOrg: %v", err)
+		http.Error(w, `{"error":"could not save — org code may already be in use"}`, http.StatusConflict)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminOrgUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id == 0 {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	code      := strings.TrimSpace(r.FormValue("org_code"))
+	name      := strings.TrimSpace(r.FormValue("org_name"))
+	orgType   := strings.TrimSpace(r.FormValue("org_type"))
+	address   := strings.TrimSpace(r.FormValue("address"))
+	suburb    := strings.TrimSpace(r.FormValue("suburb"))
+	stateCode := strings.TrimSpace(r.FormValue("state_code"))
+	postcode  := strings.TrimSpace(r.FormValue("postcode"))
+	contact   := strings.TrimSpace(r.FormValue("contact_name"))
+	telephone := strings.TrimSpace(r.FormValue("telephone"))
+	email     := strings.TrimSpace(r.FormValue("email"))
+
+	if code == "" || name == "" || orgType == "" || address == "" || suburb == "" || stateCode == "" || postcode == "" {
+		http.Error(w, `{"error":"missing required fields"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.UpdateTrainingOrg(r.Context(), id, code, name, orgType, address, suburb, stateCode, postcode, contact, telephone, email); err != nil {
+		log.Printf("UpdateTrainingOrg(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminOrgDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id == 0 {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.DeleteTrainingOrg(r.Context(), id); err != nil {
+		log.Printf("DeleteTrainingOrg(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+// ── Admin / Delivery Locations (full CRUD) ─────────────────────────────────
+
+func (h *Handler) AdminLocCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	trainingOrgID := parseInt64(r.FormValue("training_org_id"))
+	locID         := strings.TrimSpace(r.FormValue("delivery_loc_id"))
+	name          := strings.TrimSpace(r.FormValue("name"))
+	isVirtual     := r.FormValue("is_virtual") == "1"
+	address       := strings.TrimSpace(r.FormValue("address"))
+	suburb        := strings.TrimSpace(r.FormValue("suburb"))
+	stateCode     := strings.TrimSpace(r.FormValue("state_code"))
+	postcode      := strings.TrimSpace(r.FormValue("postcode"))
+
+	if locID == "" || name == "" || trainingOrgID == 0 {
+		http.Error(w, `{"error":"loc_id, name and training_org_id are required"}`, http.StatusBadRequest)
+		return
+	}
+	if !isVirtual && (address == "" || suburb == "" || stateCode == "" || postcode == "") {
+		http.Error(w, `{"error":"address fields are required for non-virtual locations"}`, http.StatusBadRequest)
+		return
+	}
+	_, err := h.store.CreateDeliveryLocation(r.Context(), trainingOrgID, locID, name, isVirtual, address, suburb, stateCode, postcode)
+	if err != nil {
+		log.Printf("CreateDeliveryLocation: %v", err)
+		http.Error(w, `{"error":"could not save — loc ID may already be in use"}`, http.StatusConflict)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminLocUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id == 0 {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	trainingOrgID := parseInt64(r.FormValue("training_org_id"))
+	locID         := strings.TrimSpace(r.FormValue("delivery_loc_id"))
+	name          := strings.TrimSpace(r.FormValue("name"))
+	isVirtual     := r.FormValue("is_virtual") == "1"
+	address       := strings.TrimSpace(r.FormValue("address"))
+	suburb        := strings.TrimSpace(r.FormValue("suburb"))
+	stateCode     := strings.TrimSpace(r.FormValue("state_code"))
+	postcode      := strings.TrimSpace(r.FormValue("postcode"))
+
+	if locID == "" || name == "" || trainingOrgID == 0 {
+		http.Error(w, `{"error":"loc_id, name and training_org_id are required"}`, http.StatusBadRequest)
+		return
+	}
+	if !isVirtual && (address == "" || suburb == "" || stateCode == "" || postcode == "") {
+		http.Error(w, `{"error":"address fields are required for non-virtual locations"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.UpdateDeliveryLocation(r.Context(), id, trainingOrgID, locID, name, isVirtual, address, suburb, stateCode, postcode); err != nil {
+		log.Printf("UpdateDeliveryLocation(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminLocDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id == 0 {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.DeleteDeliveryLocation(r.Context(), id); err != nil {
+		log.Printf("DeleteDeliveryLocation(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+// ── Admin / Buildings ──────────────────────────────────────────────────────
+
+func (h *Handler) AdminBuildingCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	locationID := parseInt64(r.FormValue("delivery_location_id"))
+	name       := strings.TrimSpace(r.FormValue("building_name"))
+	if locationID == 0 || name == "" {
+		http.Error(w, `{"error":"delivery_location_id and building_name are required"}`, http.StatusBadRequest)
+		return
+	}
+	_, err := h.store.CreateBuilding(r.Context(), locationID, name)
+	if err != nil {
+		log.Printf("CreateBuilding: %v", err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminBuildingUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id == 0 {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	locationID := parseInt64(r.FormValue("delivery_location_id"))
+	name       := strings.TrimSpace(r.FormValue("building_name"))
+	if locationID == 0 || name == "" {
+		http.Error(w, `{"error":"delivery_location_id and building_name are required"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.UpdateBuilding(r.Context(), id, locationID, name); err != nil {
+		log.Printf("UpdateBuilding(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminBuildingDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id == 0 {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.DeleteBuilding(r.Context(), id); err != nil {
+		log.Printf("DeleteBuilding(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+// ── Admin / Rooms ──────────────────────────────────────────────────────────
+
+func (h *Handler) AdminRoomCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	buildingID    := parseInt64(r.FormValue("building_id"))
+	roomName      := strings.TrimSpace(r.FormValue("room_name"))
+	roomType      := strings.TrimSpace(r.FormValue("room_type"))
+	capacityStr   := strings.TrimSpace(r.FormValue("capacity"))
+	isActive      := r.FormValue("is_active") == "1"
+	isComputerLab := r.FormValue("is_computer_lab") == "1"
+
+	capacity := parseInt(capacityStr)
+	if buildingID == 0 || roomName == "" || roomType == "" || capacityStr == "" || capacity <= 0 {
+		http.Error(w, `{"error":"building_id, room_name, room_type and capacity (>0) are required"}`, http.StatusBadRequest)
+		return
+	}
+	_, err := h.store.CreateRoom(r.Context(), buildingID, roomName, roomType, capacity, isActive, isComputerLab)
+	if err != nil {
+		log.Printf("CreateRoom: %v", err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminRoomUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id == 0 {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	buildingID    := parseInt64(r.FormValue("building_id"))
+	roomName      := strings.TrimSpace(r.FormValue("room_name"))
+	roomType      := strings.TrimSpace(r.FormValue("room_type"))
+	capacityStr   := strings.TrimSpace(r.FormValue("capacity"))
+	isActive      := r.FormValue("is_active") == "1"
+	isComputerLab := r.FormValue("is_computer_lab") == "1"
+
+	capacity := parseInt(capacityStr)
+	if buildingID == 0 || roomName == "" || roomType == "" || capacityStr == "" || capacity <= 0 {
+		http.Error(w, `{"error":"building_id, room_name, room_type and capacity (>0) are required"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.UpdateRoom(r.Context(), id, buildingID, roomName, roomType, capacity, isActive, isComputerLab); err != nil {
+		log.Printf("UpdateRoom(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminRoomDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id == 0 {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.DeleteRoom(r.Context(), id); err != nil {
+		log.Printf("DeleteRoom(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
 }

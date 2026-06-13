@@ -1,0 +1,57 @@
+{{define "admin-infra-menu"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS-SMS — RTO Infrastructure</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/menu.css">
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/admin">Administration</a>
+        <h1>RTO Infrastructure</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+  <main>
+    <div class="menu-grid">
+      <a class="menu-card" href="/admin/infrastructure/orgs">
+        <div class="menu-card-accent menu-accent-teal"></div>
+        <div class="menu-card-body">
+          <div class="menu-card-title">Training Organisations</div>
+          <div class="menu-card-desc">Manage RTO details, contact information and addresses</div>
+        </div>
+      </a>
+      <a class="menu-card" href="/admin/infrastructure/locations">
+        <div class="menu-card-accent menu-accent-blue"></div>
+        <div class="menu-card-body">
+          <div class="menu-card-title">Delivery Locations</div>
+          <div class="menu-card-desc">Manage campuses and virtual delivery sites</div>
+        </div>
+      </a>
+      <a class="menu-card" href="/admin/infrastructure/buildings">
+        <div class="menu-card-accent menu-accent-green"></div>
+        <div class="menu-card-body">
+          <div class="menu-card-title">Buildings</div>
+          <div class="menu-card-desc">Manage buildings within each delivery location</div>
+        </div>
+      </a>
+      <a class="menu-card" href="/admin/infrastructure/rooms">
+        <div class="menu-card-accent menu-accent-orange"></div>
+        <div class="menu-card-body">
+          <div class="menu-card-title">Rooms</div>
+          <div class="menu-card-desc">Manage classrooms, labs and other spaces</div>
+        </div>
+      </a>
+    </div>
+  </main>
+</body>
+</html>{{end}}

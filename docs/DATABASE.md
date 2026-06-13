@@ -2,7 +2,7 @@
 
 PostgreSQL schema for a national, potentially AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.26`: its entities, relationships, business rules, and the
+describes the design of `v0.27`: its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -712,7 +712,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 
 ## Data dictionary
 
-Every table and column, generated from `v0.26`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
+Every table and column, generated from `v0.27`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
 
 ### Identity & reference
 
@@ -1564,7 +1564,7 @@ The Registered Training Organisation (AVETMISS NAT00010). Typically a single row
 
 #### `delivery_locations`
 
-Campus or delivery site locations (AVETMISS NAT00020). Each location belongs to a `training_org` and has its own NAT delivery location ID, name, and address. Referenced by `classes` (where training is delivered) and `client_subject_enrolments` (where a unit was delivered). Parent of `buildings` → `rooms`.
+Campus or delivery site locations (AVETMISS NAT00020). Each location belongs to a `training_org` and has its own NAT delivery location ID, name, and address. `is_virtual = true` marks non-physical locations (e.g. Online, Workplace); address fields are NULL for virtual locations and required for physical ones (enforced by CHECK constraint). Referenced by `classes` (where training is delivered) and `client_subject_enrolments` (where a unit was delivered). Parent of `buildings` → `rooms`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1572,12 +1572,15 @@ Campus or delivery site locations (AVETMISS NAT00020). Each location belongs to 
 | `training_org_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;training_orgs |
 | `delivery_loc_id` | `varchar(30)` | no |  |  |
 | `name` | `varchar(100)` | no |  |  |
-| `address` | `text` | no |  |  |
-| `suburb` | `varchar(50)` | no |  |  |
-| `state_code` | `varchar(3)` | no |  | FK&nbsp;&rarr;&nbsp;australian_states |
-| `postcode` | `varchar(4)` | no |  |  |
+| `is_virtual` | `boolean` | no | `false` |  |
+| `address` | `text` | yes |  |  |
+| `suburb` | `varchar(50)` | yes |  |  |
+| `state_code` | `varchar(3)` | yes |  | FK&nbsp;&rarr;&nbsp;australian_states |
+| `postcode` | `varchar(4)` | yes |  |  |
 | `postcode_override` | `varchar(4)` | yes |  |  |
 | `country_id` | `varchar(4)` | no | `'1101'` |  |
+| `latitude` | `numeric(9,6)` | yes |  |  |
+| `longitude` | `numeric(9,6)` | yes |  |  |
 
 *Constraints:*
 
@@ -1585,6 +1588,7 @@ Campus or delivery site locations (AVETMISS NAT00020). Each location belongs to 
 - `CONSTRAINT fk_loc_state FOREIGN KEY (state_code) REFERENCES public.australian_states(state_code)`
 - `CONSTRAINT uq_delivery_loc_per_org UNIQUE (training_org_id, delivery_loc_id)`
 - `CONSTRAINT fk_delivery_loc_parent FOREIGN KEY (training_org_id) REFERENCES training_orgs (id) ON DELETE CASCADE`
+- `CONSTRAINT chk_loc_physical_fields CHECK (is_virtual = true OR (address IS NOT NULL AND suburb IS NOT NULL AND state_code IS NOT NULL AND postcode IS NOT NULL))`
 
 #### `person_location_preferences`
 
@@ -1609,13 +1613,15 @@ A person's ranked delivery location preferences. Each row records one location w
 
 #### `buildings`
 
-Physical buildings within a delivery location. Groups rooms for timetabling. References `delivery_locations`; parent of `rooms`.
+Physical buildings within a delivery location. Groups rooms for timetabling. `latitude` and `longitude` allow precise pin placement (e.g. building entrance) when a campus has multiple structures. References `delivery_locations`; parent of `rooms`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
 | `delivery_location_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;delivery_locations |
 | `building_name` | `varchar(50)` | no |  |  |
+| `latitude` | `numeric(9,6)` | yes |  |  |
+| `longitude` | `numeric(9,6)` | yes |  |  |
 
 *Constraints:*
 
