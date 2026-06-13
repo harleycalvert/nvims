@@ -2138,6 +2138,7 @@ type VCCDocument struct {
 
 type VCCPQ struct {
 	ID          int64
+	QualType    string // "Teaching" | "Vocational"
 	Code        string
 	Title       string
 	Institution string
@@ -2180,7 +2181,8 @@ type VCCDetail struct {
 	Status       string
 	ApprovedAt   time.Time // zero means not set
 	Notes        string
-	PQs          []VCCPQ
+	PQs          []VCCPQ // Teaching qualifications
+	VocQuals     []VCCPQ // Vocational qualifications
 	Courses      []VCCCourse
 }
 
@@ -2204,39 +2206,45 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 		v.ApprovedAt = approvedAt.Time
 	}
 
-	// PQs
+	// PQs (Teaching) and VocQuals (Vocational) — same table, partitioned by qual_type
 	pqRows, err := s.pool.Query(ctx, `
-		SELECT id, qualification_code, qualification_title, COALESCE(institution,''),
+		SELECT id, qual_type, qualification_code, qualification_title, COALESCE(institution,''),
 		       status, approved_at, COALESCE(notes,'')
 		FROM teacher_vcc_professional_qualifications
-		WHERE vcc_id = $1 ORDER BY id
+		WHERE vcc_id = $1 ORDER BY qual_type, id
 	`, id)
 	if err != nil {
 		return nil, err
 	}
-	pqMap := map[int64]int{} // id → index in v.PQs
+	// [typeIdx, sliceIdx]: typeIdx 0=Teaching, 1=Vocational
+	pqMap := map[int64][2]int{}
 	for pqRows.Next() {
 		var pq VCCPQ
 		var at pgtype.Date
-		if err := pqRows.Scan(&pq.ID, &pq.Code, &pq.Title, &pq.Institution, &pq.Status, &at, &pq.Notes); err != nil {
+		if err := pqRows.Scan(&pq.ID, &pq.QualType, &pq.Code, &pq.Title, &pq.Institution, &pq.Status, &at, &pq.Notes); err != nil {
 			pqRows.Close()
 			return nil, err
 		}
 		if at.Valid {
 			pq.ApprovedAt = at.Time
 		}
-		pqMap[pq.ID] = len(v.PQs)
-		v.PQs = append(v.PQs, pq)
+		if pq.QualType == "Vocational" {
+			pqMap[pq.ID] = [2]int{1, len(v.VocQuals)}
+			v.VocQuals = append(v.VocQuals, pq)
+		} else {
+			pqMap[pq.ID] = [2]int{0, len(v.PQs)}
+			v.PQs = append(v.PQs, pq)
+		}
 	}
 	if err := pqRows.Err(); err != nil {
 		return nil, err
 	}
 
-	// PQ documents
-	if len(v.PQs) > 0 {
-		pqIDs := make([]int64, len(v.PQs))
-		for i, pq := range v.PQs {
-			pqIDs[i] = pq.ID
+	// Documents for all PQ types
+	if len(pqMap) > 0 {
+		pqIDs := make([]int64, 0, len(pqMap))
+		for id := range pqMap {
+			pqIDs = append(pqIDs, id)
 		}
 		dRows, err := s.pool.Query(ctx, `
 			SELECT tdc.vcc_professional_qual_id, td.id, td.title, td.file_category,
@@ -2256,14 +2264,17 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 				dRows.Close()
 				return nil, err
 			}
-			if idx, ok := pqMap[pqID]; ok {
-				v.PQs[idx].Documents = append(v.PQs[idx].Documents, d)
+			if pos, ok := pqMap[pqID]; ok {
+				if pos[0] == 1 {
+					v.VocQuals[pos[1]].Documents = append(v.VocQuals[pos[1]].Documents, d)
+				} else {
+					v.PQs[pos[1]].Documents = append(v.PQs[pos[1]].Documents, d)
+				}
 			}
 		}
 		if err := dRows.Err(); err != nil {
 			return nil, err
 		}
-
 	}
 
 	// Courses
@@ -2418,16 +2429,16 @@ func (s *Store) UpdateVCCPQ(ctx context.Context, teacherID, pqID int64,
 	return err
 }
 
-func (s *Store) CreateVCCPQ(ctx context.Context, teacherID int64, code, title, institution string) (VCCPQ, error) {
+func (s *Store) CreateVCCPQ(ctx context.Context, teacherID int64, qualType, code, title, institution string) (VCCPQ, error) {
 	var pq VCCPQ
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO teacher_vcc_professional_qualifications
-		       (vcc_id, qualification_code, qualification_title, institution, status)
-		SELECT id, $2, $3, NULLIF($4,''), 'Draft'
+		       (vcc_id, qual_type, qualification_code, qualification_title, institution, status)
+		SELECT id, $2, $3, $4, NULLIF($5,''), 'Draft'
 		FROM teacher_vccs WHERE teacher_id = $1
 		ORDER BY calendar_year DESC, version DESC LIMIT 1
-		RETURNING id, qualification_code, qualification_title, COALESCE(institution,''), status
-	`, teacherID, code, title, institution).Scan(&pq.ID, &pq.Code, &pq.Title, &pq.Institution, &pq.Status)
+		RETURNING id, qual_type, qualification_code, qualification_title, COALESCE(institution,''), status
+	`, teacherID, qualType, code, title, institution).Scan(&pq.ID, &pq.QualType, &pq.Code, &pq.Title, &pq.Institution, &pq.Status)
 	return pq, err
 }
 

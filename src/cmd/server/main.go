@@ -114,6 +114,8 @@ func main() {
 	mux.HandleFunc("POST /admin/sessions/{id}/delete", protect(h.AdminSessionDelete))
 	mux.HandleFunc("GET /vcc", protect(h.VCCMenu))
 	mux.HandleFunc("GET /vcc/vocational-evidence", protect(h.VCCVocationalEvidence))
+	mux.HandleFunc("GET /vcc/vocational-qualifications", protect(h.VCCVocQuals))
+	mux.HandleFunc("POST /vcc/vocquals", protect(h.VCCVocQualCreate))
 	mux.HandleFunc("GET /vcc/detail", protect(h.VCCIndex))
 	mux.HandleFunc("POST /vcc/status", protect(h.VCCUpdateStatus))
 	mux.HandleFunc("POST /vcc/units/{uid}", protect(h.VCCUnitUpdate))

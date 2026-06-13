@@ -145,6 +145,7 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 			"templates/vcc/menu.html",
 			"templates/vcc/vocational-evidence.html",
 			"templates/vcc/detail.html",
+			"templates/vcc/vocational-qualifications.html",
 			"templates/admin/infra-menu.html",
 			"templates/admin/infra-orgs.html",
 			"templates/admin/infra-locations.html",
@@ -2398,10 +2399,50 @@ func (h *Handler) VCCPQCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"code and title required"}`, http.StatusBadRequest)
 		return
 	}
-	pq, err := h.store.CreateVCCPQ(r.Context(), user.PersonID, code, title,
+	pq, err := h.store.CreateVCCPQ(r.Context(), user.PersonID, "Teaching", code, title,
 		strings.TrimSpace(r.FormValue("institution")))
 	if err != nil {
 		log.Printf("CreateVCCPQ(%d): %v", user.PersonID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"id":%d,"code":%q,"title":%q,"status":%q}`, pq.ID, pq.Code, pq.Title, pq.Status)
+}
+
+func (h *Handler) VCCVocQuals(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	vcc, err := h.store.GetLatestVCCForTeacher(r.Context(), user.PersonID)
+	if err == pgx.ErrNoRows {
+		h.render(w, "vcc-vocquals", map[string]any{"VCC": nil, "User": user, "ItemStatuses": validVCCItemStatuses})
+		return
+	}
+	if err != nil {
+		log.Printf("GetLatestVCCForTeacher(%d): %v", user.PersonID, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	h.render(w, "vcc-vocquals", map[string]any{
+		"VCC": vcc, "User": user, "ItemStatuses": validVCCItemStatuses,
+	})
+}
+
+func (h *Handler) VCCVocQualCreate(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	code := strings.TrimSpace(r.FormValue("qualification_code"))
+	title := strings.TrimSpace(r.FormValue("qualification_title"))
+	if code == "" || title == "" {
+		http.Error(w, `{"error":"code and title required"}`, http.StatusBadRequest)
+		return
+	}
+	pq, err := h.store.CreateVCCPQ(r.Context(), user.PersonID, "Vocational", code, title,
+		strings.TrimSpace(r.FormValue("institution")))
+	if err != nil {
+		log.Printf("CreateVCCVocQual(%d): %v", user.PersonID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}

@@ -1,6 +1,11 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.29, 2026-06-13
+-- AVETMISS-compliant SMS schema  --  version 0.30, 2026-06-13
 -- =========================================================================
+-- Changes from v0.29:
+--   1.  teacher_vcc_professional_qualifications: added qual_type varchar(20)
+--       NOT NULL DEFAULT 'Teaching' to distinguish Teaching qualifications
+--       (TAE/training) from Vocational qualifications (industry/AQF).
+--       CHECK (qual_type IN ('Teaching','Vocational')).
 -- Changes from v0.28:
 --   1.  teacher_documents: document_url and file_name made nullable to
 --       support link-only documents (title + external_url, no file upload)
@@ -2521,6 +2526,7 @@ CREATE OR REPLACE TRIGGER trg_touch_teacher_vccs
 CREATE TABLE IF NOT EXISTS public.teacher_vcc_professional_qualifications (
     id                   bigserial    NOT NULL,
     vcc_id               bigint       NOT NULL,
+    qual_type            varchar(20)  NOT NULL DEFAULT 'Teaching',
     qualification_code   varchar(30)  NOT NULL,
     qualification_title  varchar(200) NOT NULL,
     institution          varchar(200) NULL,
@@ -2529,8 +2535,9 @@ CREATE TABLE IF NOT EXISTS public.teacher_vcc_professional_qualifications (
     notes                text         NULL,
     created_at           timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    CONSTRAINT fk_vcc_pq_vcc     FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE,
-    CONSTRAINT chk_vcc_pq_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))
+    CONSTRAINT fk_vcc_pq_vcc       FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE,
+    CONSTRAINT chk_vcc_pq_status   CHECK (status IN ('Draft','Pending','Approved','Rejected')),
+    CONSTRAINT chk_vcc_pq_qual_type CHECK (qual_type IN ('Teaching','Vocational'))
 );
 
 -- Courses (qualifications) the teacher is mapped to deliver in this VCC.
@@ -2763,6 +2770,16 @@ CREATE INDEX IF NOT EXISTS idx_room_issues_room
 
 CREATE INDEX IF NOT EXISTS idx_room_issues_status
     ON public.room_issues(room_id, status);
+
+-- =========================================================================
+-- Migration: v0.29 → v0.30  (run on existing databases)
+-- =========================================================================
+ALTER TABLE public.teacher_vcc_professional_qualifications
+  ADD COLUMN IF NOT EXISTS qual_type varchar(20) NOT NULL DEFAULT 'Teaching';
+ALTER TABLE public.teacher_vcc_professional_qualifications
+  DROP CONSTRAINT IF EXISTS chk_vcc_pq_qual_type;
+ALTER TABLE public.teacher_vcc_professional_qualifications
+  ADD CONSTRAINT chk_vcc_pq_qual_type CHECK (qual_type IN ('Teaching','Vocational'));
 
 -- =========================================================================
 -- Migration: v0.28 → v0.29  (run on existing databases)

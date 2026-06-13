@@ -2,7 +2,7 @@
 
 PostgreSQL schema for a national, potentially AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.29`: its entities, relationships, business rules, and the
+describes the design of `v0.30`: its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -2561,12 +2561,13 @@ Annual Vocational Competency & Currency document per teacher, versioned to allow
 
 #### `teacher_vcc_professional_qualifications`
 
-Teacher's own credentials declared in a VCC: TAE qualification, degrees, industry certifications, registrations. Each row is one qualification with its code, title, institution, and approval status (Draft → Pending → Approved → Rejected). Linked to evidence documents via `teacher_document_connections`. References `teacher_vccs`.
+Teacher's own credentials declared in a VCC. `qual_type` partitions the table into two logical categories: `'Teaching'` (TAE/training qualifications, shown under Teaching Qualifications) and `'Vocational'` (industry AQF qualifications, shown under Vocational Evidence → Vocational Qualifications). Each row has a code, title, institution, and approval status (Draft → Pending → Approved → Rejected). Linked to evidence documents via `teacher_document_connections`. References `teacher_vccs`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
 | `vcc_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teacher_vccs |
+| `qual_type` | `varchar(20)` | no | `'Teaching'` |  |
 | `qualification_code` | `varchar(30)` | no |  |  |
 | `qualification_title` | `varchar(200)` | no |  |  |
 | `institution` | `varchar(200)` | yes |  |  |
@@ -2580,6 +2581,7 @@ Teacher's own credentials declared in a VCC: TAE qualification, degrees, industr
 - `PRIMARY KEY (id)`
 - `CONSTRAINT fk_vccpq_vcc FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
 - `CONSTRAINT chk_vccpq_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))`
+- `CONSTRAINT chk_vcc_pq_qual_type CHECK (qual_type IN ('Teaching','Vocational'))`
 
 #### `teacher_vcc_courses`
 
