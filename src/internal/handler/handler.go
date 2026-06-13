@@ -1560,7 +1560,7 @@ func (h *Handler) AdminLocationCreate(w http.ResponseWriter, r *http.Request) {
 
 	_, err := h.store.CreateDeliveryLocation(r.Context(),
 		f.TrainingOrgID, f.LocID, f.Name, false,
-		f.Address, f.Suburb, f.StateCode, f.Postcode)
+		f.Address, f.Suburb, f.StateCode, f.Postcode, "", "")
 	if err != nil {
 		log.Printf("CreateDeliveryLocation: %v", err)
 		renderErr("Could not save — check the location ID is not already in use for this organisation.")
@@ -2572,6 +2572,8 @@ func (h *Handler) AdminLocCreate(w http.ResponseWriter, r *http.Request) {
 	suburb        := strings.TrimSpace(r.FormValue("suburb"))
 	stateCode     := strings.TrimSpace(r.FormValue("state_code"))
 	postcode      := strings.TrimSpace(r.FormValue("postcode"))
+	lat           := strings.TrimSpace(r.FormValue("latitude"))
+	lng           := strings.TrimSpace(r.FormValue("longitude"))
 
 	if locID == "" || name == "" || trainingOrgID == 0 {
 		http.Error(w, `{"error":"loc_id, name and training_org_id are required"}`, http.StatusBadRequest)
@@ -2581,7 +2583,7 @@ func (h *Handler) AdminLocCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"address fields are required for non-virtual locations"}`, http.StatusBadRequest)
 		return
 	}
-	_, err := h.store.CreateDeliveryLocation(r.Context(), trainingOrgID, locID, name, isVirtual, address, suburb, stateCode, postcode)
+	_, err := h.store.CreateDeliveryLocation(r.Context(), trainingOrgID, locID, name, isVirtual, address, suburb, stateCode, postcode, lat, lng)
 	if err != nil {
 		log.Printf("CreateDeliveryLocation: %v", err)
 		http.Error(w, `{"error":"could not save — loc ID may already be in use"}`, http.StatusConflict)
@@ -2609,6 +2611,8 @@ func (h *Handler) AdminLocUpdate(w http.ResponseWriter, r *http.Request) {
 	suburb        := strings.TrimSpace(r.FormValue("suburb"))
 	stateCode     := strings.TrimSpace(r.FormValue("state_code"))
 	postcode      := strings.TrimSpace(r.FormValue("postcode"))
+	lat           := strings.TrimSpace(r.FormValue("latitude"))
+	lng           := strings.TrimSpace(r.FormValue("longitude"))
 
 	if locID == "" || name == "" || trainingOrgID == 0 {
 		http.Error(w, `{"error":"loc_id, name and training_org_id are required"}`, http.StatusBadRequest)
@@ -2618,7 +2622,7 @@ func (h *Handler) AdminLocUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"address fields are required for non-virtual locations"}`, http.StatusBadRequest)
 		return
 	}
-	if err := h.store.UpdateDeliveryLocation(r.Context(), id, trainingOrgID, locID, name, isVirtual, address, suburb, stateCode, postcode); err != nil {
+	if err := h.store.UpdateDeliveryLocation(r.Context(), id, trainingOrgID, locID, name, isVirtual, address, suburb, stateCode, postcode, lat, lng); err != nil {
 		log.Printf("UpdateDeliveryLocation(%d): %v", id, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
@@ -2659,7 +2663,9 @@ func (h *Handler) AdminBuildingCreate(w http.ResponseWriter, r *http.Request) {
 	suburb    := strings.TrimSpace(r.FormValue("suburb"))
 	stateCode := strings.TrimSpace(r.FormValue("state_code"))
 	postcode  := strings.TrimSpace(r.FormValue("postcode"))
-	_, err := h.store.CreateBuilding(r.Context(), locationID, name, address, suburb, stateCode, postcode)
+	lat       := strings.TrimSpace(r.FormValue("latitude"))
+	lng       := strings.TrimSpace(r.FormValue("longitude"))
+	_, err := h.store.CreateBuilding(r.Context(), locationID, name, address, suburb, stateCode, postcode, lat, lng)
 	if err != nil {
 		log.Printf("CreateBuilding: %v", err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
@@ -2689,7 +2695,9 @@ func (h *Handler) AdminBuildingUpdate(w http.ResponseWriter, r *http.Request) {
 	suburb    := strings.TrimSpace(r.FormValue("suburb"))
 	stateCode := strings.TrimSpace(r.FormValue("state_code"))
 	postcode  := strings.TrimSpace(r.FormValue("postcode"))
-	if err := h.store.UpdateBuilding(r.Context(), id, locationID, name, address, suburb, stateCode, postcode); err != nil {
+	lat       := strings.TrimSpace(r.FormValue("latitude"))
+	lng       := strings.TrimSpace(r.FormValue("longitude"))
+	if err := h.store.UpdateBuilding(r.Context(), id, locationID, name, address, suburb, stateCode, postcode, lat, lng); err != nil {
 		log.Printf("UpdateBuilding(%d): %v", id, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return

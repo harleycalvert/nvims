@@ -1269,6 +1269,8 @@ type DeliveryLocationFull struct {
 	Suburb        string
 	StateCode     string
 	Postcode      string
+	Latitude      string
+	Longitude     string
 }
 
 type BuildingRow struct {
@@ -1280,6 +1282,8 @@ type BuildingRow struct {
 	Suburb       string
 	StateCode    string
 	Postcode     string
+	Latitude     string
+	Longitude    string
 }
 
 type RoomRow struct {
@@ -1571,7 +1575,8 @@ func (s *Store) ListDeliveryLocationsFull(ctx context.Context) ([]DeliveryLocati
 		       dl.delivery_loc_id, dl.name,
 		       COALESCE(dl.is_virtual, false),
 		       COALESCE(dl.address,''), COALESCE(dl.suburb,''),
-		       COALESCE(dl.state_code,''), COALESCE(dl.postcode,'')
+		       COALESCE(dl.state_code,''), COALESCE(dl.postcode,''),
+		       COALESCE(dl.latitude::text,''), COALESCE(dl.longitude::text,'')
 		FROM public.delivery_locations dl
 		JOIN public.training_orgs t ON t.id = dl.training_org_id
 		ORDER BY t.training_org_name, dl.name
@@ -1585,7 +1590,8 @@ func (s *Store) ListDeliveryLocationsFull(ctx context.Context) ([]DeliveryLocati
 		var r DeliveryLocationFull
 		if err := rows.Scan(&r.ID, &r.TrainingOrgID, &r.OrgName,
 			&r.LocID, &r.Name, &r.IsVirtual,
-			&r.Address, &r.Suburb, &r.StateCode, &r.Postcode); err != nil {
+			&r.Address, &r.Suburb, &r.StateCode, &r.Postcode,
+			&r.Latitude, &r.Longitude); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -1593,12 +1599,19 @@ func (s *Store) ListDeliveryLocationsFull(ctx context.Context) ([]DeliveryLocati
 	return out, rows.Err()
 }
 
-func (s *Store) UpdateDeliveryLocation(ctx context.Context, id, trainingOrgID int64, locID, name string, isVirtual bool, address, suburb, stateCode, postcode string) error {
+func (s *Store) UpdateDeliveryLocation(ctx context.Context, id, trainingOrgID int64, locID, name string, isVirtual bool, address, suburb, stateCode, postcode, lat, lng string) error {
 	var addrVal, suburbVal, stateVal, postcodeVal any
 	if isVirtual {
 		addrVal, suburbVal, stateVal, postcodeVal = nil, nil, nil, nil
 	} else {
 		addrVal, suburbVal, stateVal, postcodeVal = address, suburb, stateCode, postcode
+	}
+	var latVal, lngVal any
+	if lat != "" {
+		latVal = lat
+	}
+	if lng != "" {
+		lngVal = lng
 	}
 	_, err := s.pool.Exec(ctx, `
 		UPDATE public.delivery_locations SET
@@ -1609,10 +1622,12 @@ func (s *Store) UpdateDeliveryLocation(ctx context.Context, id, trainingOrgID in
 		    address          = $6,
 		    suburb           = $7,
 		    state_code       = $8,
-		    postcode         = $9
+		    postcode         = $9,
+		    latitude         = NULLIF($10::text,'')::numeric,
+		    longitude        = NULLIF($11::text,'')::numeric
 		WHERE id = $1
 	`, id, trainingOrgID, locID, name, isVirtual,
-		addrVal, suburbVal, stateVal, postcodeVal)
+		addrVal, suburbVal, stateVal, postcodeVal, latVal, lngVal)
 	return err
 }
 
@@ -1625,7 +1640,8 @@ func (s *Store) ListBuildings(ctx context.Context) ([]BuildingRow, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT b.id, b.delivery_location_id, dl.name, b.building_name,
 		       COALESCE(b.address,''), COALESCE(b.suburb,''),
-		       COALESCE(b.state_code,''), COALESCE(b.postcode,'')
+		       COALESCE(b.state_code,''), COALESCE(b.postcode,''),
+		       COALESCE(b.latitude::text,''), COALESCE(b.longitude::text,'')
 		FROM public.buildings b
 		JOIN public.delivery_locations dl ON dl.id = b.delivery_location_id
 		ORDER BY dl.name, b.building_name
@@ -1638,7 +1654,8 @@ func (s *Store) ListBuildings(ctx context.Context) ([]BuildingRow, error) {
 	for rows.Next() {
 		var r BuildingRow
 		if err := rows.Scan(&r.ID, &r.LocationID, &r.LocationName, &r.BuildingName,
-			&r.Address, &r.Suburb, &r.StateCode, &r.Postcode); err != nil {
+			&r.Address, &r.Suburb, &r.StateCode, &r.Postcode,
+			&r.Latitude, &r.Longitude); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -1646,24 +1663,26 @@ func (s *Store) ListBuildings(ctx context.Context) ([]BuildingRow, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) CreateBuilding(ctx context.Context, locationID int64, name, address, suburb, stateCode, postcode string) (int64, error) {
+func (s *Store) CreateBuilding(ctx context.Context, locationID int64, name, address, suburb, stateCode, postcode, lat, lng string) (int64, error) {
 	var id int64
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO public.buildings (delivery_location_id, building_name, address, suburb, state_code, postcode)
-		VALUES ($1, $2, NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), NULLIF($6,''))
+		INSERT INTO public.buildings (delivery_location_id, building_name, address, suburb, state_code, postcode, latitude, longitude)
+		VALUES ($1, $2, NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), NULLIF($6,''),
+		        NULLIF($7::text,'')::numeric, NULLIF($8::text,'')::numeric)
 		RETURNING id
-	`, locationID, name, address, suburb, stateCode, postcode).Scan(&id)
+	`, locationID, name, address, suburb, stateCode, postcode, lat, lng).Scan(&id)
 	return id, err
 }
 
-func (s *Store) UpdateBuilding(ctx context.Context, id, locationID int64, name, address, suburb, stateCode, postcode string) error {
+func (s *Store) UpdateBuilding(ctx context.Context, id, locationID int64, name, address, suburb, stateCode, postcode, lat, lng string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE public.buildings
 		SET delivery_location_id=$2, building_name=$3,
 		    address=NULLIF($4,''), suburb=NULLIF($5,''),
-		    state_code=NULLIF($6,''), postcode=NULLIF($7,'')
+		    state_code=NULLIF($6,''), postcode=NULLIF($7,''),
+		    latitude=NULLIF($8::text,'')::numeric, longitude=NULLIF($9::text,'')::numeric
 		WHERE id=$1
-	`, id, locationID, name, address, suburb, stateCode, postcode)
+	`, id, locationID, name, address, suburb, stateCode, postcode, lat, lng)
 	return err
 }
 
@@ -1729,20 +1748,27 @@ func (s *Store) DeleteRoom(ctx context.Context, id int64) error {
 	return err
 }
 
-func (s *Store) CreateDeliveryLocation(ctx context.Context, trainingOrgID int64, locID, name string, isVirtual bool, address, suburb, stateCode, postcode string) (int64, error) {
+func (s *Store) CreateDeliveryLocation(ctx context.Context, trainingOrgID int64, locID, name string, isVirtual bool, address, suburb, stateCode, postcode, lat, lng string) (int64, error) {
 	var addrVal, suburbVal, stateVal, postcodeVal any
 	if isVirtual {
 		addrVal, suburbVal, stateVal, postcodeVal = nil, nil, nil, nil
 	} else {
 		addrVal, suburbVal, stateVal, postcodeVal = address, suburb, stateCode, postcode
 	}
+	var latVal, lngVal any
+	if lat != "" {
+		latVal = lat
+	}
+	if lng != "" {
+		lngVal = lng
+	}
 	var id int64
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO public.delivery_locations
-		    (training_org_id, delivery_loc_id, name, is_virtual, address, suburb, state_code, postcode)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		    (training_org_id, delivery_loc_id, name, is_virtual, address, suburb, state_code, postcode, latitude, longitude)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9::text,'')::numeric, NULLIF($10::text,'')::numeric)
 		RETURNING id
-	`, trainingOrgID, locID, name, isVirtual, addrVal, suburbVal, stateVal, postcodeVal).Scan(&id)
+	`, trainingOrgID, locID, name, isVirtual, addrVal, suburbVal, stateVal, postcodeVal, latVal, lngVal).Scan(&id)
 	return id, err
 }
 

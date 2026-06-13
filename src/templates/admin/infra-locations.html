@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/people.css">
   <link rel="stylesheet" href="/static/sessions.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 <body>
   <header>
@@ -36,7 +37,7 @@
             <th class="td-left">Suburb</th>
             <th>State</th>
             <th>Postcode</th>
-            <th style="width:50px"></th>
+            <th style="width:70px"></th>
           </tr>
         </thead>
         <tbody id="locs-tbody">
@@ -62,7 +63,11 @@
             </td>
             <td><input class="sess-input" type="text" name="postcode" value="{{.Postcode}}" maxlength="4" style="width:52px"></td>
             <td class="sess-actions">
+              <input type="hidden" name="latitude"  value="{{.Latitude}}">
+              <input type="hidden" name="longitude" value="{{.Longitude}}">
               <span class="sess-status"></span>
+              <button class="btn-map{{if .Latitude}} btn-map-set{{end}}" type="button" data-map
+                title="{{if .Latitude}}GPS: {{.Latitude}}, {{.Longitude}} — click to update{{else}}Set GPS position{{end}}">📍</button>
               <button class="btn-danger-sm" type="button" data-delete title="Delete">✕</button>
             </td>
           </tr>
@@ -73,12 +78,76 @@
     <div class="sess-add-bar">
       <button class="btn-primary btn-sm" id="btn-add-loc" type="button">+ Add Location</button>
     </div>
+
+    {{/* ── Inline map panel ── */}}
+    <div id="loc-map-panel" style="display:none">
+      <div class="map-panel-header">
+        <div>
+          <strong id="map-panel-title"></strong>
+          <span id="map-panel-subtitle"></span>
+        </div>
+        <button id="map-panel-close" type="button" title="Close map">✕</button>
+      </div>
+      <div class="map-search-bar">
+        <input id="map-search-input" type="text" placeholder="Search for an address…" autocomplete="off">
+        <button id="map-search-btn" type="button">Search</button>
+      </div>
+      <ul id="map-search-results"></ul>
+      <div id="map-container"></div>
+      <div id="map-resize-handle" title="Drag to resize"></div>
+      <div class="map-panel-footer">
+        <span id="map-coords-display">Click the map to set position</span>
+        <button id="map-use-btn" class="btn-map-save" type="button" disabled>Save position</button>
+      </div>
+    </div>
   </main>
 
+<style>
+.btn-map          { background:none; border:none; cursor:pointer; font-size:15px; opacity:.3; padding:0 2px; }
+.btn-map-set      { opacity:1; }
+.btn-map:hover    { opacity:.65; }
+.btn-map-set:hover{ opacity:.8; }
+
+.sess-row.loc-selected td { background:#eff6ff; }
+
+#loc-map-panel    { margin-top:16px; border:1px solid #d1d5db; border-radius:8px;
+                    overflow:hidden; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.1); }
+.map-panel-header { display:flex; justify-content:space-between; align-items:center;
+                    padding:10px 16px; background:#f8fafc; border-bottom:1px solid #e5e7eb; }
+.map-panel-header strong { font-size:14px; color:#111827; margin-right:10px; }
+.map-panel-header span   { font-size:12px; color:#6b7280; font-family:monospace; }
+.map-panel-header button { background:none; border:none; cursor:pointer; font-size:16px;
+                            color:#9ca3af; line-height:1; padding:2px 4px; }
+.map-panel-header button:hover { color:#374151; }
+.map-search-bar   { display:flex; gap:8px; padding:10px 16px; border-bottom:1px solid #e5e7eb; }
+.map-search-bar input  { flex:1; padding:6px 10px; border:1px solid #d1d5db; border-radius:4px; font-size:13px; }
+.map-search-bar button { padding:6px 14px; background:#3b82f6; color:#fff; border:none;
+                          border-radius:4px; cursor:pointer; font-size:13px; }
+#map-search-results     { list-style:none; margin:0; padding:0; max-height:130px; overflow-y:auto; }
+#map-search-results:not(:empty) { border-bottom:1px solid #e5e7eb; }
+#map-search-results li  { padding:7px 16px; cursor:pointer; font-size:13px; color:#374151;
+                           border-bottom:1px solid #f3f4f6; }
+#map-search-results li:hover { background:#f0f9ff; }
+#map-search-results li.no-results { color:#9ca3af; cursor:default; }
+#map-container    { height:420px; }
+#map-resize-handle { height:10px; background:#f1f5f9; cursor:ns-resize;
+                     display:flex; align-items:center; justify-content:center;
+                     border-top:1px solid #e5e7eb; user-select:none; }
+#map-resize-handle::after { content:''; width:36px; height:3px;
+                             background:#cbd5e1; border-radius:2px; }
+.map-panel-footer { display:flex; justify-content:space-between; align-items:center;
+                    padding:10px 16px; border-top:1px solid #e5e7eb; background:#f8fafc; }
+.map-panel-footer span { font-size:12px; color:#6b7280; font-family:monospace; }
+.btn-map-save     { padding:6px 18px; background:#16a34a; color:#fff; border:none;
+                    border-radius:4px; cursor:pointer; font-size:13px; }
+.btn-map-save:disabled { background:#9ca3af; cursor:not-allowed; }
+</style>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (function () {
   const auStates = [{{range $i,$s := .States}}{{if $i}},{{end}}"{{$s}}"{{end}}];
-  const orgs     = [{{range $i,$o := .Orgs}}{{if $i}},{{end}}{"id":{{$o.ID}},"code":{{printf "%q" $o.Code}}}{{end}}];
+  const orgs     = [{{range $i,$o := .Orgs}}{{if $i}},{{end}}{"id":{{$o.ID}},"code":"{{$o.Code}}"}{{end}}];
 
   function setInd(tr, state) {
     const el = tr.querySelector('.sess-status');
@@ -94,7 +163,8 @@
     return { training_org_id: g(tr,'training_org_id'), delivery_loc_id: g(tr,'delivery_loc_id'),
              name: g(tr,'name'), is_virtual: cb(tr,'is_virtual'),
              address: g(tr,'address'), suburb: g(tr,'suburb'),
-             state_code: g(tr,'state_code'), postcode: g(tr,'postcode') };
+             state_code: g(tr,'state_code'), postcode: g(tr,'postcode'),
+             latitude: g(tr,'latitude'), longitude: g(tr,'longitude') };
   }
   function isComplete(f) {
     if (!f.training_org_id || !f.delivery_loc_id || !f.name) return false;
@@ -122,6 +192,7 @@
     try {
       const res = await fetch(`/admin/locs/${tr.dataset.id}/delete`, { method: 'POST' });
       if (!res.ok) { setInd(tr, 'error'); return; }
+      if (currentMapRow === tr) closeMapPanel();
       tr.remove();
     } catch { setInd(tr, 'error'); }
   }
@@ -130,6 +201,7 @@
     tr.querySelectorAll('input[type=text]').forEach(el => el.addEventListener('blur', () => saveRow(tr)));
     tr.querySelectorAll('select').forEach(el => el.addEventListener('change', () => saveRow(tr)));
     tr.querySelector('[name=is_virtual]')?.addEventListener('change', () => saveRow(tr));
+    tr.querySelector('[data-map]')?.addEventListener('click', () => openMapPanel(tr));
     tr.querySelector('[data-delete]')?.addEventListener('click', () => deleteRow(tr));
   }
   document.querySelectorAll('#locs-tbody .sess-row').forEach(attachListeners);
@@ -137,8 +209,8 @@
   document.getElementById('btn-add-loc')?.addEventListener('click', () => {
     const tbody = document.getElementById('locs-tbody');
     tbody.querySelector('.sess-new')?.remove();
-    const orgOpts    = orgs.map(o => `<option value="${o.id}">${o.code}</option>`).join('');
-    const stateOpts  = [''].concat(auStates).map(s => `<option value="${s}">${s}</option>`).join('');
+    const orgOpts   = orgs.map(o => `<option value="${o.id}">${o.code}</option>`).join('');
+    const stateOpts = [''].concat(auStates).map(s => `<option value="${s}">${s}</option>`).join('');
     const tr = document.createElement('tr');
     tr.className = 'sess-row sess-new'; tr.dataset.id = 'new';
     tr.innerHTML = `
@@ -150,12 +222,184 @@
       <td><input class="sess-input" type="text" name="suburb"          placeholder="Suburb"         maxlength="50"  style="width:110px"></td>
       <td><select class="sess-input" name="state_code" style="width:62px">${stateOpts}</select></td>
       <td><input class="sess-input" type="text" name="postcode"        placeholder="3000"           maxlength="4"   style="width:52px"></td>
-      <td class="sess-actions"><span class="sess-status"></span>
-        <button class="btn-danger-sm" type="button" data-delete title="Remove">✕</button></td>`;
+      <td class="sess-actions">
+        <input type="hidden" name="latitude" value="">
+        <input type="hidden" name="longitude" value="">
+        <span class="sess-status"></span>
+        <button class="btn-map" type="button" data-map title="Set GPS position">📍</button>
+        <button class="btn-danger-sm" type="button" data-delete title="Remove">✕</button>
+      </td>`;
     tbody.appendChild(tr);
     attachListeners(tr);
     tr.querySelector('[name=delivery_loc_id]').focus();
   });
+
+  // ── Inline map panel ──────────────────────────────────────────────────────
+  let leafletMap = null, marker = null, currentMapRow = null;
+  let pendingLat = null, pendingLng = null;
+
+  function openMapPanel(tr) {
+    // Deselect previous row
+    if (currentMapRow && currentMapRow !== tr) {
+      currentMapRow.classList.remove('loc-selected');
+    }
+    // Toggle: clicking the same row's 📍 again closes the panel
+    if (currentMapRow === tr) { closeMapPanel(); return; }
+
+    currentMapRow = tr;
+    tr.classList.add('loc-selected');
+
+    const latVal    = tr.querySelector('[name=latitude]')?.value  ?? '';
+    const lngVal    = tr.querySelector('[name=longitude]')?.value ?? '';
+    const hasCoords = latVal !== '' && lngVal !== '';
+    const locName   = tr.querySelector('[name=name]')?.value || '(unnamed)';
+    const address   = [tr.querySelector('[name=address]')?.value,
+                       tr.querySelector('[name=suburb]')?.value,
+                       tr.querySelector('[name=state_code]')?.value]
+                       .filter(Boolean).join(', ');
+
+    pendingLat = hasCoords ? parseFloat(latVal) : null;
+    pendingLng = hasCoords ? parseFloat(lngVal) : null;
+
+    document.getElementById('map-panel-title').textContent    = locName;
+    document.getElementById('map-panel-subtitle').textContent = hasCoords
+      ? `${parseFloat(latVal).toFixed(6)}, ${parseFloat(lngVal).toFixed(6)}`
+      : address || '';
+    document.getElementById('map-coords-display').textContent = hasCoords
+      ? `${parseFloat(latVal).toFixed(6)}, ${parseFloat(lngVal).toFixed(6)}`
+      : 'Click the map to set position';
+    document.getElementById('map-use-btn').disabled    = true;
+    document.getElementById('map-search-results').innerHTML = '';
+    document.getElementById('map-search-input').value  = '';
+
+    const panel = document.getElementById('loc-map-panel');
+    panel.style.display = 'block';
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    setTimeout(() => {
+      if (!leafletMap) {
+        leafletMap = L.map('map-container');
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+          maxZoom: 19
+        }).addTo(leafletMap);
+        leafletMap.on('click', e => placeMarker(e.latlng.lat, e.latlng.lng));
+      } else {
+        leafletMap.invalidateSize();
+      }
+
+      if (hasCoords) {
+        leafletMap.setView([parseFloat(latVal), parseFloat(lngVal)], 16);
+        placeMarker(parseFloat(latVal), parseFloat(lngVal), false);
+      } else {
+        leafletMap.setView([-25.27, 133.78], 5);
+        if (marker) { marker.remove(); marker = null; }
+      }
+    }, 50);
+  }
+
+  // pending = false when restoring existing coords (don't enable Save button)
+  function placeMarker(lat, lng, pending = true) {
+    if (marker) {
+      marker.setLatLng([lat, lng]);
+    } else {
+      marker = L.marker([lat, lng], { draggable: true }).addTo(leafletMap);
+      marker.on('dragend', e => {
+        const pos = e.target.getLatLng();
+        updatePending(pos.lat, pos.lng);
+      });
+    }
+    if (pending) updatePending(lat, lng);
+  }
+
+  function updatePending(lat, lng) {
+    pendingLat = lat;
+    pendingLng = lng;
+    document.getElementById('map-coords-display').textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    document.getElementById('map-use-btn').disabled = false;
+  }
+
+  function closeMapPanel() {
+    if (currentMapRow) currentMapRow.classList.remove('loc-selected');
+    document.getElementById('loc-map-panel').style.display = 'none';
+    document.getElementById('map-search-results').innerHTML = '';
+    currentMapRow = null;
+  }
+
+  document.getElementById('map-panel-close').addEventListener('click', closeMapPanel);
+
+  document.getElementById('map-use-btn').addEventListener('click', () => {
+    if (!currentMapRow || pendingLat === null) return;
+    const latStr = pendingLat.toFixed(6);
+    const lngStr = pendingLng.toFixed(6);
+    currentMapRow.querySelector('[name=latitude]').value  = latStr;
+    currentMapRow.querySelector('[name=longitude]').value = lngStr;
+    // Update header subtitle and map button
+    document.getElementById('map-panel-subtitle').textContent = `${latStr}, ${lngStr}`;
+    const btn = currentMapRow.querySelector('[data-map]');
+    btn.classList.add('btn-map-set');
+    btn.title = `GPS: ${latStr}, ${lngStr} — click to update`;
+    document.getElementById('map-use-btn').disabled = true;
+    saveRow(currentMapRow);
+  });
+
+  // ── Map resize handle ────────────────────────────────────────────────────
+  (function () {
+    const handle = document.getElementById('map-resize-handle');
+    const mapEl  = document.getElementById('map-container');
+    let startY, startH;
+    handle.addEventListener('mousedown', e => {
+      startY = e.clientY;
+      startH = mapEl.offsetHeight;
+      document.body.style.cursor = 'ns-resize';
+      e.preventDefault();
+      function onMove(e) {
+        mapEl.style.height = Math.max(150, startH + e.clientY - startY) + 'px';
+        leafletMap?.invalidateSize();
+      }
+      function onUp() {
+        document.body.style.cursor = '';
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  })();
+
+  // ── Nominatim search ──────────────────────────────────────────────────────
+  document.getElementById('map-search-btn').addEventListener('click', doSearch);
+  document.getElementById('map-search-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doSearch();
+  });
+
+  async function doSearch() {
+    const q = document.getElementById('map-search-input').value.trim();
+    if (!q) return;
+    const ul = document.getElementById('map-search-results');
+    ul.innerHTML = '<li class="no-results">Searching…</li>';
+    try {
+      const res  = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5&countrycodes=au`,
+        { headers: { 'Accept-Language': 'en' } }
+      );
+      const data = await res.json();
+      ul.innerHTML = '';
+      if (!data.length) { ul.innerHTML = '<li class="no-results">No results found</li>'; return; }
+      data.forEach(r => {
+        const li = document.createElement('li');
+        li.textContent = r.display_name;
+        li.addEventListener('click', () => {
+          leafletMap.setView([parseFloat(r.lat), parseFloat(r.lon)], 16);
+          placeMarker(parseFloat(r.lat), parseFloat(r.lon));
+          ul.innerHTML = '';
+        });
+        ul.appendChild(li);
+      });
+    } catch {
+      ul.innerHTML = '<li class="no-results">Search failed — check network connection</li>';
+    }
+  }
 })();
 </script>
 </body>
