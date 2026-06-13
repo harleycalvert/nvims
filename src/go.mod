@@ -1,4 +1,4 @@
-module nvims-sms
+module nvims
 
 go 1.25.0
 

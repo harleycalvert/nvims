@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-seed.py — Populates the nvims-sms PostgreSQL database with synthetic Victorian TAFE data.
+seed.py — Populates the nvims PostgreSQL database with synthetic Victorian TAFE data.
 
 Programs, subjects, and class clusters are driven by tafe_data.json.
 Delivery locations match the campuses listed in that file (Dandenong, Frankston, Berwick).
 
 Usage:
     pip install psycopg2-binary faker bcrypt
-    python synthetic_data/seed.py [--dsn postgresql://localhost/nvims-sms] [--clean]
+    python synthetic_data/seed.py [--dsn postgresql://localhost/nvims] [--clean]
 
 Options:
     --dsn    PostgreSQL connection string (default: see DEFAULT_DSN)
@@ -31,7 +31,7 @@ random.seed(42)
 fake = Faker("en_AU")
 Faker.seed(42)
 
-DEFAULT_DSN = "postgresql://nvims:jjnhbFC56RDWRTJHBjhb98uibe@localhost:5432/nvims-sms"
+DEFAULT_DSN = "postgresql://nvims:jjnhbFC56RDWRTJHBjhb98uibe@localhost:5432/nvims"
 
 SCRIPT_DIR = Path(__file__).parent
 TAFE_DATA  = json.loads((SCRIPT_DIR / "tafe_data.json").read_text())
@@ -853,7 +853,7 @@ def seed(cur):
 # ---------------------------------------------------------------------------
 
 def main():
-    ap = argparse.ArgumentParser(description="Seed nvims-sms with synthetic data")
+    ap = argparse.ArgumentParser(description="Seed nvims with synthetic data")
     ap.add_argument("--dsn",   default=DEFAULT_DSN,
                     help="PostgreSQL DSN")
     ap.add_argument("--clean", action="store_true",

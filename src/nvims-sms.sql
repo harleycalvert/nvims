@@ -1,6 +1,10 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.28, 2026-06-13
+-- AVETMISS-compliant SMS schema  --  version 0.29, 2026-06-13
 -- =========================================================================
+-- Changes from v0.28:
+--   1.  teacher_documents: document_url and file_name made nullable to
+--       support link-only documents (title + external_url, no file upload)
+--       for VCC evidence records.
 -- Changes from v0.27:
 --   1.  buildings: added address text NULL, suburb varchar(50) NULL,
 --       state_code varchar(3) NULL (FK → australian_states), and
@@ -2590,9 +2594,9 @@ CREATE TABLE IF NOT EXISTS public.teacher_documents (
     title            varchar(200)  NOT NULL,
     file_category    varchar(30)   NOT NULL DEFAULT 'Other',
     year_of_document smallint      NULL,
-    document_url     varchar(2048) NOT NULL,
+    document_url     varchar(2048) NULL,
     external_url     varchar(2048) NULL,
-    file_name        varchar(255)  NOT NULL,
+    file_name        varchar(255)  NULL,
     uploaded_at      timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     created_at       timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -2759,5 +2763,11 @@ CREATE INDEX IF NOT EXISTS idx_room_issues_room
 
 CREATE INDEX IF NOT EXISTS idx_room_issues_status
     ON public.room_issues(room_id, status);
+
+-- =========================================================================
+-- Migration: v0.28 → v0.29  (run on existing databases)
+-- =========================================================================
+ALTER TABLE public.teacher_documents ALTER COLUMN document_url DROP NOT NULL;
+ALTER TABLE public.teacher_documents ALTER COLUMN file_name    DROP NOT NULL;
 
 COMMIT;

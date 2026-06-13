@@ -8,15 +8,15 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"nvims-sms/internal/auth"
-	"nvims-sms/internal/handler"
-	"nvims-sms/internal/store"
+	"nvims/internal/auth"
+	"nvims/internal/handler"
+	"nvims/internal/store"
 )
 
 func main() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgresql://nvims:jjnhbFC56RDWRTJHBjhb98uibe@localhost:5432/nvims-sms"
+		dsn = "postgresql://nvims:jjnhbFC56RDWRTJHBjhb98uibe@localhost:5432/nvims"
 	}
 
 	pool, err := pgxpool.New(context.Background(), dsn)
@@ -117,7 +117,10 @@ func main() {
 	mux.HandleFunc("GET /vcc/detail", protect(h.VCCIndex))
 	mux.HandleFunc("POST /vcc/status", protect(h.VCCUpdateStatus))
 	mux.HandleFunc("POST /vcc/units/{uid}", protect(h.VCCUnitUpdate))
+	mux.HandleFunc("POST /vcc/pqs", protect(h.VCCPQCreate))
 	mux.HandleFunc("POST /vcc/pqs/{pid}", protect(h.VCCPQUpdate))
+	mux.HandleFunc("POST /vcc/pqs/{pid}/docs", protect(h.VCCPQAddDoc))
+	mux.HandleFunc("POST /vcc/pqs/{pid}/docs/{did}/delete", protect(h.VCCPQDeleteDoc))
 	mux.HandleFunc("GET /student/panel", protect(h.StudentPanel))
 	mux.HandleFunc("GET /results", protect(h.Results))
 	mux.HandleFunc("GET /result/popup", protect(h.ResultPopup))

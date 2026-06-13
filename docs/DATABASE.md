@@ -2,7 +2,7 @@
 
 PostgreSQL schema for a national, potentially AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.28`: its entities, relationships, business rules, and the
+describes the design of `v0.29`: its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -2635,7 +2635,7 @@ Units the teacher has currency for within a VCC. Each row records the unit code 
 
 #### `teacher_documents`
 
-Per-teacher document library: testamurs, transcripts, accreditations, registrations, licences, job cards, and other evidence files. Each row stores the document title, category, optional year, file URL in cloud storage, and original filename. `external_url` can optionally link to a third-party verification page such as a digital badge or eQuals transcript. Documents are linked to specific VCC entities via `teacher_document_connections`. References `teachers`.
+Per-teacher document library: testamurs, transcripts, accreditations, registrations, licences, job cards, and other evidence files. Each row stores the document title, category, optional year, file URL in cloud storage, optional filename, and optional `external_url` linking to a third-party verification page such as a digital badge or eQuals transcript. Both `document_url` and `file_name` are nullable to support link-only records (no file upload). Documents are linked to specific VCC entities via `teacher_document_connections`. References `teachers`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -2644,9 +2644,9 @@ Per-teacher document library: testamurs, transcripts, accreditations, registrati
 | `title` | `varchar(200)` | no |  |  |
 | `file_category` | `varchar(30)` | no | `'Other'` |  |
 | `year_of_document` | `smallint` | yes |  |  |
-| `document_url` | `varchar(2048)` | no |  |  |
+| `document_url` | `varchar(2048)` | yes |  |  |
 | `external_url` | `varchar(2048)` | yes |  |  |
-| `file_name` | `varchar(255)` | no |  |  |
+| `file_name` | `varchar(255)` | yes |  |  |
 | `uploaded_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 | `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 

@@ -17,8 +17,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/crypto/bcrypt"
 
-	"nvims-sms/internal/auth"
-	"nvims-sms/internal/store"
+	"nvims/internal/auth"
+	"nvims/internal/store"
 )
 
 type Handler struct {
@@ -693,7 +693,7 @@ func backupDSN() string {
 	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
 		return dsn
 	}
-	return "postgresql://nvims:jjnhbFC56RDWRTJHBjhb98uibe@localhost:5432/nvims-sms"
+	return "postgresql://nvims:jjnhbFC56RDWRTJHBjhb98uibe@localhost:5432/nvims"
 }
 
 // jsonSafe converts pgx-native values to types that encoding/json handles cleanly.
@@ -728,7 +728,7 @@ func (h *Handler) BackupPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) BackupSQL(w http.ResponseWriter, r *http.Request) {
-	filename := "nvims-sms-" + time.Now().Format("2006-01-02-150405") + ".sql"
+	filename := "nvims-" + time.Now().Format("2006-01-02-150405") + ".sql"
 	cmd := exec.CommandContext(r.Context(), "pg_dump", backupDSN())
 	out, err := cmd.Output()
 	if err != nil {
@@ -777,7 +777,7 @@ func (h *Handler) BackupJSON(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "json error", http.StatusInternalServerError)
 		return
 	}
-	filename := "nvims-sms-" + time.Now().Format("2006-01-02-150405") + ".json"
+	filename := "nvims-" + time.Now().Format("2006-01-02-150405") + ".json"
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	w.Header().Set("Content-Length", strconv.Itoa(len(out)))
@@ -2379,6 +2379,72 @@ func (h *Handler) VCCPQUpdate(w http.ResponseWriter, r *http.Request) {
 		strings.TrimSpace(r.FormValue("notes")),
 	); err != nil {
 		log.Printf("UpdateVCCPQ(%d,%d): %v", user.PersonID, pqID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) VCCPQCreate(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	code := strings.TrimSpace(r.FormValue("qualification_code"))
+	title := strings.TrimSpace(r.FormValue("qualification_title"))
+	if code == "" || title == "" {
+		http.Error(w, `{"error":"code and title required"}`, http.StatusBadRequest)
+		return
+	}
+	pq, err := h.store.CreateVCCPQ(r.Context(), user.PersonID, code, title,
+		strings.TrimSpace(r.FormValue("institution")))
+	if err != nil {
+		log.Printf("CreateVCCPQ(%d): %v", user.PersonID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"id":%d,"code":%q,"title":%q,"status":%q}`, pq.ID, pq.Code, pq.Title, pq.Status)
+}
+
+func (h *Handler) VCCPQAddDoc(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	pqID, err := strconv.ParseInt(r.PathValue("pid"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	title := strings.TrimSpace(r.FormValue("title"))
+	if title == "" {
+		http.Error(w, `{"error":"title required"}`, http.StatusBadRequest)
+		return
+	}
+	doc, err := h.store.CreatePQDocument(r.Context(), user.PersonID, pqID,
+		title, strings.TrimSpace(r.FormValue("external_url")))
+	if err != nil {
+		log.Printf("CreatePQDocument(%d,%d): %v", user.PersonID, pqID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"id":%d,"title":%q,"external_url":%q}`, doc.ID, doc.Title, doc.ExternalURL)
+}
+
+func (h *Handler) VCCPQDeleteDoc(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	docID, err := strconv.ParseInt(r.PathValue("did"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := h.store.DeletePQDocument(r.Context(), user.PersonID, docID); err != nil {
+		log.Printf("DeletePQDocument(%d,%d): %v", user.PersonID, docID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}

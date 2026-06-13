@@ -41,10 +41,10 @@
         <h2>Teaching Qualifications</h2>
         <p class="vcc-panel-desc">VET Training &amp; Assessment Qualifications</p>
       </div>
-      {{if not $vcc.PQs}}
-        <p class="vcc-empty">No qualifications recorded.</p>
-      {{else}}
       <div class="vcc-acc-list" id="pq-list">
+        {{if not $vcc.PQs}}
+          <p class="vcc-empty" id="pq-empty-msg">No qualifications recorded.</p>
+        {{end}}
         {{range $vcc.PQs}}
         <div class="vcc-acc" data-id="{{.ID}}">
           <div class="vcc-acc-hdr">
@@ -85,17 +85,52 @@
                 <input type="text" name="notes" value="{{.Notes}}" maxlength="500" class="vcc-input">
               </label>
             </div>
-            {{if .Documents}}
-            <div class="vcc-docs">
-              <span class="vcc-docs-label">Documents</span>
-              {{range .Documents}}<span class="vcc-doc-chip">{{.Title}}{{if .Year}} ({{.Year}}){{end}}</span>{{end}}
+            <div class="vcc-docs-section">
+              <div class="vcc-docs-hdr">
+                <span class="vcc-section-label">Evidence Documents</span>
+              </div>
+              <div class="vcc-doc-list">
+                {{range .Documents}}
+                <div class="vcc-doc-row" data-doc-id="{{.ID}}">
+                  {{if .ExternalURL}}<a href="{{.ExternalURL}}" target="_blank" rel="noopener" class="vcc-doc-link">{{.Title}}</a>
+                  {{else}}<span class="vcc-doc-name">{{.Title}}</span>{{end}}
+                  <button type="button" class="vcc-doc-del" title="Remove">&times;</button>
+                </div>
+                {{end}}
+              </div>
+              <div class="vcc-add-doc-bar" style="display:none">
+                <input type="text" class="vcc-input doc-title-inp" placeholder="Document name (e.g. TAE40220 Certificate)" maxlength="200">
+                <input type="url" class="vcc-input doc-url-inp" placeholder="External URL (optional, e.g. eQuals link)" maxlength="2048" style="margin-top:5px">
+                <div class="vcc-add-doc-actions">
+                  <button type="button" class="vcc-btn-sm btn-doc-save">Add</button>
+                  <button type="button" class="vcc-btn-sm vcc-btn-ghost btn-doc-cancel">Cancel</button>
+                  <span class="vcc-err-msg"></span>
+                </div>
+              </div>
+              <button type="button" class="vcc-btn-sm vcc-btn-ghost btn-add-doc">+ Add document</button>
             </div>
-            {{end}}
           </div>
         </div>
         {{end}}
       </div>
-      {{end}}
+      <div id="pq-add-bar" style="display:none">
+        <div class="vcc-form-grid" style="margin-bottom:8px">
+          <label class="vcc-field vcc-field-sm">
+            <span>Code</span>
+            <input type="text" id="pq-add-code" placeholder="e.g. TAE40220" maxlength="30" class="vcc-input mono">
+          </label>
+          <label class="vcc-field vcc-field-lg">
+            <span>Qualification Title</span>
+            <input type="text" id="pq-add-title" placeholder="Certificate IV in Training and Assessment" maxlength="200" class="vcc-input">
+          </label>
+        </div>
+        <div class="vcc-add-actions">
+          <button type="button" id="pq-add-save" class="vcc-btn-sm">Add qualification</button>
+          <button type="button" id="pq-add-cancel" class="vcc-btn-sm vcc-btn-ghost">Cancel</button>
+          <span id="pq-add-err" class="vcc-err-msg"></span>
+        </div>
+      </div>
+      <button type="button" id="pq-add-btn" class="vcc-btn-add">+ Add qualification</button>
     </div>
 
     {{/* ── Programs I Teach panel ── */}}
@@ -387,14 +422,46 @@
   border-bottom: 1px solid #e9ecef;
 }
 
-/* ── Documents ── */
-.vcc-docs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid #f0f0f0; }
-.vcc-docs-label { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
-.vcc-doc-chip {
-  font-size: 12px; color: #1d4ed8;
-  background: #eff6ff; border: 1px solid #bfdbfe;
-  padding: 2px 9px; border-radius: 4px;
+/* ── Documents section ── */
+.vcc-docs-section { margin-top: 12px; padding-top: 10px; border-top: 1px solid #f0f0f0; }
+.vcc-docs-hdr { margin-bottom: 6px; }
+.vcc-section-label { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
+.vcc-doc-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+.vcc-doc-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px; border-radius: 4px; background: #f8fafc;
+  border: 1px solid #e2e8f0;
 }
+.vcc-doc-link {
+  font-size: 12px; color: #2563eb; text-decoration: none; flex: 1;
+}
+.vcc-doc-link:hover { text-decoration: underline; }
+.vcc-doc-name { font-size: 12px; color: #374151; flex: 1; }
+.vcc-doc-del {
+  border: none; background: none; cursor: pointer;
+  color: #9ca3af; font-size: 15px; line-height: 1; padding: 0 2px;
+  flex-shrink: 0;
+}
+.vcc-doc-del:hover { color: #ef4444; }
+.vcc-add-doc-bar { padding: 8px; background: #f1f5f9; border-radius: 5px; margin-bottom: 6px; }
+.vcc-add-doc-actions { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.vcc-err-msg { font-size: 12px; color: #ef4444; }
+/* ── Buttons ── */
+.vcc-btn-sm {
+  font-size: 12px; padding: 4px 10px; border-radius: 4px; cursor: pointer;
+  border: 1px solid #2563eb; background: #2563eb; color: #fff; white-space: nowrap;
+}
+.vcc-btn-sm:hover { background: #1d4ed8; border-color: #1d4ed8; }
+.vcc-btn-ghost { background: #fff; color: #374151; border-color: #d1d5db; }
+.vcc-btn-ghost:hover { background: #f1f5f9; }
+.vcc-btn-add {
+  margin-top: 10px; font-size: 12px; padding: 6px 14px; border-radius: 5px;
+  border: 1px dashed #93c5fd; background: #eff6ff; color: #2563eb; cursor: pointer;
+  display: block;
+}
+.vcc-btn-add:hover { background: #dbeafe; border-color: #3b82f6; }
+#pq-add-bar { margin-top: 8px; padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; }
+.vcc-add-actions { display: flex; gap: 8px; align-items: center; }
 </style>
 
 <script>
@@ -440,6 +507,11 @@
     if (sec) sec.style.display = method.includes('superseded') ? '' : 'none';
   }
 
+  // ── HTML escape util ──
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
   // ── PQ save ──
   function savePQ(acc) {
     const g = n => acc.querySelector(`[name="${n}"]`)?.value ?? '';
@@ -456,16 +528,93 @@
     postSave('/vcc/pqs/' + acc.dataset.id, fields, ind);
   }
 
-  document.querySelectorAll('#pq-list .vcc-acc').forEach(acc => {
+  // Auto-revert status to Draft when any non-status field is edited
+  function autoRevertToDraft(acc) {
+    const sel = acc.querySelector('select[name=status]');
+    if (sel && sel.value === 'Approved') {
+      sel.value = 'Draft';
+      const badge = acc.querySelector('.vcc-badge');
+      if (badge) { badge.dataset.st = 'Draft'; badge.textContent = 'Draft'; }
+    }
+  }
+
+  // ── Document management ──
+  function appendDocRow(acc, d) {
+    const list = acc.querySelector('.vcc-doc-list');
+    const row = document.createElement('div');
+    row.className = 'vcc-doc-row';
+    row.dataset.docId = d.id;
+    row.innerHTML = d.external_url
+      ? `<a href="${esc(d.external_url)}" target="_blank" rel="noopener" class="vcc-doc-link">${esc(d.title)}</a>`
+      : `<span class="vcc-doc-name">${esc(d.title)}</span>`;
+    row.innerHTML += `<button type="button" class="vcc-doc-del" title="Remove">&times;</button>`;
+    row.querySelector('.vcc-doc-del').addEventListener('click', () => {
+      fetch('/vcc/pqs/' + acc.dataset.id + '/docs/' + d.id + '/delete', {method:'POST'})
+        .then(r => { if (r.ok) row.remove(); });
+    });
+    list.appendChild(row);
+  }
+
+  // ── Attach all PQ-level handlers ──
+  function attachPQHandlers(acc) {
     acc.querySelectorAll('input[type=text], input[type=date]').forEach(el =>
-      el.addEventListener('blur', () => savePQ(acc)));
+      el.addEventListener('blur', () => { autoRevertToDraft(acc); savePQ(acc); }));
+
     acc.querySelector('select[name=status]')?.addEventListener('change', () => {
       const s = acc.querySelector('select[name=status]').value;
       const badge = acc.querySelector('.vcc-badge');
       if (badge) { badge.dataset.st = s; badge.textContent = s; }
       savePQ(acc);
     });
-  });
+
+    // Wire up existing doc delete buttons (from server-rendered HTML)
+    acc.querySelectorAll('.vcc-doc-del').forEach(btn => {
+      const row = btn.closest('.vcc-doc-row');
+      btn.addEventListener('click', () => {
+        fetch('/vcc/pqs/' + acc.dataset.id + '/docs/' + row.dataset.docId + '/delete', {method:'POST'})
+          .then(r => { if (r.ok) row.remove(); });
+      });
+    });
+
+    // Add document flow
+    const addDocBar = acc.querySelector('.vcc-add-doc-bar');
+    const btnAddDoc = acc.querySelector('.btn-add-doc');
+    acc.querySelector('.btn-add-doc')?.addEventListener('click', () => {
+      addDocBar.style.display = '';
+      btnAddDoc.style.display = 'none';
+      addDocBar.querySelector('.doc-title-inp').focus();
+    });
+    acc.querySelector('.btn-doc-cancel')?.addEventListener('click', () => {
+      addDocBar.style.display = 'none';
+      btnAddDoc.style.display = '';
+      addDocBar.querySelector('.doc-title-inp').value = '';
+      addDocBar.querySelector('.doc-url-inp').value = '';
+      addDocBar.querySelector('.vcc-err-msg').textContent = '';
+    });
+    acc.querySelector('.btn-doc-save')?.addEventListener('click', async () => {
+      const titleInp = addDocBar.querySelector('.doc-title-inp');
+      const urlInp   = addDocBar.querySelector('.doc-url-inp');
+      const errEl    = addDocBar.querySelector('.vcc-err-msg');
+      const title    = titleInp.value.trim();
+      if (!title) { errEl.textContent = 'Document name required'; return; }
+      errEl.textContent = '';
+      try {
+        const res = await fetch('/vcc/pqs/' + acc.dataset.id + '/docs', {
+          method: 'POST',
+          body: new URLSearchParams({title, external_url: urlInp.value.trim()}),
+        });
+        if (!res.ok) { errEl.textContent = 'Error saving'; return; }
+        const d = await res.json();
+        appendDocRow(acc, d);
+        addDocBar.style.display = 'none';
+        btnAddDoc.style.display = '';
+        titleInp.value = '';
+        urlInp.value   = '';
+      } catch { errEl.textContent = 'Network error'; }
+    });
+  }
+
+  document.querySelectorAll('#pq-list .vcc-acc').forEach(acc => attachPQHandlers(acc));
 
   // ── Unit save ──
   function saveUnit(acc) {
@@ -509,6 +658,114 @@
         saveUnit(acc);
       }));
   });
+
+  // ── Add qualification ──
+  const pqAddBar    = document.getElementById('pq-add-bar');
+  const pqAddBtn    = document.getElementById('pq-add-btn');
+  const pqAddSave   = document.getElementById('pq-add-save');
+  const pqAddCancel = document.getElementById('pq-add-cancel');
+  const pqAddErr    = document.getElementById('pq-add-err');
+  const pqList      = document.getElementById('pq-list');
+
+  pqAddBtn?.addEventListener('click', () => {
+    pqAddBar.style.display = '';
+    pqAddBtn.style.display = 'none';
+    document.getElementById('pq-add-code').focus();
+  });
+  pqAddCancel?.addEventListener('click', () => {
+    pqAddBar.style.display = 'none';
+    pqAddBtn.style.display = '';
+    document.getElementById('pq-add-code').value  = '';
+    document.getElementById('pq-add-title').value = '';
+    if (pqAddErr) pqAddErr.textContent = '';
+  });
+  pqAddSave?.addEventListener('click', async () => {
+    const code  = document.getElementById('pq-add-code').value.trim();
+    const title = document.getElementById('pq-add-title').value.trim();
+    if (!code || !title) { pqAddErr.textContent = 'Code and title required'; return; }
+    pqAddErr.textContent = '';
+    try {
+      const res = await fetch('/vcc/pqs', {
+        method: 'POST',
+        body: new URLSearchParams({qualification_code: code, qualification_title: title}),
+      });
+      if (!res.ok) { pqAddErr.textContent = 'Error creating qualification'; return; }
+      const pq = await res.json();
+      // Remove empty-state message if present
+      document.getElementById('pq-empty-msg')?.remove();
+      // Build and insert new accordion (open)
+      const acc = buildPQAccordion(pq);
+      pqList.appendChild(acc);
+      attachPQHandlers(acc);
+      // Reset add bar
+      pqAddBar.style.display = 'none';
+      pqAddBtn.style.display = '';
+      document.getElementById('pq-add-code').value  = '';
+      document.getElementById('pq-add-title').value = '';
+    } catch { pqAddErr.textContent = 'Network error'; }
+  });
+
+  function buildPQAccordion(pq) {
+    const acc = document.createElement('div');
+    acc.className = 'vcc-acc open';
+    acc.dataset.id = pq.id;
+    acc.innerHTML = `
+      <div class="vcc-acc-hdr">
+        <span class="vcc-chev">&#9654;</span>
+        <span class="vcc-acc-code">${esc(pq.code)}</span>
+        <span class="vcc-acc-title">${esc(pq.title)}</span>
+        <span class="vcc-badge" data-st="Draft">Draft</span>
+        <span class="sess-status vcc-ind"></span>
+      </div>
+      <div class="vcc-acc-body">
+        <div class="vcc-form-grid">
+          <label class="vcc-field vcc-field-sm">
+            <span>Code</span>
+            <input type="text" name="qualification_code" value="${esc(pq.code)}" maxlength="30" class="vcc-input mono">
+          </label>
+          <label class="vcc-field vcc-field-lg">
+            <span>Qualification Title</span>
+            <input type="text" name="qualification_title" value="${esc(pq.title)}" maxlength="200" class="vcc-input">
+          </label>
+          <label class="vcc-field vcc-field-md">
+            <span>Institution</span>
+            <input type="text" name="institution" value="" maxlength="200" class="vcc-input">
+          </label>
+          <label class="vcc-field vcc-field-sm">
+            <span>Status</span>
+            <select name="status" class="vcc-input">
+              <option value="Draft" selected>Draft</option>
+              <option value="Pending">Pending</option>
+              <option value="Approved">Approved</option>
+              <option value="Rejected">Rejected</option>
+            </select>
+          </label>
+          <label class="vcc-field vcc-field-sm">
+            <span>Approved Date</span>
+            <input type="date" name="approved_at" value="" class="vcc-input">
+          </label>
+          <label class="vcc-field vcc-field-full">
+            <span>Notes</span>
+            <input type="text" name="notes" value="" maxlength="500" class="vcc-input">
+          </label>
+        </div>
+        <div class="vcc-docs-section">
+          <div class="vcc-docs-hdr"><span class="vcc-section-label">Evidence Documents</span></div>
+          <div class="vcc-doc-list"></div>
+          <div class="vcc-add-doc-bar" style="display:none">
+            <input type="text" class="vcc-input doc-title-inp" placeholder="Document name (e.g. TAE40220 Certificate)" maxlength="200">
+            <input type="url" class="vcc-input doc-url-inp" placeholder="External URL (optional)" maxlength="2048" style="margin-top:5px">
+            <div class="vcc-add-doc-actions">
+              <button type="button" class="vcc-btn-sm btn-doc-save">Add</button>
+              <button type="button" class="vcc-btn-sm vcc-btn-ghost btn-doc-cancel">Cancel</button>
+              <span class="vcc-err-msg"></span>
+            </div>
+          </div>
+          <button type="button" class="vcc-btn-sm vcc-btn-ghost btn-add-doc">+ Add document</button>
+        </div>
+      </div>`;
+    return acc;
+  }
 
 })();
 </script>
