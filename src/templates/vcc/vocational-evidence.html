@@ -1,0 +1,48 @@
+{{define "vcc-vocational-evidence"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS-SMS — Vocational Evidence</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/menu.css">
+</head>
+<body>
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/vcc">VCC</a>
+        <h1>Vocational Evidence</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+  <main>
+    <div class="menu-grid">
+
+      <div class="menu-card menu-card-disabled">
+        <div class="menu-card-accent menu-accent-green"></div>
+        <div class="menu-card-body">
+          <div class="menu-card-title">Vocational Qualifications</div>
+          <div class="menu-card-desc">Nationally Recognised Training (AQF)</div>
+          <span class="menu-soon">Coming soon</span>
+        </div>
+      </div>
+
+      <div class="menu-card menu-card-disabled">
+        <div class="menu-card-accent menu-accent-teal"></div>
+        <div class="menu-card-body">
+          <div class="menu-card-title">Certifications &amp; Micro&#8209;Credentials</div>
+          <div class="menu-card-desc">Industry Certifications, Short Courses &amp; Digital Badges</div>
+          <span class="menu-soon">Coming soon</span>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</body>
+</html>{{end}}

@@ -141,6 +141,8 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 			"templates/admin/intake-groups.html",
 			"templates/admin/sessions.html",
 			"templates/backup.html",
+			"templates/vcc/menu.html",
+			"templates/vcc/vocational-evidence.html",
 			"templates/vcc/detail.html",
 			"templates/admin/infra-menu.html",
 			"templates/admin/infra-orgs.html",
@@ -2259,6 +2261,18 @@ func containsStr(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// VCCMenu — landing page with section tiles.
+func (h *Handler) VCCMenu(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	h.render(w, "vcc-menu", map[string]any{"User": user})
+}
+
+// VCCVocationalEvidence — sub-menu for vocational qualifications and certifications.
+func (h *Handler) VCCVocationalEvidence(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	h.render(w, "vcc-vocational-evidence", map[string]any{"User": user})
 }
 
 // VCCIndex — show the current user's own VCC as an editable page.
