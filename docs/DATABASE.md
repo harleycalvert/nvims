@@ -516,7 +516,8 @@ erDiagram
 ```mermaid
 erDiagram
     TEACHERS ||--o{ TEACHER_VCCS : "has VCC versions"
-    TEACHER_VCCS ||--o{ TEACHER_VCC_PROFESSIONAL_QUALIFICATIONS : "has credentials"
+    TEACHER_VCCS ||--o{ TEACHER_VCC_PROFESSIONAL_QUALIFICATIONS : "teaching quals"
+    TEACHER_VCCS ||--o{ TEACHER_VCC_VOCATIONAL_QUALIFICATIONS : "vocational quals"
     TEACHER_VCCS ||--o{ TEACHER_VCC_COURSES : "maps courses"
     TEACHER_VCC_COURSES ||--o{ TEACHER_VCC_UNITS : "has units"
     TEACHER_VCCS ||--o{ TEACHER_VCC_UNITS : "standalone units"
@@ -2554,7 +2555,7 @@ Annual Vocational Competency & Currency document per teacher, versioned to allow
 *Constraints:*
 
 - `PRIMARY KEY (id)`
-- `CONSTRAINT uq_teacher_vcc UNIQUE (teacher_id, calendar_year, version)`
+- `CONSTRAINT uq_teacher_vcc_version UNIQUE (teacher_id, calendar_year, version)`
 - `CONSTRAINT fk_vcc_teacher FOREIGN KEY (teacher_id) REFERENCES public.teachers(id) ON DELETE RESTRICT`
 - `CONSTRAINT fk_vcc_supervisor FOREIGN KEY (supervisor_id) REFERENCES public.app_users(id) ON DELETE SET NULL`
 - `CONSTRAINT fk_vcc_approved_by FOREIGN KEY (approved_by_id) REFERENCES public.app_users(id) ON DELETE SET NULL`
@@ -2579,8 +2580,8 @@ TAE and training credentials declared in a VCC (shown under Teaching Qualificati
 *Constraints:*
 
 - `PRIMARY KEY (id)`
-- `CONSTRAINT fk_vccpq_vcc FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
-- `CONSTRAINT chk_vccpq_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))`
+- `CONSTRAINT fk_vcc_pq_vcc FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
+- `CONSTRAINT chk_vcc_pq_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))`
 
 #### `teacher_vcc_vocational_qualifications`
 
@@ -2621,8 +2622,8 @@ Courses the teacher is mapping to deliver in a VCC. Optionally linked to a `prog
 *Constraints:*
 
 - `PRIMARY KEY (id)`
-- `CONSTRAINT fk_vccc_vcc FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
-- `CONSTRAINT fk_vccc_program FOREIGN KEY (program_id) REFERENCES public.programs(id) ON DELETE SET NULL`
+- `CONSTRAINT fk_vcc_course_vcc FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_vcc_course_program FOREIGN KEY (program_id) REFERENCES public.programs(id) ON DELETE SET NULL`
 
 #### `teacher_vcc_units`
 
@@ -2650,11 +2651,11 @@ Units the teacher has currency for within a VCC. Each row records the unit code 
 *Constraints:*
 
 - `PRIMARY KEY (id)`
-- `CONSTRAINT fk_vccu_vcc FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
-- `CONSTRAINT fk_vccu_course FOREIGN KEY (vcc_course_id) REFERENCES public.teacher_vcc_courses(id) ON DELETE SET NULL`
-- `CONSTRAINT fk_vccu_subject FOREIGN KEY (subject_id) REFERENCES public.subjects(id) ON DELETE SET NULL`
-- `CONSTRAINT chk_vccu_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))`
-- `CONSTRAINT chk_vccu_competency_method CHECK (competency_method IN ('I hold the current unit of competency','I hold a superseded and equivalent unit of competency','I hold a recognition of relevant study','I have vocational work experience','Other'))`
+- `CONSTRAINT fk_vcc_unit_vcc FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_vcc_unit_course FOREIGN KEY (vcc_course_id) REFERENCES public.teacher_vcc_courses(id) ON DELETE SET NULL`
+- `CONSTRAINT fk_vcc_unit_subject FOREIGN KEY (subject_id) REFERENCES public.subjects(id) ON DELETE SET NULL`
+- `CONSTRAINT chk_vcc_unit_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))`
+- `CONSTRAINT chk_vcc_unit_method CHECK (competency_method IN ('I hold the current unit of competency','I hold a superseded and equivalent unit of competency','I hold a recognition of relevant study','I have vocational work experience','Other'))`
 
 #### `teacher_documents`
 
@@ -2699,7 +2700,7 @@ Links a teacher document to exactly one VCC entity: a professional qualification
 - `CONSTRAINT fk_tdc_pq FOREIGN KEY (vcc_professional_qual_id) REFERENCES public.teacher_vcc_professional_qualifications(id) ON DELETE CASCADE`
 - `CONSTRAINT fk_tdc_vocqual FOREIGN KEY (vcc_vocational_qual_id) REFERENCES public.teacher_vcc_vocational_qualifications(id) ON DELETE CASCADE`
 - `CONSTRAINT fk_tdc_unit FOREIGN KEY (vcc_unit_id) REFERENCES public.teacher_vcc_units(id) ON DELETE CASCADE`
-- `CONSTRAINT fk_tdc_activity FOREIGN KEY (vcc_currency_activity_id) REFERENCES public.teacher_currency_activities(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_tdc_currency FOREIGN KEY (vcc_currency_activity_id) REFERENCES public.teacher_currency_activities(id) ON DELETE CASCADE`
 - `CONSTRAINT chk_tdc_target CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id) = 1)`
 
 #### `teacher_currency_activities`
@@ -2773,7 +2774,7 @@ Spider/radar-chart dimension scores for a VCC. Composite PK on `(vcc_id, dimensi
 *Constraints:*
 
 - `PRIMARY KEY (vcc_id, dimension)`
-- `CONSTRAINT fk_vccp_vcc FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_vcc_profiling FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
 
 ---
 
