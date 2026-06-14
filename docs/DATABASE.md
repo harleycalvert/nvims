@@ -528,7 +528,18 @@ erDiagram
     TEACHER_VCCS ||--o{ TEACHER_VCC_PROFILING : "dimension scores"
 ```
 
-### 13. Intakes & cohorts
+### 13. System settings
+
+```mermaid
+erDiagram
+    SYSTEM_SETTINGS {
+        varchar key PK
+        text value
+        timestamptz updated_at
+    }
+```
+
+### 14. Intakes & cohorts
 
 ```mermaid
 erDiagram
@@ -694,6 +705,12 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 |---|---|---|
 | `student_employment_services` | Centrelink CRN, job seeker ID, participation hours/type — one row per student. | PK = FK → `students` |
 | `student_employment_registrations` | Provider registration rows (e.g. jobactive, DES). Child of employment services. | → `student_employment_services` |
+
+### System
+
+| Table | Purpose | Key relationships |
+|---|---|---|
+| `system_settings` | Key-value store for application configuration (e.g. LMS name, LMS URL). One row per setting key. | — |
 
 ### VCC
 
@@ -2779,6 +2796,29 @@ Spider/radar-chart dimension scores for a VCC. Composite PK on `(vcc_id, dimensi
 
 - `PRIMARY KEY (vcc_id, dimension)`
 - `CONSTRAINT fk_vcc_profiling FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
+
+### System
+
+#### `system_settings`
+
+Generic key-value store for application-level configuration. Each setting is identified by a namespaced key (e.g. `lms.name`, `lms.url`). Values are stored as text; the application layer interprets type. Rows are upserted — there is never more than one row per key.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `key` | `varchar(100)` | no | | PK |
+| `value` | `text` | no | `''` | |
+| `updated_at` | `timestamptz` | yes | `CURRENT_TIMESTAMP` | |
+
+*Constraints:*
+
+- `PRIMARY KEY (key)`
+
+**Current keys:**
+
+| Key | Description |
+|---|---|
+| `lms.name` | Display name for the LMS link in the sidebar (e.g. `Canvas`, `Moodle`) |
+| `lms.url` | Full URL to the LMS (e.g. `https://lms.example.edu.au`) |
 
 ---
 
