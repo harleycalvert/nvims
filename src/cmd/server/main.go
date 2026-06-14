@@ -16,7 +16,7 @@ import (
 func main() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgresql://nvims:jjnhbFC56RDWRTJHBjhb98uibe@localhost:5432/nvims"
+		log.Fatal("DATABASE_URL environment variable is required")
 	}
 
 	pool, err := pgxpool.New(context.Background(), dsn)
@@ -137,6 +137,8 @@ func main() {
 	mux.HandleFunc("POST /vcc/units/{uid}/elements/new", protect(h.VCCUnitElementCreate))
 	mux.HandleFunc("POST /vcc/elements/{id}", protect(h.VCCUnitElementUpdate))
 	mux.HandleFunc("POST /vcc/elements/{id}/delete", protect(h.VCCUnitElementDelete))
+	mux.HandleFunc("POST /vcc/elements/{id}/docs", protect(h.VCCElementAddDoc))
+	mux.HandleFunc("POST /vcc/elements/{id}/docs/{did}/delete", protect(h.VCCElementDeleteDoc))
 	mux.HandleFunc("POST /vcc/pqs", protect(h.VCCPQCreate))
 	mux.HandleFunc("POST /vcc/pqs/{pid}", protect(h.VCCPQUpdate))
 	mux.HandleFunc("POST /vcc/pqs/{pid}/docs", protect(h.VCCPQAddDoc))

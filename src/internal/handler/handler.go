@@ -45,6 +45,8 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 				return "O"
 			case "Absent-Notified":
 				return "AN"
+			case "Absent-Unnotified":
+				return "A"
 			case "Excused":
 				return "E"
 			case "":
@@ -61,6 +63,8 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 				return "att-online"
 			case "Absent-Notified":
 				return "att-notified"
+			case "Absent-Unnotified":
+				return "att-absent"
 			case "Excused":
 				return "att-excused"
 			case "":
@@ -325,7 +329,7 @@ func (h *Handler) SetAttendance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	status := r.FormValue("status")
-	valid := map[string]bool{"Present": true, "Online": true, "Absent-Notified": true, "Excused": true, "Absent": true, "": true}
+	valid := map[string]bool{"Present": true, "Online": true, "Absent-Notified": true, "Absent-Unnotified": true, "Excused": true, "": true}
 	if !valid[status] {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -707,10 +711,7 @@ func personFormFromPost(r *http.Request, id int64) personForm {
 }
 
 func backupDSN() string {
-	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
-		return dsn
-	}
-	return "postgresql://nvims:jjnhbFC56RDWRTJHBjhb98uibe@localhost:5432/nvims"
+	return os.Getenv("DATABASE_URL")
 }
 
 // jsonSafe converts pgx-native values to types that encoding/json handles cleanly.
@@ -2773,6 +2774,49 @@ func (h *Handler) VCCPQDeleteDoc(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.store.DeletePQDocument(r.Context(), user.PersonID, docID); err != nil {
 		log.Printf("DeletePQDocument(%d,%d): %v", user.PersonID, docID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) VCCElementAddDoc(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	elemID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	title := strings.TrimSpace(r.FormValue("title"))
+	if title == "" {
+		http.Error(w, `{"error":"title required"}`, http.StatusBadRequest)
+		return
+	}
+	doc, err := h.store.CreateElementDocument(r.Context(), user.PersonID, elemID,
+		title, strings.TrimSpace(r.FormValue("external_url")))
+	if err != nil {
+		log.Printf("CreateElementDocument(%d,%d): %v", user.PersonID, elemID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"id":%d,"title":%q,"external_url":%q}`, doc.ID, doc.Title, doc.ExternalURL)
+}
+
+func (h *Handler) VCCElementDeleteDoc(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	docID, err := strconv.ParseInt(r.PathValue("did"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := h.store.DeleteElementDocument(r.Context(), user.PersonID, docID); err != nil {
+		log.Printf("DeleteElementDocument(%d,%d): %v", user.PersonID, docID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}

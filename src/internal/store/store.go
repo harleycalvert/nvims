@@ -438,16 +438,15 @@ func (s *Store) ResultsGrid(ctx context.Context, classIDs []int64) ([]ResultCol,
 func (s *Store) GetResultPopupData(ctx context.Context, cseID int64) (ResultPopupData, error) {
 	var d ResultPopupData
 	err := s.pool.QueryRow(ctx, `
-		SELECT cse.id, cs.subject_label,
+		SELECT cse.id,
+		       sub.subject_code || ' — ' || sub.subject_name,
 		       p.first_given_name || ' ' || p.family_name,
 		       COALESCE(cse.result,''), cse.result_is_published
 		FROM public.client_subject_enrolments cse
 		JOIN public.students s ON s.id = cse.student_id
 		JOIN public.people p ON p.id = s.id
-		JOIN public.class_enrollments ce ON ce.client_subject_enrolment_id = cse.id
-		JOIN public.class_subjects cs ON cs.class_id = ce.class_id AND cs.subject_id = cse.subject_id
+		JOIN public.subjects sub ON sub.id = cse.subject_id
 		WHERE cse.id = $1
-		LIMIT 1
 	`, cseID).Scan(&d.CSEID, &d.SubjectLabel, &d.StudentName, &d.Result, &d.IsPublished)
 	return d, err
 }
@@ -2763,6 +2762,39 @@ func (s *Store) CreatePQDocument(ctx context.Context, teacherID, pqID int64, tit
 }
 
 func (s *Store) DeletePQDocument(ctx context.Context, teacherID, docID int64) error {
+	_, err := s.pool.Exec(ctx, `
+		DELETE FROM teacher_documents WHERE id = $1 AND teacher_id = $2
+	`, docID, teacherID)
+	return err
+}
+
+func (s *Store) CreateElementDocument(ctx context.Context, teacherID, elementID int64, title, externalURL string) (VCCDocument, error) {
+	var d VCCDocument
+	d.Title = title
+	d.ExternalURL = externalURL
+	d.Category = "Other"
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO teacher_documents (teacher_id, title, file_category, external_url)
+		SELECT $1, $2, 'Other', NULLIF($3,'')
+		WHERE EXISTS (
+			SELECT 1 FROM teacher_vcc_unit_elements el
+			JOIN teacher_vcc_units u ON u.id = el.vcc_unit_id
+			JOIN teacher_vccs tv ON tv.id = u.vcc_id
+			WHERE el.id = $4 AND tv.teacher_id = $1
+		)
+		RETURNING id
+	`, teacherID, title, externalURL, elementID).Scan(&d.ID)
+	if err != nil {
+		return VCCDocument{}, err
+	}
+	_, err = s.pool.Exec(ctx, `
+		INSERT INTO teacher_document_connections (document_id, vcc_unit_element_id)
+		VALUES ($1, $2)
+	`, d.ID, elementID)
+	return d, err
+}
+
+func (s *Store) DeleteElementDocument(ctx context.Context, teacherID, docID int64) error {
 	_, err := s.pool.Exec(ctx, `
 		DELETE FROM teacher_documents WHERE id = $1 AND teacher_id = $2
 	`, docID, teacherID)

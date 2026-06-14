@@ -102,7 +102,7 @@ if (!window._attKeysRegistered) {
       case 'o': case 'O': e.preventDefault(); _attAjax(cell, 'Online'); break;
       case 'n': case 'N': e.preventDefault(); _attAjax(cell, 'Absent-Notified'); break;
       case 'e': case 'E': e.preventDefault(); _attAjax(cell, 'Excused'); break;
-      case 'a': case 'A': e.preventDefault(); _attAjax(cell, 'Absent'); break;
+      case 'a': case 'A': e.preventDefault(); _attAjax(cell, 'Absent-Unnotified'); break;
       case 'Enter':
       case '-':           e.preventDefault(); _attAjax(cell, ''); break;
     }
@@ -128,7 +128,7 @@ if (!window._attKeysRegistered) {
     hx-get="/attendance/popup?session_id={{.SessionID}}&student_id={{.StudentID}}"
     hx-target="#att-dialog-content"
     hx-trigger="click"
-    hx-on::after-request="showAttDialog(this)">
+    hx-on::after-on-load="showAttDialog(this)">
   {{statusAbbr .Status}}
 </td>
 {{end}}
@@ -154,7 +154,7 @@ if (!window._attKeysRegistered) {
     <button class="btn-att btn-att-online"   name="status" value="Online">O &nbsp;Online</button>
     <button class="btn-att btn-att-notified" name="status" value="Absent-Notified">N &nbsp;Abs. Notified</button>
     <button class="btn-att btn-att-excused"  name="status" value="Excused">E &nbsp;Excused</button>
-    <button class="btn-att btn-att-absent"   name="status" value="Absent">A &nbsp;Absent</button>
+    <button class="btn-att btn-att-absent"   name="status" value="Absent-Unnotified">A &nbsp;Absent</button>
     {{if .Status}}<button class="btn-clear" name="status" value="">Clear</button>{{end}}
   </form>
 </div>

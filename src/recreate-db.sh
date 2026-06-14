@@ -2,9 +2,16 @@
 # Drops and recreates the nvims-sms database, applies the schema, and seeds data.
 set -euo pipefail
 
+ENV_FILE="$HOME/nvims/nvims.env"
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Error: $ENV_FILE not found" >&2
+  exit 1
+fi
+set -a; source "$ENV_FILE"; set +a
+
 DB="nvims"
 DB_USER="nvims"
-DB_PASS="jjnhbFC56RDWRTJHBjhb98uibe"
+DB_PASS="${DB_PASS:?DB_PASS not set in nvims.env}"
 SQL="$HOME/nvims-sms/src/nvims-sms.sql"
 SEED="$HOME/nvims/private_seed/private_seed.py"
 
@@ -36,5 +43,12 @@ sudo -u postgres psql -d "$DB" -c "GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHE
 
 echo "==> Seeding data..."
 python3 "$SEED"
+
+echo "==> Restarting Go server..."
+fuser -k 8080/tcp 2>/dev/null || true
+sleep 1
+cd "$HOME/nvims-sms/src"
+nohup go run ./cmd/server >> /tmp/nvims-server.log 2>&1 &
+echo "==> Server restarted (PID $!, log: /tmp/nvims-server.log)"
 
 echo "==> Done."

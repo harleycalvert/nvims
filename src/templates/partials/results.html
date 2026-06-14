@@ -138,7 +138,7 @@ if (!window._resultKeysRegistered) {
     hx-get="/result/popup?cse_id={{.CSEID}}"
     hx-target="#result-dialog-content"
     hx-trigger="click"
-    hx-on::after-request="showResultDialog(this)">
+    hx-on::after-on-load="showResultDialog(this)">
   {{resultAbbr .Result}}
 </td>
 {{else}}

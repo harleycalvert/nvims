@@ -189,10 +189,11 @@
                   <div class="vcc-method-radios">
                     <span class="vcc-field-label">Competency Method</span>
                     <div class="vcc-radios">
+                      {{$unitID := .ID}}
                       {{$cm := .CompetencyMethod}}
                       {{range $.VCCMethods}}
                       <label class="vcc-radio-lbl">
-                        <input type="radio" name="competency_method" value="{{.}}"{{if eq . $cm}} checked{{end}}>
+                        <input type="radio" name="competency_method_{{$unitID}}" value="{{.}}"{{if eq . $cm}} checked{{end}}>
                         {{.}}
                       </label>
                       {{end}}
@@ -246,12 +247,28 @@
                             <input type="text" name="justification" value="{{.Justification}}" class="vcc-input">
                           </label>
                         </div>
-                        {{if .Documents}}
-                        <div class="vcc-docs" style="margin-top:8px">
-                          <span class="vcc-docs-label">Documents</span>
-                          {{range .Documents}}<span class="vcc-doc-chip">{{.Title}}{{if .Year}} ({{.Year}}){{end}}</span>{{end}}
+                        <div class="vcc-docs-section elem-docs-section">
+                          <div class="vcc-docs-hdr"><span class="vcc-section-label">Evidence Documents</span></div>
+                          <div class="vcc-doc-list">
+                            {{range .Documents}}
+                            <div class="vcc-doc-row" data-doc-id="{{.ID}}">
+                              {{if .ExternalURL}}<a href="{{.ExternalURL}}" target="_blank" rel="noopener" class="vcc-doc-link">{{.Title}}</a>
+                              {{else}}<span class="vcc-doc-name">{{.Title}}</span>{{end}}
+                              <button type="button" class="vcc-doc-del" title="Remove">&times;</button>
+                            </div>
+                            {{end}}
+                          </div>
+                          <div class="vcc-add-doc-bar" style="display:none">
+                            <input type="text" class="vcc-input doc-title-inp" placeholder="Document name" maxlength="200">
+                            <input type="url" class="vcc-input doc-url-inp" placeholder="External URL (optional)" maxlength="2048" style="margin-top:5px">
+                            <div class="vcc-add-doc-actions">
+                              <button type="button" class="vcc-btn-sm btn-doc-save">Add</button>
+                              <button type="button" class="vcc-btn-sm vcc-btn-ghost btn-doc-cancel">Cancel</button>
+                              <span class="vcc-err-msg"></span>
+                            </div>
+                          </div>
+                          <button type="button" class="vcc-btn-sm vcc-btn-ghost btn-add-doc">+ Add document</button>
                         </div>
-                        {{end}}
                         <div class="vcc-element-actions">
                           <span class="sess-status vcc-ind"></span>
                           <button class="btn-danger-sm elem-delete" type="button" title="Delete element">✕</button>
@@ -488,6 +505,8 @@
 .vcc-elements-section { margin-top: 14px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
 .vcc-element-row { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; }
 .vcc-element-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; justify-content: flex-end; }
+.vcc-element-row .vcc-docs-section { margin-top: 10px; padding-top: 8px; border-top: 1px solid #e9ecef; }
+.vcc-btn-ghost:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* ── Ratings ── */
 .vcc-ratings { margin-top: 14px; padding-top: 12px; border-top: 1px solid #f0f0f0; display: flex; flex-direction: column; gap: 10px; }
@@ -587,7 +606,7 @@
 
   // ── Superseded section visibility ──
   function updateSuperseded(unitAcc) {
-    const method = (unitAcc.querySelector('input[name=competency_method]:checked')?.value || '').toLowerCase();
+    const method = (unitAcc.querySelector('input[name^="competency_method_"]:checked')?.value || '').toLowerCase();
     const sec = unitAcc.querySelector('.vcc-superseded-section');
     if (sec) sec.style.display = method.includes('superseded') ? '' : 'none';
   }
@@ -705,7 +724,7 @@
   // ── Unit save ──
   function saveUnit(acc) {
     const g  = n => acc.querySelector(`[name="${n}"]`)?.value ?? '';
-    const gr = n => acc.querySelector(`input[name="${n}"]:checked`)?.value ?? '';
+    const gr = n => acc.querySelector(`input[name^="${n}_"]:checked`)?.value ?? '';
     const fields = {
       unit_code:             g('unit_code'),
       unit_title:            g('unit_title'),
@@ -735,7 +754,7 @@
       saveUnit(acc);
     });
 
-    acc.querySelectorAll('input[type=radio][name=competency_method]').forEach(r =>
+    acc.querySelectorAll('input[type=radio][name^="competency_method_"]').forEach(r =>
       r.addEventListener('change', () => {
         const chip = acc.querySelector('.vcc-method-chip');
         if (chip) chip.textContent = r.value;
@@ -763,6 +782,7 @@
           if (id === 'new') {
             const data = await res.json();
             row.dataset.id = data.id;
+            attachElementDocHandlers(row);
           }
           ind.textContent = '✓';
           setTimeout(() => { ind.textContent = ''; }, 1500);
@@ -779,10 +799,77 @@
         } catch {}
       }
 
+      function attachElementDocHandlers(row) {
+        const elemID = row.dataset.id;
+        if (!elemID || elemID === 'new') return;
+
+        function appendElemDocRow(d) {
+          const list = row.querySelector('.vcc-doc-list');
+          const dr = document.createElement('div');
+          dr.className = 'vcc-doc-row';
+          dr.dataset.docId = d.id;
+          dr.innerHTML = d.external_url
+            ? `<a href="${esc(d.external_url)}" target="_blank" rel="noopener" class="vcc-doc-link">${esc(d.title)}</a>`
+            : `<span class="vcc-doc-name">${esc(d.title)}</span>`;
+          dr.innerHTML += `<button type="button" class="vcc-doc-del" title="Remove">&times;</button>`;
+          dr.querySelector('.vcc-doc-del').addEventListener('click', () => {
+            fetch(`/vcc/elements/${elemID}/docs/${d.id}/delete`, { method: 'POST' })
+              .then(r => { if (r.ok) dr.remove(); });
+          });
+          list.appendChild(dr);
+        }
+
+        row.querySelectorAll('.vcc-doc-row').forEach(dr => {
+          dr.querySelector('.vcc-doc-del')?.addEventListener('click', () => {
+            fetch(`/vcc/elements/${elemID}/docs/${dr.dataset.docId}/delete`, { method: 'POST' })
+              .then(r => { if (r.ok) dr.remove(); });
+          });
+        });
+
+        const addDocBar = row.querySelector('.vcc-add-doc-bar');
+        const btnAddDoc = row.querySelector('.btn-add-doc');
+        btnAddDoc?.removeAttribute('disabled');
+        btnAddDoc?.removeAttribute('title');
+        btnAddDoc?.addEventListener('click', () => {
+          addDocBar.style.display = '';
+          btnAddDoc.style.display = 'none';
+          addDocBar.querySelector('.doc-title-inp').focus();
+        });
+        row.querySelector('.btn-doc-cancel')?.addEventListener('click', () => {
+          addDocBar.style.display = 'none';
+          btnAddDoc.style.display = '';
+          addDocBar.querySelector('.doc-title-inp').value = '';
+          addDocBar.querySelector('.doc-url-inp').value   = '';
+          addDocBar.querySelector('.vcc-err-msg').textContent = '';
+        });
+        row.querySelector('.btn-doc-save')?.addEventListener('click', async () => {
+          const titleInp = addDocBar.querySelector('.doc-title-inp');
+          const urlInp   = addDocBar.querySelector('.doc-url-inp');
+          const errEl    = addDocBar.querySelector('.vcc-err-msg');
+          const title    = titleInp.value.trim();
+          if (!title) { errEl.textContent = 'Document name required'; return; }
+          errEl.textContent = '';
+          try {
+            const res = await fetch(`/vcc/elements/${elemID}/docs`, {
+              method: 'POST',
+              body: new URLSearchParams({ title, external_url: urlInp.value.trim() }),
+            });
+            if (!res.ok) { errEl.textContent = 'Error saving'; return; }
+            const d = await res.json();
+            appendElemDocRow(d);
+            addDocBar.style.display = 'none';
+            btnAddDoc.style.display = '';
+            titleInp.value = '';
+            urlInp.value   = '';
+          } catch { errEl.textContent = 'Network error'; }
+        });
+      }
+
       function attachElementListeners(row) {
         row.querySelector('[name=element]')?.addEventListener('blur', () => saveElement(row));
         row.querySelector('[name=justification]')?.addEventListener('blur', () => saveElement(row));
         row.querySelector('.elem-delete')?.addEventListener('click', () => deleteElement(row));
+        attachElementDocHandlers(row);
       }
 
       elemList.querySelectorAll('.vcc-element-row').forEach(attachElementListeners);
@@ -801,6 +888,20 @@
               <span>Justification</span>
               <input type="text" name="justification" class="vcc-input" placeholder="Justification for this element">
             </label>
+          </div>
+          <div class="vcc-docs-section elem-docs-section" style="margin-top:10px;padding-top:8px;border-top:1px solid #e9ecef">
+            <div class="vcc-docs-hdr"><span class="vcc-section-label">Evidence Documents</span></div>
+            <div class="vcc-doc-list"></div>
+            <div class="vcc-add-doc-bar" style="display:none">
+              <input type="text" class="vcc-input doc-title-inp" placeholder="Document name" maxlength="200">
+              <input type="url" class="vcc-input doc-url-inp" placeholder="External URL (optional)" maxlength="2048" style="margin-top:5px">
+              <div class="vcc-add-doc-actions">
+                <button type="button" class="vcc-btn-sm btn-doc-save">Add</button>
+                <button type="button" class="vcc-btn-sm vcc-btn-ghost btn-doc-cancel">Cancel</button>
+                <span class="vcc-err-msg"></span>
+              </div>
+            </div>
+            <button type="button" class="vcc-btn-sm vcc-btn-ghost btn-add-doc" disabled title="Save element text first">+ Add document</button>
           </div>
           <div class="vcc-element-actions">
             <span class="sess-status vcc-ind"></span>
