@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -25,6 +27,9 @@ type Handler struct {
 	store    *store.Store
 	sessions *auth.Sessions
 	tmpl     *template.Template
+	mu       sync.RWMutex
+	lmsName  string
+	lmsURL   string
 }
 
 func New(st *store.Store, sessions *auth.Sessions) *Handler {
@@ -153,9 +158,15 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 			"templates/admin/infra-buildings.html",
 			"templates/admin/infra-rooms.html",
 			"templates/admin/enrollments.html",
+			"templates/system/lms.html",
 		),
 	)
-	return &Handler{store: st, sessions: sessions, tmpl: tmpl}
+	h := &Handler{store: st, sessions: sessions, tmpl: tmpl}
+	// pre-load LMS config from DB
+	ctx := context.Background()
+	h.lmsName, _ = st.GetSetting(ctx, "lms.name")
+	h.lmsURL, _  = st.GetSetting(ctx, "lms.url")
+	return h
 }
 
 func (h *Handler) Menu(w http.ResponseWriter, r *http.Request) {
@@ -1083,6 +1094,12 @@ func (h *Handler) StudentPanel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) render(w http.ResponseWriter, name string, data any) {
+	if m, ok := data.(map[string]any); ok {
+		h.mu.RLock()
+		m["LMSName"] = h.lmsName
+		m["LMSURL"]  = h.lmsURL
+		h.mu.RUnlock()
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := h.tmpl.ExecuteTemplate(w, name, data); err != nil {
 		log.Printf("render %q: %v", name, err)
@@ -3122,4 +3139,39 @@ func (h *Handler) AdminEnrollmentDelete(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+// ── System ────────────────────────────────────────────────────────────────────
+
+func (h *Handler) SystemLMSConfig(w http.ResponseWriter, r *http.Request) {
+	h.mu.RLock()
+	name, url := h.lmsName, h.lmsURL
+	h.mu.RUnlock()
+	user, _ := auth.Current(r)
+	h.render(w, "system-lms", map[string]any{
+		"User":    user,
+		"Name":    name,
+		"URL":     url,
+		"Saved":   r.URL.Query().Get("saved") == "1",
+	})
+}
+
+func (h *Handler) SystemLMSSave(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimSpace(r.FormValue("lms_name"))
+	url  := strings.TrimSpace(r.FormValue("lms_url"))
+	if err := h.store.SetSetting(r.Context(), "lms.name", name); err != nil {
+		log.Printf("SetSetting lms.name: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	if err := h.store.SetSetting(r.Context(), "lms.url", url); err != nil {
+		log.Printf("SetSetting lms.url: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	h.mu.Lock()
+	h.lmsName = name
+	h.lmsURL  = url
+	h.mu.Unlock()
+	http.Redirect(w, r, "/system/lms?saved=1", http.StatusSeeOther)
 }

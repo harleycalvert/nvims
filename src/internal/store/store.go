@@ -2593,6 +2593,31 @@ func (s *Store) DeletePQDocument(ctx context.Context, teacherID, docID int64) er
 	return err
 }
 
+// ── System Settings ───────────────────────────────────────────────────────────
+
+func (s *Store) GetSetting(ctx context.Context, key string) (string, error) {
+	var val string
+	err := s.pool.QueryRow(ctx, `
+		SELECT value FROM public.system_settings WHERE key = $1
+	`, key).Scan(&val)
+	if err != nil {
+		if err.Error() == "no rows in result set" {
+			return "", nil
+		}
+		return "", err
+	}
+	return val, nil
+}
+
+func (s *Store) SetSetting(ctx context.Context, key, value string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO public.system_settings (key, value, updated_at)
+		VALUES ($1, $2, NOW())
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+	`, key, value)
+	return err
+}
+
 // ── Course Enrollments ────────────────────────────────────────────────────────
 
 type StudentSelectRow struct {

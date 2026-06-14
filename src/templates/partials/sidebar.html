@@ -47,6 +47,28 @@
       <span class="sidebar-item-label">Attendance Register</span>
     </a>
 
+    {{if .LMSURL}}
+    <a class="sidebar-item" href="{{.LMSURL}}" target="_blank" rel="noopener" data-label="{{if .LMSName}}{{.LMSName}}{{else}}LMS{{end}}">
+      <span class="sidebar-icon">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="1" y="3" width="14" height="10" rx="1.5"/>
+          <path d="M5 7h6M5 10h4"/>
+        </svg>
+      </span>
+      <span class="sidebar-item-label">{{if .LMSName}}{{.LMSName}}{{else}}LMS{{end}}</span>
+    </a>
+    {{else}}
+    <span class="sidebar-item sidebar-disabled">
+      <span class="sidebar-icon">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="1" y="3" width="14" height="10" rx="1.5"/>
+          <path d="M5 7h6M5 10h4"/>
+        </svg>
+      </span>
+      <span class="sidebar-item-label">{{if .LMSName}}{{.LMSName}}{{else}}LMS{{end}}</span>
+    </span>
+    {{end}}
+
     <div class="sidebar-section">VCC</div>
 
     <a class="sidebar-item" href="/vcc" data-path="/vcc" data-exact="true" data-label="VCC">
@@ -112,6 +134,29 @@
       <a class="sidebar-item sidebar-subitem" href="/admin/faculties" data-path="/admin/faculties">Faculties</a>
     </div>
 
+    <div class="sidebar-section">Assessment</div>
+
+    <span class="sidebar-item sidebar-disabled">
+      <span class="sidebar-icon">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="2" width="10" height="12" rx="1"/>
+          <path d="M6 2a1 1 0 000 2h4a1 1 0 000-2H6z"/>
+          <path d="M5 8h6M5 11h4"/>
+        </svg>
+      </span>
+      <span class="sidebar-item-label">Creation</span>
+    </span>
+
+    <span class="sidebar-item sidebar-disabled">
+      <span class="sidebar-icon">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M11 2l3 3-7 7H4v-3z"/>
+          <path d="M9 4l3 3"/>
+        </svg>
+      </span>
+      <span class="sidebar-item-label">Maintenance</span>
+    </span>
+
     <div class="sidebar-section">System</div>
 
     <span class="sidebar-item sidebar-disabled">
@@ -124,7 +169,26 @@
       <span class="sidebar-item-label">System Users</span>
     </span>
 
-    <div class="sidebar-section">Tools</div>
+    <span class="sidebar-item sidebar-disabled">
+      <span class="sidebar-icon">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="4" width="12" height="9" rx="1"/>
+          <path d="M5 4V3a1 1 0 011-1h4a1 1 0 011 1v1"/>
+          <path d="M2 8h12"/>
+        </svg>
+      </span>
+      <span class="sidebar-item-label">File Storage</span>
+    </span>
+
+    <a class="sidebar-item" href="/system/lms" data-path="/system/lms" data-label="LMS Config">
+      <span class="sidebar-icon">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="1" y="3" width="14" height="10" rx="1.5"/>
+          <path d="M5 7h6M5 10h4"/>
+        </svg>
+      </span>
+      <span class="sidebar-item-label">LMS Config</span>
+    </a>
 
     <a class="sidebar-item" href="/backup" data-path="/backup" data-label="Database Backup">
       <span class="sidebar-icon">

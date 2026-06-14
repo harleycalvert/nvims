@@ -1,0 +1,51 @@
+{{define "system-lms"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS — LMS Config</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/sidebar.css">
+  <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
+</head>
+<body>
+  {{template "sidebar" .}}
+  <div class="page-wrap">
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/">NVIMS</a>
+        <h1>LMS Config</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+
+  <main>
+    {{if .Saved}}<p class="form-success">LMS settings saved.</p>{{end}}
+
+    <form method="POST" action="/system/lms" class="admin-form" style="max-width:480px">
+      <div class="form-row">
+        <label class="form-label" for="lms_name">LMS Name</label>
+        <input class="form-input" type="text" id="lms_name" name="lms_name"
+               value="{{.Name}}" placeholder="e.g. Canvas, Moodle, Blackboard" maxlength="100">
+        <p class="form-hint">Displayed as the link label in the sidebar.</p>
+      </div>
+      <div class="form-row">
+        <label class="form-label" for="lms_url">LMS URL</label>
+        <input class="form-input" type="url" id="lms_url" name="lms_url"
+               value="{{.URL}}" placeholder="https://" maxlength="2048">
+      </div>
+      <div class="form-actions">
+        <button class="btn-primary" type="submit">Save</button>
+      </div>
+    </form>
+  </main>
+  </div>
+</body>
+</html>{{end}}

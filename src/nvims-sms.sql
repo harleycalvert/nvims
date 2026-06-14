@@ -2797,6 +2797,12 @@ CREATE INDEX IF NOT EXISTS idx_room_issues_room
 CREATE INDEX IF NOT EXISTS idx_room_issues_status
     ON public.room_issues(room_id, status);
 
+CREATE TABLE IF NOT EXISTS public.system_settings (
+    key        varchar(100) NOT NULL PRIMARY KEY,
+    value      text         NOT NULL DEFAULT '',
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+);
+
 -- =========================================================================
 -- Migration: v0.31 → v0.32  (also safe on a fresh v0.32 database)
 -- =========================================================================

@@ -137,6 +137,8 @@ func main() {
 	mux.HandleFunc("POST /result", protect(h.SetResult))
 	mux.HandleFunc("POST /result/publish", protect(h.PublishResult))
 	mux.HandleFunc("POST /result/publish-sc", protect(h.PublishSCColumn))
+	mux.HandleFunc("GET /system/lms", protect(h.SystemLMSConfig))
+	mux.HandleFunc("POST /system/lms", protect(h.SystemLMSSave))
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 	mux.Handle("GET /img/", http.StripPrefix("/img/", http.FileServer(http.Dir("img"))))
 
