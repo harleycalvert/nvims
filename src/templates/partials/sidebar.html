@@ -132,11 +132,12 @@
       <a class="sidebar-item sidebar-subitem" href="/admin/infrastructure/buildings" data-path="/admin/infrastructure/buildings">Buildings</a>
       <a class="sidebar-item sidebar-subitem" href="/admin/infrastructure/rooms" data-path="/admin/infrastructure/rooms">Rooms</a>
       <a class="sidebar-item sidebar-subitem" href="/admin/faculties" data-path="/admin/faculties">Faculties</a>
+      <a class="sidebar-item sidebar-subitem" href="/admin/departments" data-path="/admin/departments">Departments</a>
     </div>
 
     <div class="sidebar-section">Assessment</div>
 
-    <span class="sidebar-item sidebar-disabled">
+    <a class="sidebar-item" href="/assessment" data-path="/assessment" data-label="Assessment">
       <span class="sidebar-icon">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="2" width="10" height="12" rx="1"/>
@@ -144,61 +145,32 @@
           <path d="M5 8h6M5 11h4"/>
         </svg>
       </span>
-      <span class="sidebar-item-label">Creation</span>
-    </span>
+      <span class="sidebar-item-label">Assessment</span>
+    </a>
 
-    <span class="sidebar-item sidebar-disabled">
-      <span class="sidebar-icon">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M11 2l3 3-7 7H4v-3z"/>
-          <path d="M9 4l3 3"/>
-        </svg>
-      </span>
-      <span class="sidebar-item-label">Maintenance</span>
-    </span>
+    <div class="sidebar-subnav" id="subnav-assessment">
+      <span class="sidebar-item sidebar-subitem sidebar-disabled">Creation</span>
+      <span class="sidebar-item sidebar-subitem sidebar-disabled">Maintenance</span>
+    </div>
 
     <div class="sidebar-section">System</div>
 
-    <span class="sidebar-item sidebar-disabled">
+    <a class="sidebar-item" href="/system" data-path="/system" data-label="System">
       <span class="sidebar-icon">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="8" cy="5" r="2.5"/>
-          <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/>
+          <rect x="2" y="2" width="12" height="12" rx="2"/>
+          <path d="M5 8h6M8 5v6"/>
         </svg>
       </span>
-      <span class="sidebar-item-label">System Users</span>
-    </span>
-
-    <span class="sidebar-item sidebar-disabled">
-      <span class="sidebar-icon">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="2" y="4" width="12" height="9" rx="1"/>
-          <path d="M5 4V3a1 1 0 011-1h4a1 1 0 011 1v1"/>
-          <path d="M2 8h12"/>
-        </svg>
-      </span>
-      <span class="sidebar-item-label">File Storage</span>
-    </span>
-
-    <a class="sidebar-item" href="/system/lms" data-path="/system/lms" data-label="LMS Config">
-      <span class="sidebar-icon">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="1" y="3" width="14" height="10" rx="1.5"/>
-          <path d="M5 7h6M5 10h4"/>
-        </svg>
-      </span>
-      <span class="sidebar-item-label">LMS Config</span>
+      <span class="sidebar-item-label">System</span>
     </a>
 
-    <a class="sidebar-item" href="/backup" data-path="/backup" data-label="Database Backup">
-      <span class="sidebar-icon">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M8 2v9M5 8l3 3 3-3"/>
-          <path d="M2 13v1a1 1 0 001 1h10a1 1 0 001-1v-1"/>
-        </svg>
-      </span>
-      <span class="sidebar-item-label">Database Backup</span>
-    </a>
+    <div class="sidebar-subnav" id="subnav-system">
+      <span class="sidebar-item sidebar-subitem sidebar-disabled">System Users</span>
+      <span class="sidebar-item sidebar-subitem sidebar-disabled">File Storage</span>
+      <a class="sidebar-item sidebar-subitem" href="/system/lms" data-path="/system/lms">LMS Config</a>
+      <a class="sidebar-item sidebar-subitem" href="/backup" data-path="/backup">Database Backup</a>
+    </div>
 
   </div>
 </nav>

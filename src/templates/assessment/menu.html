@@ -1,0 +1,50 @@
+{{define "assessment-menu"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS — Assessment</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/menu.css">
+  <link rel="stylesheet" href="/static/sidebar.css">
+  <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
+</head>
+<body>
+  {{template "sidebar" .}}
+  <div class="page-wrap">
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/">NVIMS</a>
+        <h1>Assessment</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+  <main>
+    <div class="menu-grid">
+      <div class="menu-card menu-card-disabled">
+        <div class="menu-card-accent menu-accent-amber"></div>
+        <div class="menu-card-body">
+          <div class="menu-card-title">Creation</div>
+          <div class="menu-card-desc">Build assessments aligned to units of competency, with TGA training package integration</div>
+          <div class="menu-soon">Coming soon</div>
+        </div>
+      </div>
+      <div class="menu-card menu-card-disabled">
+        <div class="menu-card-accent menu-accent-slate"></div>
+        <div class="menu-card-body">
+          <div class="menu-card-title">Maintenance</div>
+          <div class="menu-card-desc">Version control and review workflows for assessment tools</div>
+          <div class="menu-soon">Coming soon</div>
+        </div>
+      </div>
+    </div>
+  </main>
+  </div>
+</body>
+</html>{{end}}

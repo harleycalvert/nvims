@@ -2010,6 +2010,56 @@ func (s *Store) DeleteFaculty(ctx context.Context, id int64) error {
 	return err
 }
 
+type DepartmentRow struct {
+	ID          int64
+	Name        string
+	FacultyID   pgtype.Int8
+	FacultyName string
+}
+
+func (s *Store) ListDepartments(ctx context.Context) ([]DepartmentRow, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT d.id, d.dept_name, d.faculty_id, COALESCE(f.faculty_name, '')
+		FROM public.departments d
+		LEFT JOIN public.faculties f ON f.id = d.faculty_id
+		WHERE d.deleted_at IS NULL
+		ORDER BY d.dept_name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DepartmentRow
+	for rows.Next() {
+		var r DepartmentRow
+		if err := rows.Scan(&r.ID, &r.Name, &r.FacultyID, &r.FacultyName); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) CreateDepartment(ctx context.Context, name string, facultyID pgtype.Int8) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO public.departments (dept_name, faculty_id) VALUES ($1, $2) RETURNING id
+	`, name, facultyID).Scan(&id)
+	return id, err
+}
+
+func (s *Store) UpdateDepartment(ctx context.Context, id int64, name string, facultyID pgtype.Int8) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.departments SET dept_name=$2, faculty_id=$3 WHERE id=$1 AND deleted_at IS NULL
+	`, id, name, facultyID)
+	return err
+}
+
+func (s *Store) DeleteDepartment(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `UPDATE public.departments SET deleted_at=NOW() WHERE id=$1`, id)
+	return err
+}
+
 func (s *Store) UpdateSubject(ctx context.Context, id int64, subjectCode, subjectName, moduleFlag, fieldOfEducation string, nominalHours, creditPoints *int, vetFlag bool) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE public.subjects

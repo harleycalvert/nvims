@@ -1,0 +1,153 @@
+{{define "admin-departments"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS — Departments</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/sessions.css">
+  <link rel="stylesheet" href="/static/sidebar.css">
+  <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
+</head>
+<body>
+  {{template "sidebar" .}}
+  <div class="page-wrap">
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/admin/infrastructure">Infrastructure</a>
+        <h1>Departments</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+
+  <main class="sessions-main">
+
+    <div class="table-wrap">
+      <table class="sessions-table" id="depts-table">
+        <thead>
+          <tr>
+            <th class="td-left">Department Name</th>
+            <th class="td-left">Faculty</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="depts-tbody">
+          {{range .Departments}}
+          <tr class="sess-row" data-id="{{.ID}}">
+            <td><input class="sess-input" type="text" name="dept_name"
+                       value="{{.Name}}" maxlength="100" style="width:100%;min-width:200px"></td>
+            <td>
+              <select class="sess-input" name="faculty_id" style="min-width:160px">
+                <option value="0">— none —</option>
+                {{$fid := .FacultyID.Int64}}
+                {{range $.Faculties}}
+                <option value="{{.ID}}"{{if eq .ID $fid}} selected{{end}}>{{.Name}}</option>
+                {{end}}
+              </select>
+            </td>
+            <td class="sess-actions">
+              <span class="sess-status"></span>
+              <button class="btn-danger-sm dept-delete" type="button" title="Delete">✕</button>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sess-add-bar">
+      <button class="btn-primary btn-sm" id="btn-add-dept" type="button">+ Add Department</button>
+    </div>
+
+  </main>
+
+<script>
+(function () {
+  const faculties = [
+    {{range .Faculties}}{id:{{.ID}},name:{{.Name | printf "%q"}}},{{end}}
+  ];
+
+  function facultyOptions(selectedID) {
+    let html = '<option value="0">— none —</option>';
+    for (const f of faculties) {
+      html += `<option value="${f.id}"${f.id === selectedID ? ' selected' : ''}>${f.name}</option>`;
+    }
+    return html;
+  }
+
+  function setStatus(tr, state) {
+    const el = tr.querySelector('.sess-status');
+    el.className = 'sess-status sess-status-' + state;
+    el.textContent = state === 'saving' ? '…' : state === 'saved' ? '✓' : state === 'error' ? '!' : '';
+    if (state === 'saved') setTimeout(() => { el.textContent = ''; el.className = 'sess-status'; }, 1500);
+  }
+
+  async function saveRow(tr) {
+    const id        = tr.dataset.id;
+    const name      = tr.querySelector('[name=dept_name]').value.trim();
+    const facultyID = tr.querySelector('[name=faculty_id]').value;
+    if (!name) return;
+
+    setStatus(tr, 'saving');
+    const url  = id === 'new' ? '/admin/departments/new' : `/admin/departments/${id}`;
+    const body = new URLSearchParams({ dept_name: name, faculty_id: facultyID });
+    try {
+      const res = await fetch(url, { method: 'POST', body });
+      if (!res.ok) { setStatus(tr, 'error'); return; }
+      if (id === 'new') { location.reload(); return; }
+      setStatus(tr, 'saved');
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  async function deleteRow(tr) {
+    const id = tr.dataset.id;
+    if (id === 'new') { tr.remove(); return; }
+    if (!confirm('Delete this department?')) return;
+    setStatus(tr, 'saving');
+    try {
+      const res = await fetch(`/admin/departments/${id}/delete`, { method: 'POST' });
+      if (!res.ok) { setStatus(tr, 'error'); return; }
+      tr.remove();
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  function attachRowListeners(tr) {
+    tr.querySelector('[name=dept_name]')?.addEventListener('blur', () => saveRow(tr));
+    tr.querySelector('[name=faculty_id]')?.addEventListener('change', () => saveRow(tr));
+    tr.querySelector('.dept-delete')?.addEventListener('click', () => deleteRow(tr));
+  }
+
+  document.querySelectorAll('#depts-tbody .sess-row').forEach(attachRowListeners);
+
+  document.getElementById('btn-add-dept')?.addEventListener('click', () => {
+    const tbody = document.getElementById('depts-tbody');
+    tbody.querySelector('.sess-new')?.remove();
+
+    const tr = document.createElement('tr');
+    tr.className = 'sess-row sess-new';
+    tr.dataset.id = 'new';
+    tr.innerHTML = `
+      <td><input class="sess-input" type="text" name="dept_name"
+                 placeholder="Department name" maxlength="100"
+                 style="width:100%;min-width:200px"></td>
+      <td><select class="sess-input" name="faculty_id" style="min-width:160px">${facultyOptions(0)}</select></td>
+      <td class="sess-actions">
+        <span class="sess-status"></span>
+        <button class="btn-danger-sm dept-delete" type="button" title="Remove">✕</button>
+      </td>`;
+    tbody.appendChild(tr);
+    attachRowListeners(tr);
+    tr.querySelector('[name=dept_name]').focus();
+  });
+})();
+</script>
+  </div>
+</body>
+</html>{{end}}

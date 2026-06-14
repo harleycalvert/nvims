@@ -364,6 +364,23 @@ CREATE TABLE IF NOT EXISTS public.faculties (
     PRIMARY KEY (id)
 );
 
+CREATE TABLE IF NOT EXISTS public.departments (
+    id          bigserial    NOT NULL,
+    faculty_id  bigint       NULL,
+    dept_name   varchar(100) NOT NULL,
+    deleted_at  timestamptz  NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_dept_faculty FOREIGN KEY (faculty_id) REFERENCES public.faculties(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.person_departments (
+    person_id     bigint NOT NULL,
+    department_id bigint NOT NULL,
+    PRIMARY KEY (person_id, department_id),
+    CONSTRAINT fk_pd_person     FOREIGN KEY (person_id)     REFERENCES public.people(id)      ON DELETE CASCADE,
+    CONSTRAINT fk_pd_department FOREIGN KEY (department_id) REFERENCES public.departments(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS public.students (
     id bigint NOT NULL,                          -- shared PK: this IS people.id
     student_number varchar(20) NOT NULL,
@@ -578,8 +595,10 @@ CREATE TABLE IF NOT EXISTS public.programs (
     credit_points integer NULL,                   -- total qualification credit points (HE use)
     aqf_level smallint NULL,                      -- AQF level 1–10 (1=Cert I … 10=Doctoral)
     program_type varchar(20) NULL,
+    department_id bigint NULL,
     PRIMARY KEY (id),
-    CONSTRAINT fk_programs_faculty FOREIGN KEY (faculty_id) REFERENCES public.faculties(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_programs_faculty     FOREIGN KEY (faculty_id)    REFERENCES public.faculties(id)    ON DELETE RESTRICT,
+    CONSTRAINT fk_programs_department  FOREIGN KEY (department_id) REFERENCES public.departments(id)  ON DELETE SET NULL,
     CONSTRAINT uq_programs_code UNIQUE (program_code),
     CONSTRAINT chk_program_credit_points CHECK (credit_points IS NULL OR credit_points > 0),
     CONSTRAINT chk_program_aqf_level CHECK (aqf_level IS NULL OR aqf_level BETWEEN 1 AND 10),
@@ -1097,13 +1116,15 @@ CREATE TABLE IF NOT EXISTS public.classes (
     academic_period_id   bigint       NOT NULL,
     delivery_location_id bigint       NOT NULL,
     enrolment_cap        integer      NULL,
+    department_id        bigint       NULL,
     created_at           timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at           timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    CONSTRAINT uq_class_code         UNIQUE (class_code),
-    CONSTRAINT fk_class_period       FOREIGN KEY (academic_period_id)   REFERENCES public.academic_periods(id),
-    CONSTRAINT fk_class_location     FOREIGN KEY (delivery_location_id) REFERENCES public.delivery_locations(id),
-    CONSTRAINT fk_class_intake_group FOREIGN KEY (intake_group_id)      REFERENCES public.intake_groups(id) ON DELETE SET NULL,
+    CONSTRAINT uq_class_code          UNIQUE (class_code),
+    CONSTRAINT fk_class_period        FOREIGN KEY (academic_period_id)   REFERENCES public.academic_periods(id),
+    CONSTRAINT fk_class_location      FOREIGN KEY (delivery_location_id) REFERENCES public.delivery_locations(id),
+    CONSTRAINT fk_class_intake_group  FOREIGN KEY (intake_group_id)      REFERENCES public.intake_groups(id)   ON DELETE SET NULL,
+    CONSTRAINT fk_class_department    FOREIGN KEY (department_id)        REFERENCES public.departments(id)     ON DELETE SET NULL,
     CONSTRAINT chk_class_cap         CHECK (enrolment_cap > 0)
 );
 

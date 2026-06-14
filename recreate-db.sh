@@ -1,30 +1,40 @@
 #!/usr/bin/env bash
-# Drop and recreate the nvims database, then apply the schema.
-# Run from the project root: bash recreate-db.sh
-
+# Drops and recreates the nvims-sms database, applies the schema, and seeds data.
 set -euo pipefail
 
-DBNAME="nvims"
-DBUSER="nvims"
-DBPASS="jjnhbFC56RDWRTJHBjhb98uibe"
-DSN="postgresql://${DBUSER}:${DBPASS}@localhost:5432/${DBNAME}"
-SCHEMA="src/nvims-sms.sql"
+DB="nvims"
+DB_USER="nvims"
+DB_PASS="jjnhbFC56RDWRTJHBjhb98uibe"
+SQL="$HOME/nvims-sms/src/nvims-sms.sql"
+SEED="$HOME/nvims/private_seed/private_seed.py"
 
-echo "==> Dropping database '${DBNAME}' (if it exists)..."
-sudo -u postgres psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${DBNAME}' AND pid <> pg_backend_pid();"
-sudo -u postgres psql -c "DROP DATABASE IF EXISTS ${DBNAME};"
+echo "==> Dropping database '$DB' (if exists)..."
+sudo -u postgres psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$DB' AND pid <> pg_backend_pid();"
+sudo -u postgres psql -c "DROP DATABASE IF EXISTS \"$DB\";"
 
-echo "==> Creating database '${DBNAME}'..."
-sudo -u postgres psql -c "CREATE DATABASE ${DBNAME};"
-sudo -u postgres psql -c "ALTER DATABASE ${DBNAME} OWNER TO ${DBUSER};"
-sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ${DBNAME} TO ${DBUSER};"
+echo "==> Creating database '$DB'..."
+sudo -u postgres psql -c "CREATE DATABASE \"$DB\";"
 
-echo "==> Applying schema from ${SCHEMA}..."
-psql "${DSN}" -f "${SCHEMA}"
+echo "==> Creating user '$DB_USER' (if not exists)..."
+sudo -u postgres psql -c "DO \$\$ BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$DB_USER') THEN
+    CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';
+  END IF;
+END \$\$;"
 
-echo "==> Granting table/sequence privileges..."
-sudo -u postgres psql -d "${DBNAME}" -c "GRANT ALL PRIVILEGES ON ALL TABLES    IN SCHEMA public TO ${DBUSER};"
-sudo -u postgres psql -d "${DBNAME}" -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${DBUSER};"
-sudo -u postgres psql -d "${DBNAME}" -c "GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO ${DBUSER};"
+echo "==> Granting privileges..."
+sudo -u postgres psql -c "ALTER DATABASE \"$DB\" OWNER TO $DB_USER;"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE \"$DB\" TO $DB_USER;"
 
-echo "==> Done. Run: cd src && go run ./cmd/server"
+echo "==> Applying schema..."
+sudo -u postgres psql -d "$DB" < "$SQL"
+
+echo "==> Granting table/sequence/function privileges..."
+sudo -u postgres psql -d "$DB" -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO $DB_USER;"
+sudo -u postgres psql -d "$DB" -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO $DB_USER;"
+sudo -u postgres psql -d "$DB" -c "GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO $DB_USER;"
+
+echo "==> Seeding data..."
+python3 "$SEED"
+
+echo "==> Done."

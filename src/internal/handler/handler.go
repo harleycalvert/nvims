@@ -124,8 +124,8 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 
 	tmpl := template.Must(
 		template.New("").Funcs(funcs).ParseFiles(
-			"templates/menu.html",
-			"templates/index.html",
+			"templates/home.html",
+			"templates/register.html",
 			"templates/login.html",
 			"templates/partials/programs.html",
 			"templates/partials/groups.html",
@@ -159,6 +159,9 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 			"templates/admin/infra-rooms.html",
 			"templates/admin/enrollments.html",
 			"templates/system/lms.html",
+			"templates/assessment/menu.html",
+			"templates/system/menu.html",
+			"templates/admin/departments.html",
 		),
 	)
 	h := &Handler{store: st, sessions: sessions, tmpl: tmpl}
@@ -171,7 +174,7 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 
 func (h *Handler) Menu(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.Current(r)
-	h.render(w, "menu", map[string]any{"User": user})
+	h.render(w, "home", map[string]any{"User": user})
 }
 
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +185,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, _ := auth.Current(r)
-	h.render(w, "index", map[string]any{"Periods": periods, "User": user})
+	h.render(w, "register", map[string]any{"Periods": periods, "User": user})
 }
 
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
@@ -2124,6 +2127,93 @@ func (h *Handler) AdminFacultyDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func parseFacultyID(s string) pgtype.Int8 {
+	if v, err := strconv.ParseInt(s, 10, 64); err == nil && v > 0 {
+		return pgtype.Int8{Int64: v, Valid: true}
+	}
+	return pgtype.Int8{}
+}
+
+func (h *Handler) AdminDepartments(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	depts, err := h.store.ListDepartments(ctx)
+	if err != nil {
+		log.Printf("ListDepartments: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	faculties, err := h.store.ListFaculties(ctx)
+	if err != nil {
+		log.Printf("ListFaculties: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	user, _ := auth.Current(r)
+	h.render(w, "admin-departments", map[string]any{
+		"Departments": depts,
+		"Faculties":   faculties,
+		"User":        user,
+	})
+}
+
+func (h *Handler) AdminDepartmentCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("dept_name"))
+	if name == "" {
+		http.Error(w, `{"error":"department name is required"}`, http.StatusBadRequest)
+		return
+	}
+	_, err := h.store.CreateDepartment(r.Context(), name, parseFacultyID(r.FormValue("faculty_id")))
+	if err != nil {
+		log.Printf("CreateDepartment: %v", err)
+		http.Error(w, `{"error":"could not save"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminDepartmentUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("dept_name"))
+	if name == "" {
+		http.Error(w, `{"error":"department name is required"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.UpdateDepartment(r.Context(), id, name, parseFacultyID(r.FormValue("faculty_id"))); err != nil {
+		log.Printf("UpdateDepartment(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminDepartmentDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	if err := h.store.DeleteDepartment(r.Context(), id); err != nil {
+		log.Printf("DeleteDepartment(%d): %v", id, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 type subjectForm struct {
 	SubjectCode      string
 	SubjectName      string
@@ -2614,6 +2704,16 @@ func parseInt(s string) int {
 func (h *Handler) AdminInfrastructure(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.Current(r)
 	h.render(w, "admin-infra-menu", map[string]any{"User": user})
+}
+
+func (h *Handler) AssessmentMenu(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	h.render(w, "assessment-menu", map[string]any{"User": user})
+}
+
+func (h *Handler) SystemMenu(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	h.render(w, "system-menu", map[string]any{"User": user})
 }
 
 func (h *Handler) AdminInfraOrgs(w http.ResponseWriter, r *http.Request) {

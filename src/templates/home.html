@@ -1,4 +1,4 @@
-{{define "menu"}}<!DOCTYPE html>
+{{define "home"}}<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -56,15 +56,31 @@
         <div class="menu-card-accent menu-accent-purple"></div>
         <div class="menu-card-body">
           <div class="menu-card-title">Administration</div>
-          <div class="menu-card-desc">Manage users, programs, classes and enrolments</div>
+          <div class="menu-card-desc">Manage people, programs, classes and enrolments</div>
         </div>
       </a>
 
-      <a class="menu-card" href="/backup">
+      <a class="menu-card" href="/admin/infrastructure">
         <div class="menu-card-accent menu-accent-orange"></div>
         <div class="menu-card-body">
-          <div class="menu-card-title">Database Backup</div>
-          <div class="menu-card-desc">Download a full SQL backup of the database</div>
+          <div class="menu-card-title">Infrastructure</div>
+          <div class="menu-card-desc">Training organisations, campuses, buildings and rooms</div>
+        </div>
+      </a>
+
+      <a class="menu-card" href="/assessment">
+        <div class="menu-card-accent menu-accent-amber"></div>
+        <div class="menu-card-body">
+          <div class="menu-card-title">Assessment</div>
+          <div class="menu-card-desc">Create and maintain assessment tools aligned to units of competency</div>
+        </div>
+      </a>
+
+      <a class="menu-card" href="/system">
+        <div class="menu-card-accent menu-accent-slate"></div>
+        <div class="menu-card-body">
+          <div class="menu-card-title">System</div>
+          <div class="menu-card-desc">LMS configuration, file storage and system settings</div>
         </div>
       </a>
 

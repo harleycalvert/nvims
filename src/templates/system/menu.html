@@ -1,0 +1,64 @@
+{{define "system-menu"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS — System</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/menu.css">
+  <link rel="stylesheet" href="/static/sidebar.css">
+  <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
+</head>
+<body>
+  {{template "sidebar" .}}
+  <div class="page-wrap">
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/">NVIMS</a>
+        <h1>System</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+  <main>
+    <div class="menu-grid">
+      <div class="menu-card menu-card-disabled">
+        <div class="menu-card-accent menu-accent-purple"></div>
+        <div class="menu-card-body">
+          <div class="menu-card-title">System Users</div>
+          <div class="menu-card-desc">Manage login accounts and access roles</div>
+          <div class="menu-soon">Coming soon</div>
+        </div>
+      </div>
+      <div class="menu-card menu-card-disabled">
+        <div class="menu-card-accent menu-accent-blue"></div>
+        <div class="menu-card-body">
+          <div class="menu-card-title">File Storage</div>
+          <div class="menu-card-desc">Configure external file storage for documents and attachments</div>
+          <div class="menu-soon">Coming soon</div>
+        </div>
+      </div>
+      <a class="menu-card" href="/system/lms">
+        <div class="menu-card-accent menu-accent-teal"></div>
+        <div class="menu-card-body">
+          <div class="menu-card-title">LMS Config</div>
+          <div class="menu-card-desc">Configure the name and URL for your Learning Management System</div>
+        </div>
+      </a>
+      <a class="menu-card" href="/backup">
+        <div class="menu-card-accent menu-accent-orange"></div>
+        <div class="menu-card-body">
+          <div class="menu-card-title">Database Backup</div>
+          <div class="menu-card-desc">Download a full SQL backup of the database</div>
+        </div>
+      </a>
+    </div>
+  </main>
+  </div>
+</body>
+</html>{{end}}
