@@ -2201,6 +2201,15 @@ type VCCPQ struct {
 	Documents   []VCCDocument
 }
 
+type VCCUnitElement struct {
+	ID            int64
+	UnitID        int64
+	Element       string
+	Justification string
+	SortOrder     int
+	Documents     []VCCDocument
+}
+
 type VCCUnit struct {
 	ID                  int64
 	CourseID            int64
@@ -2210,10 +2219,12 @@ type VCCUnit struct {
 	SupersededUnitCode  string
 	SupersededUnitTitle string
 	Description         string
-	Justification       string
 	Status              string
 	ApprovedAt          time.Time // zero means not set
+	EnthusiasmRating    pgtype.Int2
+	ConfidenceRating    pgtype.Int2
 	SortOrder           int
+	Elements            []VCCUnitElement
 	Documents           []VCCDocument
 }
 
@@ -2407,7 +2418,8 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 	uRows, err := s.pool.Query(ctx, `
 		SELECT id, COALESCE(vcc_course_id, 0), unit_code, unit_title, competency_method,
 		       COALESCE(superseded_unit_code,''), COALESCE(superseded_unit_title,''),
-		       COALESCE(description,''), COALESCE(justification,''), status, approved_at, sort_order
+		       COALESCE(description,''), status, approved_at,
+		       enthusiasm_rating, confidence_rating, sort_order
 		FROM teacher_vcc_units
 		WHERE vcc_id = $1
 		ORDER BY COALESCE(vcc_course_id, 0), sort_order
@@ -2420,7 +2432,8 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 		var u VCCUnit
 		var at pgtype.Date
 		if err := uRows.Scan(&u.ID, &u.CourseID, &u.UnitCode, &u.UnitTitle, &u.CompetencyMethod,
-			&u.SupersededUnitCode, &u.SupersededUnitTitle, &u.Description, &u.Justification, &u.Status, &at, &u.SortOrder); err != nil {
+			&u.SupersededUnitCode, &u.SupersededUnitTitle, &u.Description, &u.Status, &at,
+			&u.EnthusiasmRating, &u.ConfidenceRating, &u.SortOrder); err != nil {
 			uRows.Close()
 			return nil, err
 		}
@@ -2468,9 +2481,112 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 		if err := udRows.Err(); err != nil {
 			return nil, err
 		}
+
+		// Elements
+		eRows, err := s.pool.Query(ctx, `
+			SELECT id, vcc_unit_id, element, COALESCE(justification,''), sort_order
+			FROM teacher_vcc_unit_elements
+			WHERE vcc_unit_id = ANY($1)
+			ORDER BY vcc_unit_id, sort_order
+		`, unitIDs)
+		if err != nil {
+			return nil, err
+		}
+		elementMap := map[int64][3]int{} // element id → [courseIdx, unitIdx, elemIdx]
+		for eRows.Next() {
+			var e VCCUnitElement
+			if err := eRows.Scan(&e.ID, &e.UnitID, &e.Element, &e.Justification, &e.SortOrder); err != nil {
+				eRows.Close()
+				return nil, err
+			}
+			if pos, ok := unitMap[e.UnitID]; ok {
+				eIdx := len(v.Courses[pos[0]].Units[pos[1]].Elements)
+				v.Courses[pos[0]].Units[pos[1]].Elements = append(v.Courses[pos[0]].Units[pos[1]].Elements, e)
+				elementMap[e.ID] = [3]int{pos[0], pos[1], eIdx}
+			}
+		}
+		if err := eRows.Err(); err != nil {
+			return nil, err
+		}
+
+		// Element documents
+		if len(elementMap) > 0 {
+			elemIDs := make([]int64, 0, len(elementMap))
+			for eid := range elementMap {
+				elemIDs = append(elemIDs, eid)
+			}
+			edRows, err := s.pool.Query(ctx, `
+				SELECT tdc.vcc_unit_element_id, td.id, td.title, td.file_category,
+				       COALESCE(td.year_of_document, 0), COALESCE(td.document_url, ''), COALESCE(td.external_url, '')
+				FROM teacher_document_connections tdc
+				JOIN teacher_documents td ON td.id = tdc.document_id
+				WHERE tdc.vcc_unit_element_id = ANY($1)
+				ORDER BY tdc.vcc_unit_element_id, td.id
+			`, elemIDs)
+			if err != nil {
+				return nil, err
+			}
+			for edRows.Next() {
+				var elemID int64
+				var d VCCDocument
+				if err := edRows.Scan(&elemID, &d.ID, &d.Title, &d.Category, &d.Year, &d.URL, &d.ExternalURL); err != nil {
+					edRows.Close()
+					return nil, err
+				}
+				if pos, ok := elementMap[elemID]; ok {
+					v.Courses[pos[0]].Units[pos[1]].Elements[pos[2]].Documents = append(
+						v.Courses[pos[0]].Units[pos[1]].Elements[pos[2]].Documents, d)
+				}
+			}
+			if err := edRows.Err(); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	return &v, nil
+}
+
+func (s *Store) CreateVCCUnitElement(ctx context.Context, teacherID, unitID int64, element, justification string) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO teacher_vcc_unit_elements (vcc_unit_id, element, justification)
+		SELECT $1, $2, NULLIF($3,'')
+		WHERE EXISTS (
+			SELECT 1 FROM teacher_vcc_units u
+			JOIN teacher_vccs v ON v.id = u.vcc_id
+			WHERE u.id = $1 AND v.teacher_id = $4
+		)
+		RETURNING id
+	`, unitID, element, justification, teacherID).Scan(&id)
+	return id, err
+}
+
+func (s *Store) UpdateVCCUnitElement(ctx context.Context, teacherID, elemID int64, element, justification string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE teacher_vcc_unit_elements e
+		SET element = $2, justification = NULLIF($3,'')
+		WHERE e.id = $1
+		  AND EXISTS (
+			SELECT 1 FROM teacher_vcc_units u
+			JOIN teacher_vccs v ON v.id = u.vcc_id
+			WHERE u.id = e.vcc_unit_id AND v.teacher_id = $4
+		  )
+	`, elemID, element, justification, teacherID)
+	return err
+}
+
+func (s *Store) DeleteVCCUnitElement(ctx context.Context, teacherID, elemID int64) error {
+	_, err := s.pool.Exec(ctx, `
+		DELETE FROM teacher_vcc_unit_elements e
+		WHERE e.id = $1
+		  AND EXISTS (
+			SELECT 1 FROM teacher_vcc_units u
+			JOIN teacher_vccs v ON v.id = u.vcc_id
+			WHERE u.id = e.vcc_unit_id AND v.teacher_id = $2
+		  )
+	`, elemID, teacherID)
+	return err
 }
 
 func (s *Store) GetLatestVCCForTeacher(ctx context.Context, teacherID int64) (*VCCDetail, error) {
@@ -2495,7 +2611,7 @@ func (s *Store) UpdateVCCStatus(ctx context.Context, teacherID int64, status str
 }
 
 func (s *Store) UpdateVCCUnit(ctx context.Context, teacherID, unitID int64,
-	code, title, method, supersededCode, supersededTitle, description, justification, status string,
+	code, title, method, supersededCode, supersededTitle, description, status string,
 	approvedAt pgtype.Date,
 ) error {
 	_, err := s.pool.Exec(ctx, `
@@ -2506,13 +2622,23 @@ func (s *Store) UpdateVCCUnit(ctx context.Context, teacherID, unitID int64,
 		    superseded_unit_code  = NULLIF($4, ''),
 		    superseded_unit_title = NULLIF($5, ''),
 		    description           = NULLIF($6, ''),
-		    justification         = NULLIF($7, ''),
-		    status                = $8,
-		    approved_at           = $9
-		WHERE id = $10
-		  AND vcc_id IN (SELECT id FROM teacher_vccs WHERE teacher_id = $11)
+		    status                = $7,
+		    approved_at           = $8
+		WHERE id = $9
+		  AND vcc_id IN (SELECT id FROM teacher_vccs WHERE teacher_id = $10)
 	`, code, title, method, supersededCode, supersededTitle,
-		description, justification, status, approvedAt, unitID, teacherID)
+		description, status, approvedAt, unitID, teacherID)
+	return err
+}
+
+func (s *Store) UpdateVCCUnitRatings(ctx context.Context, teacherID, unitID int64, enthusiasm, confidence pgtype.Int2) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE teacher_vcc_units
+		SET enthusiasm_rating = $1,
+		    confidence_rating = $2
+		WHERE id = $3
+		  AND vcc_id IN (SELECT id FROM teacher_vccs WHERE teacher_id = $4)
+	`, enthusiasm, confidence, unitID, teacherID)
 	return err
 }
 

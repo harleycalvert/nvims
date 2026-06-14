@@ -2612,16 +2612,17 @@ CREATE TABLE IF NOT EXISTS public.teacher_vcc_units (
     superseded_unit_code  varchar(20)  NULL,
     superseded_unit_title varchar(200) NULL,
     description           text         NULL,          -- study name or employer/dates (method-dependent)
-    justification         text         NULL,
     status                varchar(20)  NOT NULL DEFAULT 'Pending',
     approved_at           date         NULL,
+    enthusiasm_rating     smallint     NULL,   -- teacher's enthusiasm for teaching this unit (1–5)
+    confidence_rating     smallint     NULL,   -- teacher's confidence in the subject matter (1–5)
     sort_order            smallint     NOT NULL DEFAULT 0,
     created_at            timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at            timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    CONSTRAINT fk_vcc_unit_vcc     FOREIGN KEY (vcc_id)        REFERENCES public.teacher_vccs(id)                      ON DELETE CASCADE,
-    CONSTRAINT fk_vcc_unit_course  FOREIGN KEY (vcc_course_id) REFERENCES public.teacher_vcc_courses(id)               ON DELETE SET NULL,
-    CONSTRAINT fk_vcc_unit_subject FOREIGN KEY (subject_id)    REFERENCES public.subjects(id)                          ON DELETE SET NULL,
+    CONSTRAINT fk_vcc_unit_vcc          FOREIGN KEY (vcc_id)        REFERENCES public.teacher_vccs(id)          ON DELETE CASCADE,
+    CONSTRAINT fk_vcc_unit_course       FOREIGN KEY (vcc_course_id) REFERENCES public.teacher_vcc_courses(id)   ON DELETE SET NULL,
+    CONSTRAINT fk_vcc_unit_subject      FOREIGN KEY (subject_id)    REFERENCES public.subjects(id)              ON DELETE SET NULL,
     CONSTRAINT chk_vcc_unit_method CHECK (competency_method IN (
         'I hold the current unit of competency',
         'I hold a superseded and equivalent unit of competency',
@@ -2629,11 +2630,29 @@ CREATE TABLE IF NOT EXISTS public.teacher_vcc_units (
         'I have vocational work experience',
         'Other'
     )),
-    CONSTRAINT chk_vcc_unit_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))
+    CONSTRAINT chk_vcc_unit_status      CHECK (status IN ('Draft','Pending','Approved','Rejected')),
+    CONSTRAINT chk_vcc_unit_enthusiasm  CHECK (enthusiasm_rating BETWEEN 1 AND 5),
+    CONSTRAINT chk_vcc_unit_confidence  CHECK (confidence_rating BETWEEN 1 AND 5)
 );
 
 CREATE OR REPLACE TRIGGER trg_touch_teacher_vcc_units
     BEFORE UPDATE ON public.teacher_vcc_units
+    FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
+
+CREATE TABLE IF NOT EXISTS public.teacher_vcc_unit_elements (
+    id            bigserial NOT NULL,
+    vcc_unit_id   bigint    NOT NULL,
+    element       text      NOT NULL,
+    justification text      NULL,
+    sort_order    smallint  NOT NULL DEFAULT 0,
+    created_at    timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at    timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_tvue_unit FOREIGN KEY (vcc_unit_id) REFERENCES public.teacher_vcc_units(id) ON DELETE CASCADE
+);
+
+CREATE OR REPLACE TRIGGER trg_touch_teacher_vcc_unit_elements
+    BEFORE UPDATE ON public.teacher_vcc_unit_elements
     FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
 
 -- =========================================================================
@@ -2668,12 +2687,14 @@ CREATE TABLE IF NOT EXISTS public.teacher_document_connections (
     vcc_vocational_qual_id   bigint    NULL,
     vcc_unit_id              bigint    NULL,
     vcc_currency_activity_id bigint    NULL,
+    vcc_unit_element_id      bigint    NULL,
     PRIMARY KEY (id),
-    CONSTRAINT fk_tdc_document  FOREIGN KEY (document_id)              REFERENCES public.teacher_documents(id)                        ON DELETE CASCADE,
-    CONSTRAINT fk_tdc_pq        FOREIGN KEY (vcc_professional_qual_id) REFERENCES public.teacher_vcc_professional_qualifications(id)   ON DELETE CASCADE,
-    CONSTRAINT fk_tdc_vocqual   FOREIGN KEY (vcc_vocational_qual_id)   REFERENCES public.teacher_vcc_vocational_qualifications(id)     ON DELETE CASCADE,
-    CONSTRAINT fk_tdc_unit      FOREIGN KEY (vcc_unit_id)              REFERENCES public.teacher_vcc_units(id)                        ON DELETE CASCADE,
-    CONSTRAINT chk_tdc_target   CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id) = 1)
+    CONSTRAINT fk_tdc_document    FOREIGN KEY (document_id)              REFERENCES public.teacher_documents(id)                        ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_pq          FOREIGN KEY (vcc_professional_qual_id) REFERENCES public.teacher_vcc_professional_qualifications(id)   ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_vocqual     FOREIGN KEY (vcc_vocational_qual_id)   REFERENCES public.teacher_vcc_vocational_qualifications(id)     ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_unit        FOREIGN KEY (vcc_unit_id)              REFERENCES public.teacher_vcc_units(id)                        ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_unit_element FOREIGN KEY (vcc_unit_element_id)     REFERENCES public.teacher_vcc_unit_elements(id)                ON DELETE CASCADE,
+    CONSTRAINT chk_tdc_target     CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id, vcc_unit_element_id) = 1)
 );
 
 -- =========================================================================
@@ -2880,10 +2901,17 @@ ALTER TABLE public.teacher_document_connections DROP CONSTRAINT IF EXISTS fk_tdc
 ALTER TABLE public.teacher_document_connections
   ADD CONSTRAINT fk_tdc_vocqual FOREIGN KEY (vcc_vocational_qual_id)
     REFERENCES public.teacher_vcc_vocational_qualifications(id) ON DELETE CASCADE;
+ALTER TABLE public.teacher_document_connections
+  ADD COLUMN IF NOT EXISTS vcc_unit_element_id bigint NULL;
+ALTER TABLE public.teacher_document_connections
+  DROP CONSTRAINT IF EXISTS fk_tdc_unit_element;
+ALTER TABLE public.teacher_document_connections
+  ADD CONSTRAINT fk_tdc_unit_element FOREIGN KEY (vcc_unit_element_id)
+    REFERENCES public.teacher_vcc_unit_elements(id) ON DELETE CASCADE;
 ALTER TABLE public.teacher_document_connections DROP CONSTRAINT IF EXISTS chk_tdc_target;
 ALTER TABLE public.teacher_document_connections
   ADD CONSTRAINT chk_tdc_target CHECK (
-    num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id) = 1
+    num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id, vcc_unit_element_id) = 1
   );
 
 -- =========================================================================

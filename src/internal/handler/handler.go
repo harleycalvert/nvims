@@ -2452,10 +2452,108 @@ func (h *Handler) VCCUnitUpdate(w http.ResponseWriter, r *http.Request) {
 		strings.TrimSpace(r.FormValue("superseded_unit_code")),
 		strings.TrimSpace(r.FormValue("superseded_unit_title")),
 		strings.TrimSpace(r.FormValue("description")),
-		strings.TrimSpace(r.FormValue("justification")),
 		status, approvedAt,
 	); err != nil {
 		log.Printf("UpdateVCCUnit(%d,%d): %v", user.PersonID, unitID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func parseRating(s string) pgtype.Int2 {
+	if v, err := strconv.ParseInt(s, 10, 16); err == nil && v >= 1 && v <= 5 {
+		return pgtype.Int2{Int16: int16(v), Valid: true}
+	}
+	return pgtype.Int2{}
+}
+
+func (h *Handler) VCCUnitElementCreate(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	unitID, err := strconv.ParseInt(r.PathValue("uid"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	element := strings.TrimSpace(r.FormValue("element"))
+	if element == "" {
+		http.Error(w, `{"error":"element text is required"}`, http.StatusBadRequest)
+		return
+	}
+	id, err := h.store.CreateVCCUnitElement(r.Context(), user.PersonID, unitID,
+		element, strings.TrimSpace(r.FormValue("justification")))
+	if err != nil {
+		log.Printf("CreateVCCUnitElement(%d): %v", unitID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"ok":true,"id":%d}`, id)
+}
+
+func (h *Handler) VCCUnitElementUpdate(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	elemID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	element := strings.TrimSpace(r.FormValue("element"))
+	if element == "" {
+		http.Error(w, `{"error":"element text is required"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.UpdateVCCUnitElement(r.Context(), user.PersonID, elemID,
+		element, strings.TrimSpace(r.FormValue("justification"))); err != nil {
+		log.Printf("UpdateVCCUnitElement(%d): %v", elemID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) VCCUnitElementDelete(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	elemID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	if err := h.store.DeleteVCCUnitElement(r.Context(), user.PersonID, elemID); err != nil {
+		log.Printf("DeleteVCCUnitElement(%d): %v", elemID, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) VCCUnitRatingSave(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	unitID, err := strconv.ParseInt(r.PathValue("uid"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	err = h.store.UpdateVCCUnitRatings(r.Context(), user.PersonID, unitID,
+		parseRating(r.FormValue("enthusiasm_rating")),
+		parseRating(r.FormValue("confidence_rating")),
+	)
+	if err != nil {
+		log.Printf("UpdateVCCUnitRatings(%d,%d): %v", user.PersonID, unitID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}
