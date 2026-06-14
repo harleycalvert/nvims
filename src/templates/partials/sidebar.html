@@ -82,9 +82,9 @@
     </a>
 
     <div class="sidebar-subnav" id="subnav-vcc">
-      <a class="sidebar-item sidebar-subitem" href="/vcc/detail#teaching-quals" data-path="/vcc/detail">Teaching Qualifications</a>
+      <a class="sidebar-item sidebar-subitem" href="/vcc/detail#teaching-quals" data-path="/vcc/detail#teaching-quals" data-exact="true">Teaching Qualifications</a>
       <a class="sidebar-item sidebar-subitem" href="/vcc/vocational-evidence" data-path="/vcc/vocational-evidence">Vocational Evidence</a>
-      <a class="sidebar-item sidebar-subitem" href="/vcc/detail#programs" data-path="/vcc/detail">Programs I Teach</a>
+      <a class="sidebar-item sidebar-subitem" href="/vcc/detail#programs" data-path="/vcc/detail#programs" data-exact="true">Programs I Teach</a>
       <span class="sidebar-item sidebar-subitem sidebar-disabled">Industry Currency</span>
       <span class="sidebar-item sidebar-subitem sidebar-disabled">VET Knowledge Currency</span>
       <span class="sidebar-item sidebar-subitem sidebar-disabled">VCC History</span>
@@ -114,7 +114,7 @@
       <a class="sidebar-item sidebar-subitem" href="/admin/intake-groups" data-path="/admin/intake-groups">Intake Groups</a>
     </div>
 
-    <a class="sidebar-item" href="/admin/infrastructure" data-path="/admin/infrastructure" data-label="Infrastructure">
+    <a class="sidebar-item" href="/admin/infrastructure" data-path="/admin/infrastructure" data-exact="true" data-label="Infrastructure">
       <span class="sidebar-icon">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <rect x="1" y="9" width="5" height="6" rx="1"/>
@@ -155,7 +155,7 @@
 
     <div class="sidebar-section">System</div>
 
-    <a class="sidebar-item" href="/system" data-path="/system" data-label="System">
+    <a class="sidebar-item" href="/system" data-path="/system" data-exact="true" data-label="System">
       <span class="sidebar-icon">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <rect x="2" y="2" width="12" height="12" rx="2"/>
@@ -191,11 +191,11 @@
   toggle.addEventListener('click', () => setState(html.dataset.sidebar !== 'open'));
 
   // Active highlighting
-  const path = location.pathname;
+  const path = location.pathname + location.hash;
   document.querySelectorAll('.sidebar-item[data-path]').forEach(item => {
     const p     = item.dataset.path;
     const exact = item.dataset.exact === 'true';
-    if (exact ? path === p : path.startsWith(p)) item.classList.add('active');
+    if (exact ? path === p : location.pathname.startsWith(p)) item.classList.add('active');
   });
 
   // Keep label in sync with restored state (set in <head> before body)

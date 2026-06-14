@@ -499,10 +499,14 @@
   }
 
   // Show the panel named in the URL hash; default to teaching-quals.
-  const hashPanel = location.hash.slice(1) || 'teaching-quals';
-  document.querySelectorAll('.vcc-panel').forEach(p => p.style.display = 'none');
-  const activePanel = document.getElementById('panel-' + hashPanel);
-  if (activePanel) activePanel.style.display = '';
+  function showPanel(hash) {
+    const name = hash.slice(1) || 'teaching-quals';
+    document.querySelectorAll('.vcc-panel').forEach(p => p.style.display = 'none');
+    const panel = document.getElementById('panel-' + name);
+    if (panel) panel.style.display = '';
+  }
+  showPanel(location.hash);
+  window.addEventListener('hashchange', () => showPanel(location.hash));
 
   // ── Accordion toggle ──
   document.addEventListener('click', e => {
