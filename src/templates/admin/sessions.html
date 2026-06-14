@@ -29,6 +29,8 @@
 
   <main class="sessions-main">
 
+    {{template "admin-nav" .}}
+
     {{/* ── Toolbar ── */}}
     <div class="sess-toolbar">
 
@@ -63,10 +65,18 @@
         </select>
       </div>
 
+      <div class="sess-radio-group" id="period-era-filter">
+        <label class="sess-radio-label"><input type="radio" name="period_era" value="future" checked> Future</label>
+        <label class="sess-radio-label"><input type="radio" name="period_era" value="current"> Current</label>
+        <label class="sess-radio-label"><input type="radio" name="period_era" value="historical"> Historical</label>
+        <label class="sess-radio-label"><input type="radio" name="period_era" value="all"> All</label>
+      </div>
+
       <select id="period-select" class="search-role-select">
         <option value="">— select period —</option>
         {{range .Periods}}
-        <option value="{{.ID}}"{{if eq $.PeriodID .ID}} selected{{end}}>
+        <option value="{{.ID}}"{{if eq $.PeriodID .ID}} selected{{end}}
+          data-start="{{.StartDate}}" data-end="{{.EndDate}}">
           {{.PeriodName}} {{.Year}}
         </option>
         {{end}}
@@ -211,6 +221,46 @@
         : document.getElementById('group-select').value,
       this.value);
   });
+
+  /* ── period era filter ── */
+  (function() {
+    const sel     = document.getElementById('period-select');
+    const today   = new Date().toISOString().slice(0, 10);
+    const options = Array.from(sel.options).slice(1); // skip placeholder
+
+    function applyEra(era) {
+      let firstVisible = null;
+      options.forEach(opt => {
+        const start = opt.dataset.start || '';
+        const end   = opt.dataset.end   || '';
+        let show;
+        if      (era === 'historical') show = end   <  today;
+        else if (era === 'current')    show = start <= today && end >= today;
+        else if (era === 'future')     show = start >  today;
+        else                           show = true;
+        opt.hidden = !show;
+        if (show && !firstVisible) firstVisible = opt;
+      });
+      // if selected option is now hidden, reset to placeholder
+      const selected = sel.options[sel.selectedIndex];
+      if (selected && selected.hidden) sel.value = '';
+      // auto-select the first visible period for future and current eras
+      if ((era === 'future' || era === 'current') && firstVisible && !sel.value) {
+        sel.value = firstVisible.value;
+        sel.dispatchEvent(new Event('change'));
+      }
+    }
+
+    function selectedEra() {
+      return document.querySelector('input[name=period_era]:checked')?.value || 'future';
+    }
+
+    applyEra(selectedEra());
+
+    document.querySelectorAll('input[name=period_era]').forEach(r => {
+      r.addEventListener('change', () => applyEra(r.value));
+    });
+  })();
 
   /* ── date helpers ── */
   function dmyToIso(dmy) {

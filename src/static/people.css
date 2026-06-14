@@ -333,3 +333,47 @@
   color: #888;
   margin-left: 4px;
 }
+
+/* ── Admin nav tiles ─────────────────────────────────────── */
+.admin-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 20px;
+}
+
+.admin-nav-tile {
+  display: flex;
+  align-items: stretch;
+  background: #fff;
+  border: 1px solid #dde1e7;
+  border-radius: 5px;
+  overflow: hidden;
+  text-decoration: none;
+  color: #444;
+  font-size: 12.5px;
+  font-weight: 500;
+  transition: box-shadow 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+
+.admin-nav-tile:hover {
+  border-color: #aab4c8;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  color: #111;
+}
+
+.admin-nav-tile.active {
+  border-color: currentColor;
+  background: #f5f7fb;
+  font-weight: 600;
+}
+
+.admin-nav-bar {
+  width: 3px;
+  flex-shrink: 0;
+}
+
+.admin-nav-label {
+  padding: 6px 11px;
+}

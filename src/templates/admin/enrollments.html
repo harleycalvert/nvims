@@ -12,13 +12,28 @@
   <style>
     .enrol-filter { margin-bottom: .75rem; }
     .enrol-filter input { padding: .3rem .5rem; border: 1px solid #ccc; border-radius: 4px; width: 22rem; }
-    .enrol-student { min-width: 14rem; }
-    .enrol-program { min-width: 10rem; }
-    .enrol-date    { width: 8.5rem; }
-    .enrol-state   { width: 4rem; }
-    .enrol-cp      { width: 4.5rem; }
+    .enrol-student  { min-width: 14rem; }
+    .enrol-program  { min-width: 10rem; }
+    .enrol-date     { width: 8.5rem; }
+    .enrol-state    { width: 4rem; }
+    .enrol-cp       { width: 4.5rem; }
     .enrol-contract { width: 9rem; }
-    .enrol-hidden  { display: none; }
+    .enrol-hidden   { display: none; }
+    /* student picker */
+    .student-picker { position: relative; min-width: 14rem; }
+    .student-picker input[type=text] { width: 100%; box-sizing: border-box; }
+    .student-results {
+      position: absolute; top: 100%; left: 0; right: 0; z-index: 100;
+      background: #fff; border: 1px solid #c0c8d8; border-top: none;
+      border-radius: 0 0 4px 4px; max-height: 220px; overflow-y: auto;
+      box-shadow: 0 4px 12px rgba(0,0,0,.12);
+    }
+    .student-result {
+      padding: 6px 10px; cursor: pointer; font-size: 13px; line-height: 1.4;
+    }
+    .student-result:hover, .student-result.focused { background: #eef2fb; }
+    .student-result-num { color: #888; font-size: 11px; }
+    .student-result-none { padding: 8px 10px; color: #999; font-size: 13px; font-style: italic; }
   </style>
 </head>
 <body>
@@ -40,11 +55,7 @@
 
   <main class="sessions-main">
 
-    <div class="sess-toolbar">
-      <a class="btn-secondary" href="/admin/people">People</a>
-      <a class="btn-secondary" href="/admin/programs">Programs</a>
-      <a class="btn-secondary" href="/admin/intake-groups">Intake Groups</a>
-    </div>
+    {{template "admin-nav" .}}
 
     <div class="enrol-filter">
       <input type="text" id="enrol-search" placeholder="Filter by student or program…" autocomplete="off">
@@ -128,7 +139,6 @@
 
 <script>
 (function () {
-  const students = [{{range $i,$s := .Students}}{{if $i}},{{end}}{"id":{{$s.ID}},"num":{{printf "%q" $s.StudentNumber}},"name":{{printf "%q" $s.FullName}}}{{end}}];
   const programs = [{{range $i,$p := .Programs}}{{if $i}},{{end}}{"id":{{$p.ID}},"code":{{printf "%q" $p.ProgramCode}},"name":{{printf "%q" $p.ProgramName}}}{{end}}];
   const groups   = [{{range $i,$g := .Groups}}{{if $i}},{{end}}{"id":{{$g.ID}},"code":{{printf "%q" $g.GroupCode}}}{{end}}];
 
@@ -145,13 +155,60 @@
     return [['3','3 – Not'],['4','4 – Re'],['8','8 – Cont']].map(([v,l]) =>
       `<option value="${v}"${v === selected ? ' selected' : ''}>${l}</option>`).join('');
   }
-  function studentOptions() {
-    return '<option value="">— select student —</option>' +
-      students.map(s => `<option value="${s.id}">${s.name} (${s.num})</option>`).join('');
-  }
   function programOptions() {
     return '<option value="">— select program —</option>' +
       programs.map(p => `<option value="${p.id}">${p.code} — ${p.name}</option>`).join('');
+  }
+
+  /* ── student search picker ── */
+  function attachStudentPicker(td, tr) {
+    const input   = td.querySelector('.student-search');
+    const results = td.querySelector('.student-results');
+    const hidden  = td.querySelector('input[name=student_id]');
+    let debounce  = null;
+
+    function showResults(items) {
+      results.innerHTML = '';
+      if (!items.length) {
+        results.innerHTML = '<div class="student-result-none">No matches</div>';
+      } else {
+        items.forEach(s => {
+          const div = document.createElement('div');
+          div.className = 'student-result';
+          div.innerHTML = `${s.fullName} <span class="student-result-num">${s.studentNumber}</span>`;
+          div.addEventListener('mousedown', e => {
+            e.preventDefault();
+            hidden.value  = s.id;
+            input.value   = `${s.fullName} (${s.studentNumber})`;
+            results.hidden = true;
+            hidden.dispatchEvent(new Event('change', { bubbles: true }));
+          });
+          results.appendChild(div);
+        });
+      }
+      results.hidden = false;
+    }
+
+    input.addEventListener('input', () => {
+      hidden.value = '';
+      clearTimeout(debounce);
+      const q = input.value.trim();
+      if (q.length < 2) { results.hidden = true; return; }
+      debounce = setTimeout(async () => {
+        try {
+          const res  = await fetch(`/admin/students/search?q=${encodeURIComponent(q)}`);
+          const data = await res.json();
+          showResults(data);
+        } catch { results.hidden = true; }
+      }, 200);
+    });
+
+    input.addEventListener('blur', () => {
+      setTimeout(() => { results.hidden = true; }, 150);
+    });
+    input.addEventListener('focus', () => {
+      if (input.value.trim().length >= 2 && !hidden.value) input.dispatchEvent(new Event('input'));
+    });
   }
 
   function setStatus(tr, state) {
@@ -217,6 +274,8 @@
       tr.querySelector(`[name=${name}]`)?.addEventListener('change', () => saveRow(tr));
     });
     tr.querySelector('.enrol-delete')?.addEventListener('click', () => deleteRow(tr));
+    const pickerTd = tr.querySelector('.student-picker')?.closest('td');
+    if (pickerTd) attachStudentPicker(pickerTd, tr);
   }
 
   document.querySelectorAll('#enrol-tbody .sess-row').forEach(attachRowListeners);
@@ -229,7 +288,11 @@
     tr.className = 'sess-row sess-new';
     tr.dataset.id = 'new';
     tr.innerHTML = `
-      <td><select class="sess-input" name="student_id" style="min-width:14rem">${studentOptions()}</select></td>
+      <td><div class="student-picker">
+        <input type="text" class="sess-input student-search" placeholder="Search by name or ID…" autocomplete="off">
+        <div class="student-results" hidden></div>
+        <input type="hidden" name="student_id">
+      </div></td>
       <td><select class="sess-input" name="program_id" style="min-width:10rem">${programOptions()}</select></td>
       <td><select class="sess-input" name="intake_group_id">${groupOptions(0)}</select></td>
       <td><select class="sess-input" name="enrollment_status">${statusOptions('Active')}</select></td>
@@ -245,7 +308,7 @@
       </td>`;
     tbody.appendChild(tr);
     attachRowListeners(tr);
-    tr.querySelector('[name=student_id]').focus();
+    tr.querySelector('.student-search').focus();
   });
 
   // Client-side row filter

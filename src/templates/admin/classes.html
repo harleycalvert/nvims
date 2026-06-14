@@ -29,12 +29,7 @@
 
   <main class="sessions-main">
 
-    <div class="sess-toolbar">
-      <a class="btn-secondary" href="/admin/programs">← Programs</a>
-      <a class="btn-secondary" href="/admin/subjects">Subjects</a>
-      <a class="btn-secondary" href="/admin/locations">Locations</a>
-      <a class="btn-secondary" href="/admin/sessions">Sessions →</a>
-    </div>
+    {{template "admin-nav" .}}
 
     <div class="table-wrap">
       <table class="sessions-table" id="classes-table">

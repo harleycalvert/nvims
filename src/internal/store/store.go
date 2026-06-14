@@ -23,6 +23,8 @@ type Period struct {
 	PeriodCode string
 	PeriodName string
 	Year       int
+	StartDate  string // YYYY-MM-DD
+	EndDate    string // YYYY-MM-DD
 }
 
 type Program struct {
@@ -83,7 +85,8 @@ type StudentPanelData struct {
 
 func (s *Store) Periods(ctx context.Context) ([]Period, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, period_code, period_name, year
+		SELECT id, period_code, period_name, year,
+		       TO_CHAR(start_date,'YYYY-MM-DD'), TO_CHAR(end_date,'YYYY-MM-DD')
 		FROM public.academic_periods
 		ORDER BY year, sequence_number
 	`)
@@ -95,7 +98,7 @@ func (s *Store) Periods(ctx context.Context) ([]Period, error) {
 	var out []Period
 	for rows.Next() {
 		var p Period
-		if err := rows.Scan(&p.ID, &p.PeriodCode, &p.PeriodName, &p.Year); err != nil {
+		if err := rows.Scan(&p.ID, &p.PeriodCode, &p.PeriodName, &p.Year, &p.StartDate, &p.EndDate); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -2593,9 +2596,9 @@ func (s *Store) DeletePQDocument(ctx context.Context, teacherID, docID int64) er
 // ── Course Enrollments ────────────────────────────────────────────────────────
 
 type StudentSelectRow struct {
-	ID            int64
-	StudentNumber string
-	FullName      string
+	ID            int64  `json:"id"`
+	StudentNumber string `json:"studentNumber"`
+	FullName      string `json:"fullName"`
 }
 
 type EnrollmentRow struct {
@@ -2615,6 +2618,35 @@ type EnrollmentRow struct {
 	CommencingProgramID    string
 	TrainingContractID     string
 	ClientApprenticeshipID string
+}
+
+func (s *Store) SearchStudents(ctx context.Context, q string) ([]StudentSelectRow, error) {
+	like := "%" + q + "%"
+	rows, err := s.pool.Query(ctx, `
+		SELECT s.id, s.student_number, p.family_name || ', ' || p.first_given_name
+		FROM public.students s
+		JOIN public.people p ON p.id = s.id
+		WHERE s.deleted_at IS NULL
+		  AND (p.family_name ILIKE $1 OR p.first_given_name ILIKE $1
+		       OR (p.family_name || ' ' || p.first_given_name) ILIKE $1
+		       OR (p.first_given_name || ' ' || p.family_name) ILIKE $1
+		       OR s.student_number ILIKE $1)
+		ORDER BY p.family_name, p.first_given_name
+		LIMIT 20
+	`, like)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []StudentSelectRow
+	for rows.Next() {
+		var r StudentSelectRow
+		if err := rows.Scan(&r.ID, &r.StudentNumber, &r.FullName); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) ListStudentsForSelect(ctx context.Context) ([]StudentSelectRow, error) {

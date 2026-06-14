@@ -26,9 +26,10 @@
     </div>
   </header>
   <main>
+    {{template "admin-nav" .}}
     <div class="admin-toolbar">
       <form id="people-search" class="admin-search" method="GET" action="/admin/people">
-        <input id="q" type="search" name="q" value="{{.Search}}" placeholder="Search by name or email…" autocomplete="off">
+        <input id="q" type="search" name="q" value="{{.Search}}" placeholder="Search by name or ID…" autocomplete="off">
         <select id="role-filter" name="role" class="search-role-select">
           <option value=""{{if eq .Role ""}} selected{{end}}>All roles</option>
           <option value="Student"{{if eq .Role "Student"}} selected{{end}}>Student</option>

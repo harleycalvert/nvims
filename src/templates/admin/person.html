@@ -27,6 +27,7 @@
   </header>
 
   <main>
+    {{template "admin-nav" .}}
     {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
     {{if .Success}}<p class="form-success">Changes saved.</p>{{end}}
 

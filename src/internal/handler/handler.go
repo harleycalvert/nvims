@@ -142,6 +142,7 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 			"templates/admin/sessions.html",
 			"templates/backup.html",
 			"templates/partials/sidebar.html",
+			"templates/partials/admin-nav.html",
 			"templates/vcc/menu.html",
 			"templates/vcc/vocational-evidence.html",
 			"templates/vcc/detail.html",
@@ -3001,16 +3002,30 @@ func (h *Handler) AdminRoomDelete(w http.ResponseWriter, r *http.Request) {
 
 // ── Course Enrollments ────────────────────────────────────────────────────────
 
+func (h *Handler) AdminStudentSearch(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if len([]rune(q)) < 2 {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("[]"))
+		return
+	}
+	results, err := h.store.SearchStudents(r.Context(), q)
+	if err != nil {
+		log.Printf("SearchStudents: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	if results == nil {
+		results = []store.StudentSelectRow{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(results)
+}
+
 func (h *Handler) AdminEnrollments(w http.ResponseWriter, r *http.Request) {
 	enrollments, err := h.store.ListEnrollments(r.Context())
 	if err != nil {
 		log.Printf("ListEnrollments: %v", err)
-		http.Error(w, "database error", http.StatusInternalServerError)
-		return
-	}
-	students, err := h.store.ListStudentsForSelect(r.Context())
-	if err != nil {
-		log.Printf("ListStudentsForSelect: %v", err)
 		http.Error(w, "database error", http.StatusInternalServerError)
 		return
 	}
@@ -3030,7 +3045,6 @@ func (h *Handler) AdminEnrollments(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "admin-enrollments", map[string]any{
 		"User":        user,
 		"Enrollments": enrollments,
-		"Students":    students,
 		"Programs":    programs,
 		"Groups":      groups,
 	})

@@ -29,12 +29,7 @@
 
   <main class="sessions-main">
 
-    <div class="sess-toolbar">
-      <a class="btn-secondary" href="/admin/periods">Periods</a>
-      <a class="btn-secondary" href="/admin/faculties">Faculties</a>
-      <a class="btn-secondary" href="/admin/intake-groups">Intake Groups</a>
-      <a class="btn-secondary" href="/admin/classes">Classes →</a>
-    </div>
+    {{template "admin-nav" .}}
 
     <div class="table-wrap">
       <table class="sessions-table" id="programs-table">

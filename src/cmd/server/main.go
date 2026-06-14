@@ -106,6 +106,7 @@ func main() {
 	mux.HandleFunc("POST /admin/intake-groups/new", protect(h.AdminIntakeGroupCreate))
 	mux.HandleFunc("POST /admin/intake-groups/{id}", protect(h.AdminIntakeGroupUpdate))
 	mux.HandleFunc("POST /admin/intake-groups/{id}/delete", protect(h.AdminIntakeGroupDelete))
+	mux.HandleFunc("GET /admin/students/search", protect(h.AdminStudentSearch))
 	mux.HandleFunc("GET /admin/enrollments", protect(h.AdminEnrollments))
 	mux.HandleFunc("POST /admin/enrollments/new", protect(h.AdminEnrollmentCreate))
 	mux.HandleFunc("POST /admin/enrollments/{id}", protect(h.AdminEnrollmentUpdate))
