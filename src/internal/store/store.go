@@ -858,7 +858,10 @@ const scheduledSessionSQL = `
 	           ' · ' ORDER BY p.family_name || ', ' || p.first_given_name
 	       ),''),
 	       dl.name,
-	       COALESCE(b.building_name || ' ' || r.room_name, '')
+	       COALESCE(cs.room_id, 0),
+	       COALESCE(r.building_id, 0),
+	       COALESCE(b.building_name,''),
+	       COALESCE(r.room_name,'')
 	FROM public.class_sessions cs
 	JOIN public.classes c ON c.id = cs.class_id
 	JOIN public.delivery_locations dl ON dl.id = c.delivery_location_id
@@ -882,7 +885,8 @@ func scanScheduledRows(rows interface {
 		if err := rows.Scan(&r.ID, &r.ClassID, &r.ClassCode,
 			&r.SessionDate, &r.StartTime, &r.EndTime,
 			&r.SessionType, &r.Notes, &r.Cancelled,
-			&r.Teachers, &r.Location, &r.Room); err != nil {
+			&r.Teachers, &r.Location,
+			&r.RoomID, &r.BuildingID, &r.BuildingName, &r.RoomName); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -905,7 +909,8 @@ func (s *Store) SessionsForTeacher(ctx context.Context, teacherID int64, from, t
 	JOIN public.session_teachers st ON st.session_id = cs.id AND st.teacher_id = $1
 	WHERE cs.session_date >= $2::date AND cs.session_date <= $3::date` + classFilter + `
 	GROUP BY cs.id, c.id, c.class_code, cs.session_date, cs.start_time, cs.end_time,
-	         cs.session_type, cs.notes, cs.cancelled, dl.name, b.building_name, r.room_name
+	         cs.session_type, cs.notes, cs.cancelled, dl.name,
+	         cs.room_id, r.building_id, b.building_name, r.room_name
 	ORDER BY cs.session_date, cs.start_time`
 	rows, err := s.pool.Query(ctx, q, args...)
 	if err != nil {
@@ -979,7 +984,8 @@ func (s *Store) SessionsForIntakeGroup(ctx context.Context, groupID int64, from,
 	WHERE c.intake_group_id = $1
 	  AND cs.session_date >= $2::date AND cs.session_date <= $3::date` + classFilter + `
 	GROUP BY cs.id, c.id, c.class_code, cs.session_date, cs.start_time, cs.end_time,
-	         cs.session_type, cs.notes, cs.cancelled, dl.name, b.building_name, r.room_name
+	         cs.session_type, cs.notes, cs.cancelled, dl.name,
+	         cs.room_id, r.building_id, b.building_name, r.room_name
 	ORDER BY cs.session_date, cs.start_time
 	`
 	rows, err := s.pool.Query(ctx, q, args...)
@@ -1337,7 +1343,10 @@ type ScheduledSessionRow struct {
 	Cancelled    bool
 	Teachers     string
 	Location     string // delivery location name
-	Room         string // building + room, blank if unassigned
+	RoomID       int64
+	BuildingID   int64
+	BuildingName string
+	RoomName     string
 }
 
 type SessionInput struct {
@@ -1367,6 +1376,9 @@ type TimetableSession struct {
 	ProgramCode  string
 	GroupInfo    string
 	SubjectCodes string
+	BuildingName string
+	BuildingLat  string
+	BuildingLng  string
 }
 
 func (s *Store) TimetableRange(ctx context.Context, start, end time.Time, f TimetableFilters) ([]TimetableSession, error) {
@@ -1410,7 +1422,10 @@ func (s *Store) TimetableRange(ctx context.Context, start, end time.Time, f Time
 		       (SELECT COALESCE(string_agg(subj.subject_code, ' · ' ORDER BY subj.subject_code), '')
 		        FROM public.class_subjects _cs3
 		        JOIN public.subjects subj ON subj.id = _cs3.subject_id
-		        WHERE _cs3.class_id = c.id)
+		        WHERE _cs3.class_id = c.id),
+		       COALESCE(b.building_name,''),
+		       COALESCE(b.latitude::text,''),
+		       COALESCE(b.longitude::text,'')
 		FROM public.class_sessions cs
 		JOIN public.classes c ON c.id = cs.class_id
 		JOIN public.delivery_locations dl ON dl.id = c.delivery_location_id
@@ -1420,13 +1435,16 @@ func (s *Store) TimetableRange(ctx context.Context, start, end time.Time, f Time
 		LEFT JOIN public.session_teachers st ON st.session_id = cs.id
 		LEFT JOIN public.teachers t  ON t.id = st.teacher_id
 		LEFT JOIN public.people   p  ON p.id = t.id
+		LEFT JOIN public.rooms r ON r.id = cs.room_id
+		LEFT JOIN public.buildings b ON b.id = r.building_id
 		%s
 		WHERE cs.session_date >= $1 AND cs.session_date < $2
 		  AND NOT cs.cancelled
 		  %s
 		GROUP BY cs.id, c.id, c.class_code,
 		         cs.session_date, cs.start_time, cs.end_time, cs.session_type, dl.name,
-		         prog.program_code, ig.group_code, ig.group_name
+		         prog.program_code, ig.group_code, ig.group_name,
+		         b.building_name, b.latitude, b.longitude
 		ORDER BY cs.session_date, cs.start_time, c.class_code
 	`, joinSQL, whereSQL)
 
@@ -1441,7 +1459,8 @@ func (s *Store) TimetableRange(ctx context.Context, start, end time.Time, f Time
 		if err := rows.Scan(&ts.ID, &ts.ClassID, &ts.ClassCode,
 			&ts.SessionDate, &ts.StartTime, &ts.EndTime, &ts.SessionType,
 			&ts.LocationName, &ts.Teachers,
-			&ts.ProgramCode, &ts.GroupInfo, &ts.SubjectCodes); err != nil {
+			&ts.ProgramCode, &ts.GroupInfo, &ts.SubjectCodes,
+			&ts.BuildingName, &ts.BuildingLat, &ts.BuildingLng); err != nil {
 			return nil, err
 		}
 		out = append(out, ts)
@@ -1860,16 +1879,17 @@ func (s *Store) ListTeachers(ctx context.Context) ([]TeacherListRow, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) UpdateSession(ctx context.Context, id int64, date, startTime, endTime, sessionType, notes string) error {
+func (s *Store) UpdateSession(ctx context.Context, id int64, date, startTime, endTime, sessionType, notes string, roomID int64) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE public.class_sessions
 		SET session_date = $2::date,
 		    start_time   = $3::time,
 		    end_time     = $4::time,
 		    session_type = $5,
-		    notes        = NULLIF($6,'')
+		    notes        = NULLIF($6,''),
+		    room_id      = NULLIF($7, 0)
 		WHERE id = $1
-	`, id, date, startTime, endTime, sessionType, notes)
+	`, id, date, startTime, endTime, sessionType, notes, roomID)
 	return err
 }
 

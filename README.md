@@ -1,6 +1,6 @@
 # NVIMS — National VET Information Management System
 
-NVIMS is a Student Management System (SMS) built for Australian RTOs, TAFEs, and Higher Education providers. It is implemented in PostgreSQL and Go, and is designed to support AVETMISS reporting, teacher workforce compliance (VCC), timetabling, attendance, and enrolment management.
+NVIMS is a Student Management System (SMS) and more built for Australian RTOs, TAFEs, and Higher Education providers. It is implemented in PostgreSQL and Go, and is designed to support AVETMISS reporting, teacher workforce compliance (VCC), timetabling, attendance, and enrolment management.
 
 > **Status:** Early development. Core data structures are stable; several modules are functional.  
 > **Project commenced:** 5 June 2026  
@@ -31,7 +31,6 @@ The following are deliberately outside the system boundary. NVIMS integrates wit
 | Capability | Approach |
 |---|---|
 | Learning Management System (LMS) | External — NVIMS links to the configured LMS (Canvas, Moodle, Blackboard, etc.) via the sidebar |
-| File / document storage | External — configurable storage endpoint (planned); documents are referenced, not stored |
 | Student payment and fees | Out of scope |
 | HR and payroll | Out of scope |
 | Email and messaging | Out of scope |
@@ -55,11 +54,22 @@ The following are deliberately outside the system boundary. NVIMS integrates wit
 - Attendance register with per-session, per-student recording (Present, Online, Absent-Notified, Excused, Absent)
 - Results grid with competency outcomes (SC, NS, IP) and publish workflow
 
+### Timetabling
+- Interactive map panel: click any session to view the building's location on an embedded OpenStreetMap/Leaflet map
+
 ### Teacher VCC
 - Teaching qualifications (TAE/training) with AQF level and document attachments
 - Vocational qualifications with AQF level and document attachments
 - Vocational evidence and industry currency tracking
 - Programs and units taught
+- Document library with MinIO/S3 file storage and presigned download URLs
+
+### Workplan
+- Leave & Availability page: weekly availability grid (Monday–Saturday), employment-type-aware (Full-Time, Part-Time, and Casual each have different granularity)
+- Leave request system: calendar picker supporting individual days or date ranges, partial-day support, leave type dropdown, and approval workflow (Pending → Approved / Declined / Cancelled)
+
+### Administration
+- Class Sessions: room and building are editable per session via a cascading select
 
 ### Infrastructure
 - Training organisation management
@@ -98,9 +108,11 @@ The following are deliberately outside the system boundary. NVIMS integrates wit
 ## Getting Started
 
 ### Prerequisites
-- PostgreSQL 15+
+- PostgreSQL 16
 - Go 1.22+
+- MinIO (or any S3-compatible object store) for document storage
 
+See [docs/INSTALLATION.md](docs/INSTALLATION.md) for full setup instructions.
 
 ---
 

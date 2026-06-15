@@ -2,7 +2,7 @@
 
 PostgreSQL schema for a national, potentially AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.34`: its entities, relationships, business rules, and the
+describes the design of `v0.35`: its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -40,7 +40,7 @@ mapping to the AVETMISS NAT reporting files.
   - Holidays: [`holiday_rules`](#holiday_rules) · [`holiday_observances`](#holiday_observances)
   - Communications: [`message_templates`](#message_templates) · [`message_campaigns`](#message_campaigns) · [`message_deliveries`](#message_deliveries) · [`messages`](#messages) · [`message_recipients`](#message_recipients)
   - Compliance & audit: [`program_completions`](#program_completions) · [`student_progress_reports`](#student_progress_reports) · [`student_notes`](#student_notes) · [`avetmiss_submissions`](#avetmiss_submissions) · [`audit_log`](#audit_log)
-  - Workplan: [`workplans`](#workplans) · [`workplan_approvals`](#workplan_approvals) · [`workplan_entries`](#workplan_entries)
+  - Workplan: [`workplans`](#workplans) · [`workplan_approvals`](#workplan_approvals) · [`workplan_entries`](#workplan_entries) · [`leave_requests`](#leave_requests) · [`leave_request_dates`](#leave_request_dates)
   - Timesheet: [`pay_periods`](#pay_periods) · [`timesheets`](#timesheets) · [`timesheet_entries`](#timesheet_entries)
   - Employment services: [`student_employment_services`](#student_employment_services) · [`student_employment_registrations`](#student_employment_registrations)
   - VCC: [`teacher_vccs`](#teacher_vccs) · [`teacher_vcc_professional_qualifications`](#teacher_vcc_professional_qualifications) · [`teacher_vcc_vocational_qualifications`](#teacher_vcc_vocational_qualifications) · [`teacher_vcc_courses`](#teacher_vcc_courses) · [`teacher_vcc_units`](#teacher_vcc_units) · [`teacher_vcc_unit_elements`](#teacher_vcc_unit_elements) · [`teacher_documents`](#teacher_documents) · [`teacher_document_connections`](#teacher_document_connections) · [`teacher_currency_activities`](#teacher_currency_activities) · [`teacher_currency_unit_links`](#teacher_currency_unit_links) · [`teacher_vcc_profiling`](#teacher_vcc_profiling)
@@ -439,6 +439,9 @@ erDiagram
     PROGRAMS ||--o{ WORKPLAN_ENTRIES : "course context (nullable)"
     ACADEMIC_PERIODS ||--o{ WORKPLAN_ENTRIES : "semester (nullable)"
     CLASS_SESSIONS ||--o{ WORKPLAN_ENTRIES : "session link (nullable)"
+    TEACHERS ||--o{ LEAVE_REQUESTS : "submits"
+    PEOPLE ||--o{ LEAVE_REQUESTS : "approved by (nullable)"
+    LEAVE_REQUESTS ||--o{ LEAVE_REQUEST_DATES : "has calendar dates"
 
     WORKPLANS {
         bigserial id PK
@@ -466,6 +469,25 @@ erDiagram
         bigint approver_id FK
         varchar approval_role "Teacher/LineManager"
         timestamptz approved_at
+    }
+    LEAVE_REQUESTS {
+        bigserial id PK
+        bigint teacher_id FK
+        varchar leave_type "Annual Leave etc."
+        boolean is_partial_day
+        time partial_start "NULL if full day"
+        time partial_end "NULL if full day"
+        text notes
+        varchar status "Pending/Approved/Declined/Cancelled"
+        bigint approved_by FK "NULL until decided"
+        timestamptz approved_at
+        text approver_notes
+        timestamptz created_at
+    }
+    LEAVE_REQUEST_DATES {
+        bigserial id PK
+        bigint request_id FK
+        date leave_date
     }
 ```
 
@@ -698,6 +720,8 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | `workplans` | Annual VTSA 2024 cl. 32.4 workplan per teacher per year. | → `teachers`, `app_users` |
 | `workplan_approvals` | Teacher/LineManager approval steps for a workplan. | → `workplans`, `app_users` |
 | `workplan_entries` | Teaching Delivery / CAPPS / ERD line items on a workplan. | → `workplans`, `subjects`, `programs`, `academic_periods`, `class_sessions` |
+| `leave_requests` | Teacher leave requests with leave type, optional partial-day times, and a Pending → Approved / Declined / Cancelled approval workflow. | → `teachers`, `people` (approver) |
+| `leave_request_dates` | Individual calendar dates belonging to a leave request. Supports non-contiguous date selection and date-range expansion. | → `leave_requests` |
 
 ### Timesheet
 
@@ -740,7 +764,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 
 ## Data dictionary
 
-Every table and column, generated from `v0.34`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
+Every table and column, generated from `v0.35`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
 
 ### Identity & reference
 
@@ -973,20 +997,24 @@ Per-academic-period hour cap and balance for HE/DUAL teachers who have `teachers
 
 #### `teacher_availability`
 
-Days of the week a teacher is available to work. Each row marks one available day; days not represented are unavailable. `day_of_week` uses 0-based ISO weekday numbering: 0 = Monday, 1 = Tuesday, 2 = Wednesday, 3 = Thursday, 4 = Friday, 5 = Saturday, 6 = Sunday. The unique constraint prevents duplicate day entries per teacher.
+Days of the week a teacher is available to work, together with the available time window on each day. Each row marks one available day; days not represented are unavailable. `day_of_week` uses 1-based numbering: 1 = Monday, 2 = Tuesday, 3 = Wednesday, 4 = Thursday, 5 = Friday, 6 = Saturday (Sunday is not a valid working day). `start_time` and `end_time` record the availability window for that day (defaults 08:00–22:00); `end_time` must be strictly after `start_time`. The unique constraint prevents duplicate day entries per teacher. The optional `notes` column records any free-text annotation for the availability row.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
 | `teacher_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teachers |
 | `day_of_week` | `smallint` | no |  | UK (with teacher_id) |
+| `start_time` | `time` | no | `'08:00'` |  |
+| `end_time` | `time` | no | `'22:00'` |  |
+| `notes` | `text` | yes |  |  |
 
 *Constraints:*
 
 - `PRIMARY KEY (id)`
 - `CONSTRAINT fk_teacher_avail FOREIGN KEY (teacher_id) REFERENCES public.teachers(id) ON DELETE CASCADE`
 - `CONSTRAINT uq_teacher_avail_day UNIQUE (teacher_id, day_of_week)`
-- `CONSTRAINT chk_teacher_avail_day CHECK (day_of_week BETWEEN 0 AND 6)`
+- `CONSTRAINT chk_teacher_avail_day CHECK (day_of_week BETWEEN 1 AND 6)`
+- `CONSTRAINT chk_teacher_avail_times CHECK (end_time > start_time)`
 
 #### `student_guardians`
 
@@ -2423,6 +2451,51 @@ Line items on a workplan, categorised as `Teaching Delivery`, `CAPPS`, or `Educa
 - `CONSTRAINT chk_we_hours CHECK (total_hours > 0)`
 - `CONSTRAINT chk_we_dates CHECK (activity_end_date IS NULL OR activity_end_date >= activity_start_date)`
 
+#### `leave_requests`
+
+Teacher leave requests, supporting full-day and partial-day absences. Each row represents one leave request submitted by a teacher, recording the leave type (e.g. `Annual Leave`, `Sick Leave`), whether the request covers only part of a day, and the optional partial-day start/end times (both required when `is_partial_day = true`, and `partial_end` must be after `partial_start`). The actual calendar dates are stored in child rows in `leave_request_dates` to support both contiguous and non-contiguous date selection. Status progresses through `Pending → Approved / Declined / Cancelled`; `approved_by`, `approved_at`, and `approver_notes` are populated when a decision is recorded. `approved_by` references `people(id)` (the approving manager or administrator) rather than `app_users`, allowing any person with authority to be recorded. Cascade-deletes its `leave_request_dates` rows when deleted.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `teacher_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teachers |
+| `leave_type` | `varchar(50)` | no | `'Annual Leave'` |  |
+| `is_partial_day` | `boolean` | no | `false` |  |
+| `partial_start` | `time` | yes |  |  |
+| `partial_end` | `time` | yes |  |  |
+| `notes` | `text` | yes |  |  |
+| `status` | `varchar(20)` | no | `'Pending'` |  |
+| `approved_by` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;people |
+| `approved_at` | `timestamp with time zone` | yes |  |  |
+| `approver_notes` | `text` | yes |  |  |
+| `created_at` | `timestamp with time zone` | no | `CURRENT_TIMESTAMP` |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_leave_teacher FOREIGN KEY (teacher_id) REFERENCES public.teachers(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_leave_approver FOREIGN KEY (approved_by) REFERENCES public.people(id) ON DELETE SET NULL`
+- `CONSTRAINT chk_leave_status CHECK (status IN ('Pending','Approved','Declined','Cancelled'))`
+- `CONSTRAINT chk_leave_partial CHECK (is_partial_day = false OR (partial_start IS NOT NULL AND partial_end IS NOT NULL AND partial_end > partial_start))`
+
+#### `leave_request_dates`
+
+Individual calendar dates that make up a leave request. One row per date per request; the unique constraint on `(request_id, leave_date)` prevents duplicate dates for the same request. Storing dates as individual rows (rather than a date range) supports non-contiguous leave selection (e.g. Monday and Wednesday only) and allows date-range UI selections to be expanded into discrete rows before storage. Cascade-deletes when its parent `leave_requests` row is deleted.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `request_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;leave_requests |
+| `leave_date` | `date` | no |  |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_leave_date_req FOREIGN KEY (request_id) REFERENCES public.leave_requests(id) ON DELETE CASCADE`
+- `CONSTRAINT uq_leave_date UNIQUE (request_id, leave_date)`
+
+*Indexes:* `idx_leave_dates_date (leave_date)`
+
 ### Timesheet
 
 #### `pay_periods`
@@ -3097,4 +3170,4 @@ periodically.
 
 ---
 
-*Generated from `v0.34` (2026-06-15).*
+*Generated from `v0.35` (2026-06-15).*

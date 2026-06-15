@@ -7,6 +7,17 @@
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/timetable.css">
   <link rel="stylesheet" href="/static/sidebar.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    .tt-map-panel{display:flex;gap:16px;padding:16px 20px;background:#f5f6f8;border-top:1px solid #ddd;align-items:flex-start}
+    .tt-map-info{min-width:200px;max-width:260px;font-size:.85rem;line-height:1.5}
+    .tt-map-info strong{display:block;font-size:.95rem;margin-bottom:4px}
+    .tt-map-info .tt-map-sub{color:#555}
+    .tt-map-no-coords{color:#888;font-style:italic;margin-top:8px}
+    #tt-map{height:260px;flex:1;border-radius:8px;border:1px solid #ccc}
+    @media(max-width:600px){.tt-map-panel{flex-direction:column}#tt-map{width:100%;height:200px}}
+  </style>
   <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
 </head>
 <body>
@@ -88,7 +99,10 @@
                data-class="{{.ClassCode}}"
                data-subjects="{{.SubjectCodes}}"
                data-location="{{.LocationName}}"
-               data-group="{{.GroupInfo}}">
+               data-group="{{.GroupInfo}}"
+               data-building="{{.BuildingName}}"
+               data-lat="{{.BuildingLat}}"
+               data-lng="{{.BuildingLng}}">
             <div class="tt-session-time">{{timeShort .StartTime}}–{{timeShort .EndTime}}</div>
             <div class="tt-session-class">{{.ClassCode}}</div>
             {{if .LocationName}}<div class="tt-session-meta">{{.LocationName}}</div>{{end}}
@@ -129,7 +143,10 @@
               data-class="{{.ClassCode}}"
               data-subjects="{{.SubjectCodes}}"
               data-location="{{.LocationName}}"
-              data-group="{{.GroupInfo}}">
+              data-group="{{.GroupInfo}}"
+              data-building="{{.BuildingName}}"
+              data-lat="{{.BuildingLat}}"
+              data-lng="{{.BuildingLng}}">
             <td>{{dateShort .SessionDate}}</td>
             <td>{{dateFull .SessionDate | printf "%.3s"}}</td>
             <td class="tt-list-time">{{timeShort .StartTime}}–{{timeShort .EndTime}}</td>
@@ -169,7 +186,10 @@
                    data-class="{{$s.ClassCode}}"
                    data-subjects="{{$s.SubjectCodes}}"
                    data-location="{{$s.LocationName}}"
-                   data-group="{{$s.GroupInfo}}">{{timeShort $s.StartTime}} {{$s.ClassCode}}</div>
+                   data-group="{{$s.GroupInfo}}"
+                   data-building="{{$s.BuildingName}}"
+                   data-lat="{{$s.BuildingLat}}"
+                   data-lng="{{$s.BuildingLng}}">{{timeShort $s.StartTime}} {{$s.ClassCode}}</div>
               {{end}}
             {{end}}
             {{if gt (len .Sessions) 3}}
@@ -184,6 +204,18 @@
     {{end}}
 
   </main>
+
+  <!-- Map panel — shown when a session is clicked -->
+  <div id="tt-map-panel" class="tt-map-panel" hidden>
+    <div class="tt-map-info">
+      <strong id="tt-map-class"></strong>
+      <div class="tt-map-sub" id="tt-map-time"></div>
+      <div class="tt-map-sub" id="tt-map-location"></div>
+      <div class="tt-map-sub" id="tt-map-building"></div>
+      <div class="tt-map-no-coords" id="tt-map-no-coords" hidden>No map coordinates recorded for this building.</div>
+    </div>
+    <div id="tt-map"></div>
+  </div>
 
   <script>
   (function() {
@@ -276,6 +308,56 @@
         params.delete('q');
       }
       window.location.href = '/timetable?' + params.toString();
+    });
+
+    // Map: show building location when a session is clicked.
+    let ttMap = null, ttMarker = null;
+
+    function initTTMap() {
+      if (ttMap) return;
+      ttMap = L.map('tt-map').setView([-25.27, 133.78], 4);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19
+      }).addTo(ttMap);
+    }
+
+    document.addEventListener('click', function(e) {
+      const el = e.target.closest('[data-class][data-lat]');
+      if (!el) return;
+
+      const lat = parseFloat(el.dataset.lat);
+      const lng = parseFloat(el.dataset.lng);
+      const panel = document.getElementById('tt-map-panel');
+      panel.hidden = false;
+
+      document.getElementById('tt-map-class').textContent    = el.dataset.class || '';
+      document.getElementById('tt-map-time').textContent     = el.querySelector('.tt-session-time, .tt-list-time') ?
+        el.querySelector('.tt-session-time, .tt-list-time').textContent : '';
+      document.getElementById('tt-map-location').textContent = el.dataset.location || '';
+      document.getElementById('tt-map-building').textContent = el.dataset.building || '';
+
+      const noCoords = document.getElementById('tt-map-no-coords');
+      if (!lat || !lng) {
+        noCoords.hidden = false;
+        document.getElementById('tt-map').hidden = true;
+        return;
+      }
+      noCoords.hidden = true;
+      document.getElementById('tt-map').hidden = false;
+
+      initTTMap();
+      ttMap.invalidateSize();
+
+      if (ttMarker) ttMarker.remove();
+      ttMarker = L.marker([lat, lng])
+        .addTo(ttMap)
+        .bindPopup('<strong>' + (el.dataset.building || el.dataset.location || '') + '</strong>')
+        .openPopup();
+      ttMap.setView([lat, lng], 16);
+
+      // Scroll map panel into view.
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
   })();
   </script>

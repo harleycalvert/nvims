@@ -1766,6 +1766,7 @@ func (h *Handler) AdminSessions(w http.ResponseWriter, r *http.Request) {
 	intakeGroups, _ := h.store.ListIntakeGroups(r.Context())
 	classes, _ := h.store.ListClasses(r.Context())
 	periods, _ := h.store.ListPeriods(r.Context())
+	rooms, _ := h.store.ListRooms(r.Context())
 
 	// find selected period
 	var selPeriod *store.PeriodListRow
@@ -1821,6 +1822,7 @@ func (h *Handler) AdminSessions(w http.ResponseWriter, r *http.Request) {
 		"SessionTypes":   sessionTypes,
 		"PeriodEndDate":  periodEndDate,
 		"PeriodEndDMY":   periodEndDMY,
+		"Rooms":          rooms,
 		"User":           user,
 	})
 }
@@ -1858,12 +1860,14 @@ func (h *Handler) AdminSessionUpdate(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"error":%q}`, err.Error())
 		return
 	}
+	roomID, _ := strconv.ParseInt(r.FormValue("room_id"), 10, 64)
 	if err := h.store.UpdateSession(r.Context(), id,
 		r.FormValue("session_date"),
 		r.FormValue("start_time"),
 		r.FormValue("end_time"),
 		r.FormValue("session_type"),
 		r.FormValue("notes"),
+		roomID,
 	); err != nil {
 		log.Printf("UpdateSession(%d): %v", id, err)
 		w.Header().Set("Content-Type", "application/json")
@@ -2469,9 +2473,8 @@ func (h *Handler) WorkplanAvailabilitySet(w http.ResponseWriter, r *http.Request
 		http.Error(w, `{"error":"invalid day"}`, http.StatusBadRequest)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
-		return
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		r.ParseForm()
 	}
 	start := strings.TrimSpace(r.FormValue("start"))
 	end := strings.TrimSpace(r.FormValue("end"))
@@ -2533,9 +2536,8 @@ func (h *Handler) WorkplanLeaveCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"no linked person"}`, http.StatusForbidden)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
-		return
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		r.ParseForm()
 	}
 
 	leaveType := strings.TrimSpace(r.FormValue("leave_type"))

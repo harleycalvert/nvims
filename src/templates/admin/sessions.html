@@ -158,7 +158,12 @@
             </td>
             <td class="sess-static sess-teachers">{{.Teachers}}</td>
             <td class="sess-static">{{.Location}}</td>
-            <td class="sess-static">{{if .Room}}{{.Room}}{{else}}<span class="muted">—</span>{{end}}</td>
+            <td>{{$rid := .RoomID}}
+              <select class="sess-input si-room" name="room_id">
+                <option value="0">— no room —</option>
+                {{range $.Rooms}}<option value="{{.ID}}"{{if eq .ID $rid}} selected{{end}}>{{.BuildingName}} / {{.RoomName}}</option>{{end}}
+              </select>
+            </td>
             <td><input class="sess-input si-notes" type="text" name="notes" value="{{.Notes}}" maxlength="255" placeholder="—"></td>
             <td class="sess-actions">
               <span class="sess-status"></span>
@@ -187,6 +192,7 @@
 (function () {
   const sessionTypes = [{{range $i,$t := .SessionTypes}}{{if $i}},{{end}}"{{$t}}"{{end}}];
   const allClasses   = [{{range $i,$c := .Classes}}{{if $i}},{{end}}{"id":{{$c.ID}},"label":"{{$c.ClassCode}} — {{$c.PeriodName}}"}{{end}}];
+  const allRooms     = [{{range $i,$r := .Rooms}}{{if $i}},{{end}}{"id":{{$r.ID}},"building":{{printf "%q" $r.BuildingName}},"room":{{printf "%q" $r.RoomName}}}{{end}}];
   const periodEnd    = "{{.PeriodEndDate}}";
   const periodEndDMY = "{{.PeriodEndDMY}}";
 
@@ -336,6 +342,12 @@
       `<option value="${t}"${t === selected ? ' selected' : ''}>${t}</option>`
     ).join('');
   }
+  function roomOptions(selectedID) {
+    return '<option value="0">— no room —</option>' +
+      allRooms.map(r =>
+        `<option value="${r.id}"${r.id === selectedID ? ' selected' : ''}>${r.building} / ${r.room}</option>`
+      ).join('');
+  }
   function classOptions() {
     return '<option value="">— class —</option>' +
       allClasses.map(c => `<option value="${c.id}">${c.label}</option>`).join('');
@@ -378,9 +390,10 @@
       return;
     }
 
+    const roomID = tr.querySelector('[name=room_id]')?.value || '0';
     const body = new URLSearchParams({
       session_date: isoDate, start_time: start, end_time: end,
-      session_type: type, notes,
+      session_type: type, notes, room_id: roomID,
     });
     try {
       const res = await fetch(`/admin/sessions/${id}`, {method:'POST', body});
@@ -460,6 +473,7 @@
       }
     });
     tr.querySelector('select[name=session_type]')?.addEventListener('change', () => saveRow(tr));
+    tr.querySelector('select[name=room_id]')?.addEventListener('change', () => saveRow(tr));
     tr.querySelector('[name=notes]')?.addEventListener('blur', () => saveRow(tr));
     tr.querySelector('.sess-delete')?.addEventListener('click', () => deleteRow(tr));
   }
@@ -487,7 +501,7 @@
       <td><select class="sess-input si-type" name="session_type">${typeOptions('Scheduled')}</select></td>
       <td class="sess-static"></td>
       <td class="sess-static"></td>
-      <td class="sess-static"></td>
+      <td><select class="sess-input si-room" name="room_id">${roomOptions(0)}</select></td>
       <td><input class="sess-input si-notes" type="text" name="notes" maxlength="255" placeholder="—"></td>
       <td class="sess-actions">
         <span class="sess-status"></span>
