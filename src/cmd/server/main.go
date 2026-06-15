@@ -152,6 +152,7 @@ func main() {
 	mux.HandleFunc("POST /workplan/leave", protect(h.WorkplanLeaveCreate))
 	mux.HandleFunc("POST /workplan/leave/{id}/cancel", protect(h.WorkplanLeaveCancel))
 	mux.HandleFunc("GET /vcc", protect(h.VCCMenu))
+	mux.HandleFunc("GET /vcc/professional-evidence", protect(h.VCCProfessionalEvidence))
 	mux.HandleFunc("GET /vcc/vocational-evidence", protect(h.VCCVocationalEvidence))
 	mux.HandleFunc("GET /vcc/vocational-qualifications", protect(h.VCCVocQuals))
 	mux.HandleFunc("GET /vcc/certifications", protect(h.VCCCredentials))

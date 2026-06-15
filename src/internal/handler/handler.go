@@ -158,6 +158,7 @@ func New(st *store.Store, sessions *auth.Sessions, stor *storage.Client) *Handle
 			"templates/workplan/availability.html",
 			"templates/vcc/menu.html",
 			"templates/vcc/document-library.html",
+			"templates/vcc/professional-evidence.html",
 			"templates/vcc/vocational-evidence.html",
 			"templates/vcc/detail.html",
 			"templates/vcc/vocational-qualifications.html",
@@ -2622,6 +2623,12 @@ func (h *Handler) WorkplanLeaveCancel(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) VCCMenu(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.Current(r)
 	h.render(w, "vcc-menu", map[string]any{"User": user})
+}
+
+// VCCProfessionalEvidence — sub-menu for teaching qualifications and VET knowledge currency.
+func (h *Handler) VCCProfessionalEvidence(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	h.render(w, "vcc-professional-evidence", map[string]any{"User": user})
 }
 
 // VCCVocationalEvidence — sub-menu for vocational qualifications and certifications.
