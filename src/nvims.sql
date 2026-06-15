@@ -3,8 +3,8 @@
 -- =========================================================================
 -- Changes from v0.40:
 --   1.  teacher_vcc_credentials: new table for Certifications & Micro-Credentials.
---       Columns: credential_code, credential_title, institution, year, month (1–12),
---       aqf_level, status, approved_at, notes. FK → teacher_vccs.
+--       Columns: credential_code, credential_title, issuing_organisation, month (1–12),
+--       year, status, approved_at, notes. FK → teacher_vccs. No aqf_level.
 --   2.  teacher_document_connections: added vcc_credential_id bigint NULL FK →
 --       teacher_vcc_credentials(id) ON DELETE CASCADE; updated num_nonnulls check.
 -- Changes from v0.39:
@@ -2660,22 +2660,20 @@ CREATE TABLE IF NOT EXISTS public.teacher_vcc_vocational_qualifications (
 
 -- Certifications, micro-credentials and short courses declared in a VCC.
 CREATE TABLE IF NOT EXISTS public.teacher_vcc_credentials (
-    id               bigserial    NOT NULL,
-    vcc_id           bigint       NOT NULL,
-    credential_code  varchar(30)  NOT NULL,
-    credential_title varchar(200) NOT NULL,
-    institution      varchar(200) NULL,       -- issuing body (e.g. AWS, Google)
-    year             smallint     NULL,
-    month            smallint     NULL,        -- 1–12; NULL = month not recorded
-    aqf_level        smallint     NULL,
-    status           varchar(20)  NOT NULL DEFAULT 'Draft',
-    approved_at      date         NULL,
-    notes            text         NULL,
-    created_at       timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    id                   bigserial    NOT NULL,
+    vcc_id               bigint       NOT NULL,
+    credential_code      varchar(30)  NOT NULL,
+    credential_title     varchar(200) NOT NULL,
+    issuing_organisation varchar(200) NULL,
+    month                smallint     NULL,    -- 1–12; NULL = month not recorded
+    year                 smallint     NULL,
+    status               varchar(20)  NOT NULL DEFAULT 'Draft',
+    approved_at          date         NULL,
+    notes                text         NULL,
+    created_at           timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     CONSTRAINT fk_vcc_cred_vcc     FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE,
     CONSTRAINT chk_vcc_cred_status CHECK (status IN ('Draft','Pending','Approved','Rejected')),
-    CONSTRAINT chk_vcc_cred_aqf    CHECK (aqf_level BETWEEN 1 AND 10),
     CONSTRAINT chk_vcc_cred_month  CHECK (month BETWEEN 1 AND 12)
 );
 
@@ -2848,6 +2846,14 @@ DO $$ BEGIN
         REFERENCES public.teacher_vcc_credentials(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+
+-- v0.40 live-migration: rename institution → issuing_organisation, drop aqf_level.
+DO $$ BEGIN
+    ALTER TABLE public.teacher_vcc_credentials RENAME COLUMN institution TO issuing_organisation;
+EXCEPTION WHEN undefined_column THEN NULL;
+END $$;
+ALTER TABLE public.teacher_vcc_credentials DROP COLUMN IF EXISTS aqf_level;
+ALTER TABLE public.teacher_vcc_credentials DROP CONSTRAINT IF EXISTS chk_vcc_cred_aqf;
 
 CREATE OR REPLACE TRIGGER trg_touch_teacher_currency_activities
     BEFORE UPDATE ON public.teacher_currency_activities

@@ -148,6 +148,30 @@
           <span>Qualification Title</span>
           <input type="text" id="vq-add-title" placeholder="Certificate III in Carpentry" maxlength="200" class="vcc-input">
         </label>
+        <label class="vcc-field vcc-field-md">
+          <span>Institution / RTO</span>
+          <input type="text" id="vq-add-institution" placeholder="e.g. Holmesglen Institute" maxlength="200" class="vcc-input">
+        </label>
+        <label class="vcc-field vcc-field-xs">
+          <span>Year</span>
+          <input type="number" id="vq-add-year" min="1900" max="2099" placeholder="e.g. 2019" class="vcc-input">
+        </label>
+        <label class="vcc-field vcc-field-sm">
+          <span>AQF Level</span>
+          <select id="vq-add-aqf" class="vcc-input">
+            <option value="0">—</option>
+            <option value="1">1 — Certificate I</option>
+            <option value="2">2 — Certificate II</option>
+            <option value="3">3 — Certificate III</option>
+            <option value="4">4 — Certificate IV</option>
+            <option value="5">5 — Diploma</option>
+            <option value="6">6 — Adv. Diploma</option>
+            <option value="7">7 — Bachelor</option>
+            <option value="8">8 — Grad. Cert / Dip</option>
+            <option value="9">9 — Masters</option>
+            <option value="10">10 — Doctoral</option>
+          </select>
+        </label>
       </div>
       <div class="vcc-add-actions">
         <button type="button" id="vq-add-save" class="vcc-btn-sm">Add qualification</button>
@@ -402,12 +426,19 @@
     vqAddBtn.style.display = 'none';
     document.getElementById('vq-add-code').focus();
   });
+  function resetVQAddBar() {
+    document.getElementById('vq-add-code').value        = '';
+    document.getElementById('vq-add-title').value       = '';
+    document.getElementById('vq-add-institution').value = '';
+    document.getElementById('vq-add-year').value        = '';
+    document.getElementById('vq-add-aqf').value         = '0';
+    if (vqAddErr) vqAddErr.textContent = '';
+  }
+
   vqAddCancel?.addEventListener('click', () => {
     vqAddBar.style.display = 'none';
     vqAddBtn.style.display = '';
-    document.getElementById('vq-add-code').value  = '';
-    document.getElementById('vq-add-title').value = '';
-    if (vqAddErr) vqAddErr.textContent = '';
+    resetVQAddBar();
   });
   vqAddSave?.addEventListener('click', async () => {
     const code  = document.getElementById('vq-add-code').value.trim();
@@ -417,7 +448,13 @@
     try {
       const res = await fetch('/vcc/vocquals', {
         method: 'POST',
-        body: new URLSearchParams({qualification_code: code, qualification_title: title}),
+        body: new URLSearchParams({
+          qualification_code:  code,
+          qualification_title: title,
+          institution:         document.getElementById('vq-add-institution').value.trim(),
+          year:                document.getElementById('vq-add-year').value,
+          aqf_level:           document.getElementById('vq-add-aqf').value,
+        }),
       });
       if (!res.ok) { vqAddErr.textContent = 'Error creating qualification'; return; }
       const vq = await res.json();
@@ -427,8 +464,7 @@
       attachVQHandlers(acc);
       vqAddBar.style.display = 'none';
       vqAddBtn.style.display = '';
-      document.getElementById('vq-add-code').value  = '';
-      document.getElementById('vq-add-title').value = '';
+      resetVQAddBar();
     } catch { vqAddErr.textContent = 'Network error'; }
   });
 
@@ -457,11 +493,11 @@
           </label>
           <label class="vcc-field vcc-field-md">
             <span>Institution / RTO</span>
-            <input type="text" name="institution" value="" maxlength="200" class="vcc-input">
+            <input type="text" name="institution" value="${esc(vq.institution||'')}" maxlength="200" class="vcc-input">
           </label>
           <label class="vcc-field vcc-field-xs">
             <span>Year</span>
-            <input type="number" name="year" value="" min="1900" max="2099" placeholder="e.g. 2019" class="vcc-input">
+            <input type="number" name="year" value="${vq.year||''}" min="1900" max="2099" placeholder="e.g. 2019" class="vcc-input">
           </label>
           <label class="vcc-field vcc-field-sm">
             <span>AQF Level</span>
@@ -516,6 +552,7 @@
           <button type="button" class="vcc-btn-sm vcc-btn-ghost btn-add-doc">+ Add document</button>
         </div>
       </div>`;
+    if (vq.aqf_level) acc.querySelector('select[name=aqf_level]').value = vq.aqf_level;
     return acc;
   }
 

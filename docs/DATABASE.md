@@ -756,7 +756,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | `teacher_vccs` | VCC document per teacher per year, versioned, with Draft→Submitted→Approved workflow. | → `teachers`, `app_users` (supervisor, approver) |
 | `teacher_vcc_professional_qualifications` | Teacher's TAE and training credentials declared in a VCC. | → `teacher_vccs` |
 | `teacher_vcc_vocational_qualifications` | Teacher's industry/AQF vocational qualifications declared in a VCC. | → `teacher_vccs` |
-| `teacher_vcc_credentials` | Certifications and micro-credentials declared in a VCC (e.g. AWS, Google, short-course certificates). Includes credential code/title, issuing body, year, optional month, AQF level, and approval status. | → `teacher_vccs` |
+| `teacher_vcc_credentials` | Certifications and micro-credentials declared in a VCC (e.g. AWS, Google, short-course certificates). Includes credential code/title, issuing organisation, year, optional month, and approval status. | → `teacher_vccs` |
 | `teacher_vcc_courses` | Courses the teacher is mapped to deliver in a VCC; optionally linked to `programs`. | → `teacher_vccs`, `programs` |
 | `teacher_vcc_units` | Units teacher has currency for, with competency method, description, and self-ratings. Multiple rows per unit allowed. | → `teacher_vccs`, `teacher_vcc_courses`, `subjects` |
 | `teacher_vcc_unit_elements` | Elements of a unit (components / performance criteria clusters). Each element carries a justification and may have evidence documents attached. | → `teacher_vcc_units` |
@@ -2710,7 +2710,7 @@ Industry and AQF vocational qualifications declared in a VCC (shown under Vocati
 
 #### `teacher_vcc_credentials`
 
-Certifications, micro-credentials, and short courses declared in a VCC (shown under Vocational Evidence → Certifications & Micro-Credentials). Each row records a credential code, full title, optional issuing body, year, and optionally the specific month (1–12; NULL when month is not recorded). AQF level is optional and applies where the credential maps to an AQF outcome. Progresses through the same Draft → Pending → Approved → Rejected workflow as other VCC sub-records. Linked to evidence documents via `teacher_document_connections`. Cascade-deletes when its parent VCC is deleted. References `teacher_vccs`.
+Certifications, micro-credentials, and short courses declared in a VCC (shown under Vocational Evidence → Certifications & Micro-Credentials). Each row records a credential code, full title, optional issuing organisation, year, and optionally the specific month (1–12; NULL when month is not recorded). Progresses through the same Draft → Pending → Approved → Rejected workflow as other VCC sub-records. Linked to evidence documents via `teacher_document_connections`. Cascade-deletes when its parent VCC is deleted. References `teacher_vccs`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -2718,10 +2718,9 @@ Certifications, micro-credentials, and short courses declared in a VCC (shown un
 | `vcc_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teacher_vccs |
 | `credential_code` | `varchar(30)` | no |  |  |
 | `credential_title` | `varchar(200)` | no |  |  |
-| `institution` | `varchar(200)` | yes |  |  |
-| `year` | `smallint` | yes |  |  |
+| `issuing_organisation` | `varchar(200)` | yes |  |  |
 | `month` | `smallint` | yes |  |  |
-| `aqf_level` | `smallint` | yes |  |  |
+| `year` | `smallint` | yes |  |  |
 | `status` | `varchar(20)` | no | `'Draft'` |  |
 | `approved_at` | `date` | yes |  |  |
 | `notes` | `text` | yes |  |  |
@@ -2732,9 +2731,8 @@ Certifications, micro-credentials, and short courses declared in a VCC (shown un
 | Column | Notes |
 |---|---|
 | `credential_code` | Short identifier for the credential (e.g. `AWS-SAA-C03`, `CERT-IV-WHS`). |
-| `institution` | Issuing body — e.g. `Amazon Web Services`, `Google`, `TAFE Victoria`. NULL if not recorded. |
+| `issuing_organisation` | Issuing organisation — e.g. `Amazon Web Services`, `Google`, `TAFE Victoria`. NULL if not recorded. |
 | `month` | Calendar month (1–12) the credential was awarded; NULL when only the year is known. |
-| `aqf_level` | Australian Qualifications Framework level (1–10) if applicable; NULL for non-AQF credentials. |
 | `status` | Approval workflow: `Draft` → `Pending` → `Approved` / `Rejected`. |
 | `approved_at` | Date the supervisor approved the credential declaration. NULL until approved. |
 
@@ -2743,7 +2741,6 @@ Certifications, micro-credentials, and short courses declared in a VCC (shown un
 - `PRIMARY KEY (id)`
 - `CONSTRAINT fk_vcc_cred_vcc FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
 - `CONSTRAINT chk_vcc_cred_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))`
-- `CONSTRAINT chk_vcc_cred_aqf CHECK (aqf_level BETWEEN 1 AND 10)`
 - `CONSTRAINT chk_vcc_cred_month CHECK (month BETWEEN 1 AND 12)`
 
 *Indexes:* `idx_vcc_cred_vcc (vcc_id)`

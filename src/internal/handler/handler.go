@@ -2940,15 +2940,18 @@ func (h *Handler) VCCVocQualCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"code and title required"}`, http.StatusBadRequest)
 		return
 	}
+	year, _ := strconv.Atoi(r.FormValue("year"))
+	aqfLevel, _ := strconv.Atoi(r.FormValue("aqf_level"))
 	vq, err := h.store.CreateVCCVocQual(r.Context(), user.PersonID, code, title,
-		strings.TrimSpace(r.FormValue("institution")))
+		strings.TrimSpace(r.FormValue("institution")), year, aqfLevel)
 	if err != nil {
 		log.Printf("CreateVCCVocQual(%d): %v", user.PersonID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"id":%d,"code":%q,"title":%q,"status":%q}`, vq.ID, vq.Code, vq.Title, vq.Status)
+	fmt.Fprintf(w, `{"id":%d,"code":%q,"title":%q,"institution":%q,"year":%d,"aqf_level":%d,"status":%q}`,
+		vq.ID, vq.Code, vq.Title, vq.Institution, vq.Year, vq.AQFLevel, vq.Status)
 }
 
 func (h *Handler) VCCVocQualUpdate(w http.ResponseWriter, r *http.Request) {
@@ -3157,14 +3160,14 @@ func (h *Handler) VCCCredentialCreate(w http.ResponseWriter, r *http.Request) {
 	year, _ := strconv.Atoi(r.FormValue("year"))
 	month, _ := strconv.Atoi(r.FormValue("month"))
 	cred, err := h.store.CreateVCCCredential(r.Context(), user.PersonID, code, title,
-		strings.TrimSpace(r.FormValue("institution")), year, month)
+		strings.TrimSpace(r.FormValue("issuing_organisation")), year, month)
 	if err != nil {
 		log.Printf("CreateVCCCredential(%d): %v", user.PersonID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"id":%d,"code":%q,"title":%q,"institution":%q,"year":%d,"month":%d,"status":%q}`,
+	fmt.Fprintf(w, `{"id":%d,"code":%q,"title":%q,"issuing_organisation":%q,"year":%d,"month":%d,"status":%q}`,
 		cred.ID, cred.Code, cred.Title, cred.Institution, cred.Year, cred.Month, cred.Status)
 }
 
@@ -3187,15 +3190,14 @@ func (h *Handler) VCCCredentialUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	approvedAt := parseDateField(r.FormValue("approved_at"))
-	aqfLevel, _ := strconv.Atoi(r.FormValue("aqf_level"))
 	year, _ := strconv.Atoi(r.FormValue("year"))
 	month, _ := strconv.Atoi(r.FormValue("month"))
 	if err := h.store.UpdateVCCCredential(r.Context(), user.PersonID, credID,
 		code, title,
-		strings.TrimSpace(r.FormValue("institution")),
+		strings.TrimSpace(r.FormValue("issuing_organisation")),
 		status, approvedAt,
 		strings.TrimSpace(r.FormValue("notes")),
-		aqfLevel, year, month,
+		year, month,
 	); err != nil {
 		log.Printf("UpdateVCCCredential(%d,%d): %v", user.PersonID, credID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)

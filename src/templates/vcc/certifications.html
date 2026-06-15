@@ -66,12 +66,8 @@
               <input type="text" name="credential_title" value="{{.Title}}" maxlength="200" class="vcc-input">
             </label>
             <label class="vcc-field vcc-field-md">
-              <span>Institution / Issuer</span>
-              <input type="text" name="institution" value="{{.Institution}}" maxlength="200" class="vcc-input">
-            </label>
-            <label class="vcc-field vcc-field-xs">
-              <span>Year</span>
-              <input type="number" name="year" value="{{if .Year}}{{.Year}}{{end}}" min="1900" max="2099" placeholder="e.g. 2023" class="vcc-input">
+              <span>Issuing Organisation</span>
+              <input type="text" name="issuing_organisation" value="{{.Institution}}" maxlength="200" class="vcc-input">
             </label>
             <label class="vcc-field vcc-field-sm">
               <span>Month</span>
@@ -91,21 +87,9 @@
                 <option value="12"{{if eq .Month 12}} selected{{end}}>December</option>
               </select>
             </label>
-            <label class="vcc-field vcc-field-sm">
-              <span>AQF Level</span>
-              <select name="aqf_level" class="vcc-input">
-                <option value="0"{{if eq .AQFLevel 0}} selected{{end}}>—</option>
-                <option value="1"{{if eq .AQFLevel 1}} selected{{end}}>1 — Certificate I</option>
-                <option value="2"{{if eq .AQFLevel 2}} selected{{end}}>2 — Certificate II</option>
-                <option value="3"{{if eq .AQFLevel 3}} selected{{end}}>3 — Certificate III</option>
-                <option value="4"{{if eq .AQFLevel 4}} selected{{end}}>4 — Certificate IV</option>
-                <option value="5"{{if eq .AQFLevel 5}} selected{{end}}>5 — Diploma</option>
-                <option value="6"{{if eq .AQFLevel 6}} selected{{end}}>6 — Adv. Diploma</option>
-                <option value="7"{{if eq .AQFLevel 7}} selected{{end}}>7 — Bachelor</option>
-                <option value="8"{{if eq .AQFLevel 8}} selected{{end}}>8 — Grad. Cert / Dip</option>
-                <option value="9"{{if eq .AQFLevel 9}} selected{{end}}>9 — Masters</option>
-                <option value="10"{{if eq .AQFLevel 10}} selected{{end}}>10 — Doctoral</option>
-              </select>
+            <label class="vcc-field vcc-field-xs">
+              <span>Year</span>
+              <input type="number" name="year" value="{{if .Year}}{{.Year}}{{end}}" min="1900" max="2099" placeholder="e.g. 2023" class="vcc-input">
             </label>
             <label class="vcc-field vcc-field-sm">
               <span>Status</span>
@@ -168,11 +152,7 @@
         </label>
         <label class="vcc-field vcc-field-md">
           <span>Issuing Organisation</span>
-          <input type="text" id="cr-add-institution" placeholder="e.g. Amazon Web Services" maxlength="200" class="vcc-input">
-        </label>
-        <label class="vcc-field vcc-field-xs">
-          <span>Year</span>
-          <input type="number" id="cr-add-year" min="1900" max="2099" placeholder="e.g. 2024" class="vcc-input">
+          <input type="text" id="cr-add-org" placeholder="e.g. Amazon Web Services" maxlength="200" class="vcc-input">
         </label>
         <label class="vcc-field vcc-field-sm">
           <span>Month</span>
@@ -191,6 +171,10 @@
             <option value="11">November</option>
             <option value="12">December</option>
           </select>
+        </label>
+        <label class="vcc-field vcc-field-xs">
+          <span>Year</span>
+          <input type="number" id="cr-add-year" min="1900" max="2099" placeholder="e.g. 2024" class="vcc-input">
         </label>
       </div>
       <div class="vcc-add-actions">
@@ -320,15 +304,14 @@
   function saveCred(acc) {
     const g = n => acc.querySelector(`[name="${n}"]`)?.value ?? '';
     const fields = {
-      credential_code:  g('credential_code').trim(),
-      credential_title: g('credential_title').trim(),
-      institution:      g('institution').trim(),
-      year:             g('year'),
-      month:            g('month'),
-      aqf_level:        g('aqf_level'),
-      status:           g('status'),
-      approved_at:      g('approved_at'),
-      notes:            g('notes').trim(),
+      credential_code:      g('credential_code').trim(),
+      credential_title:     g('credential_title').trim(),
+      issuing_organisation: g('issuing_organisation').trim(),
+      month:                g('month'),
+      year:                 g('year'),
+      status:               g('status'),
+      approved_at:          g('approved_at'),
+      notes:                g('notes').trim(),
     };
     if (!fields.credential_code || !fields.credential_title) return;
     const ind = acc.querySelector('.vcc-ind');
@@ -369,7 +352,7 @@
     acc.querySelectorAll('input[type=text], input[type=date], input[type=number]').forEach(el =>
       el.addEventListener('blur', () => { autoRevertToDraft(acc); saveCred(acc); }));
 
-    acc.querySelectorAll('select[name=status], select[name=month], select[name=aqf_level]').forEach(sel => {
+    acc.querySelectorAll('select[name=status], select[name=month]').forEach(sel => {
       sel.addEventListener('change', () => {
         if (sel.name === 'status') {
           const s = sel.value;
@@ -452,11 +435,11 @@
     document.getElementById('cr-add-code').focus();
   });
   function resetCredAddBar() {
-    document.getElementById('cr-add-code').value        = '';
-    document.getElementById('cr-add-title').value       = '';
-    document.getElementById('cr-add-institution').value = '';
-    document.getElementById('cr-add-year').value        = '';
-    document.getElementById('cr-add-month').value       = '0';
+    document.getElementById('cr-add-code').value  = '';
+    document.getElementById('cr-add-title').value = '';
+    document.getElementById('cr-add-org').value   = '';
+    document.getElementById('cr-add-month').value = '0';
+    document.getElementById('cr-add-year').value  = '';
     if (crAddErr) crAddErr.textContent = '';
   }
 
@@ -474,11 +457,11 @@
       const res = await fetch('/vcc/credentials', {
         method: 'POST',
         body: new URLSearchParams({
-          credential_code:  code,
-          credential_title: title,
-          institution:      document.getElementById('cr-add-institution').value.trim(),
-          year:             document.getElementById('cr-add-year').value,
-          month:            document.getElementById('cr-add-month').value,
+          credential_code:      code,
+          credential_title:     title,
+          issuing_organisation: document.getElementById('cr-add-org').value.trim(),
+          month:                document.getElementById('cr-add-month').value,
+          year:                 document.getElementById('cr-add-year').value,
         }),
       });
       if (!res.ok) { crAddErr.textContent = 'Error creating credential'; return; }
@@ -517,12 +500,8 @@
             <input type="text" name="credential_title" value="${esc(cred.title)}" maxlength="200" class="vcc-input">
           </label>
           <label class="vcc-field vcc-field-md">
-            <span>Institution / Issuer</span>
-            <input type="text" name="institution" value="${esc(cred.institution||'')}" maxlength="200" class="vcc-input">
-          </label>
-          <label class="vcc-field vcc-field-xs">
-            <span>Year</span>
-            <input type="number" name="year" value="${cred.year||''}" min="1900" max="2099" placeholder="e.g. 2023" class="vcc-input">
+            <span>Issuing Organisation</span>
+            <input type="text" name="issuing_organisation" value="${esc(cred.issuing_organisation||'')}" maxlength="200" class="vcc-input">
           </label>
           <label class="vcc-field vcc-field-sm">
             <span>Month</span>
@@ -542,21 +521,9 @@
               <option value="12">December</option>
             </select>
           </label>
-          <label class="vcc-field vcc-field-sm">
-            <span>AQF Level</span>
-            <select name="aqf_level" class="vcc-input">
-              <option value="0" selected>—</option>
-              <option value="1">1 — Certificate I</option>
-              <option value="2">2 — Certificate II</option>
-              <option value="3">3 — Certificate III</option>
-              <option value="4">4 — Certificate IV</option>
-              <option value="5">5 — Diploma</option>
-              <option value="6">6 — Adv. Diploma</option>
-              <option value="7">7 — Bachelor</option>
-              <option value="8">8 — Grad. Cert / Dip</option>
-              <option value="9">9 — Masters</option>
-              <option value="10">10 — Doctoral</option>
-            </select>
+          <label class="vcc-field vcc-field-xs">
+            <span>Year</span>
+            <input type="number" name="year" value="${cred.year||''}" min="1900" max="2099" placeholder="e.g. 2023" class="vcc-input">
           </label>
           <label class="vcc-field vcc-field-sm">
             <span>Status</span>
