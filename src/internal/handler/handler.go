@@ -163,6 +163,7 @@ func New(st *store.Store, sessions *auth.Sessions, stor *storage.Client) *Handle
 			"templates/vcc/detail.html",
 			"templates/vcc/vocational-qualifications.html",
 			"templates/vcc/certifications.html",
+			"templates/vcc/vet-knowledge-currency.html",
 			"templates/admin/infra-menu.html",
 			"templates/admin/infra-orgs.html",
 			"templates/admin/infra-locations.html",
@@ -3166,10 +3167,10 @@ func (h *Handler) VCCCredentialCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	year, _ := strconv.Atoi(r.FormValue("year"))
 	month, _ := strconv.Atoi(r.FormValue("month"))
-	cred, err := h.store.CreateVCCCredential(r.Context(), user.PersonID, code, title,
+	cred, err := h.store.CreateVCCVocEvidence(r.Context(), user.PersonID, code, title,
 		strings.TrimSpace(r.FormValue("issuing_organisation")), year, month)
 	if err != nil {
-		log.Printf("CreateVCCCredential(%d): %v", user.PersonID, err)
+		log.Printf("CreateVCCVocEvidence(%d): %v", user.PersonID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}
@@ -3199,14 +3200,14 @@ func (h *Handler) VCCCredentialUpdate(w http.ResponseWriter, r *http.Request) {
 	approvedAt := parseDateField(r.FormValue("approved_at"))
 	year, _ := strconv.Atoi(r.FormValue("year"))
 	month, _ := strconv.Atoi(r.FormValue("month"))
-	if err := h.store.UpdateVCCCredential(r.Context(), user.PersonID, credID,
+	if err := h.store.UpdateVCCVocEvidence(r.Context(), user.PersonID, credID,
 		code, title,
 		strings.TrimSpace(r.FormValue("issuing_organisation")),
 		status, approvedAt,
 		strings.TrimSpace(r.FormValue("notes")),
 		year, month,
 	); err != nil {
-		log.Printf("UpdateVCCCredential(%d,%d): %v", user.PersonID, credID, err)
+		log.Printf("UpdateVCCVocEvidence(%d,%d): %v", user.PersonID, credID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}
@@ -3221,9 +3222,9 @@ func (h *Handler) VCCCredentialDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	keys, err := h.store.DeleteVCCCredential(r.Context(), user.PersonID, credID)
+	keys, err := h.store.DeleteVCCVocEvidence(r.Context(), user.PersonID, credID)
 	if err != nil {
-		log.Printf("DeleteVCCCredential(%d,%d): %v", user.PersonID, credID, err)
+		log.Printf("DeleteVCCVocEvidence(%d,%d): %v", user.PersonID, credID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}
@@ -3261,7 +3262,7 @@ func (h *Handler) VCCCredentialAddDoc(w http.ResponseWriter, r *http.Request) {
 		if ct == "" {
 			ct = "application/octet-stream"
 		}
-		objectKey = fmt.Sprintf("teacher/%d/credential/%s_%s", user.PersonID, time.Now().Format("20060102150405"), fileName)
+		objectKey = fmt.Sprintf("teacher/%d/voc-evidence/%s_%s", user.PersonID, time.Now().Format("20060102150405"), fileName)
 		if err := h.storage.Upload(r.Context(), objectKey, file, fh.Size, ct); err != nil {
 			log.Printf("VCCCredentialAddDoc upload(%d): %v", user.PersonID, err)
 			http.Error(w, `{"error":"upload failed"}`, http.StatusInternalServerError)
@@ -3269,13 +3270,13 @@ func (h *Handler) VCCCredentialAddDoc(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	doc, err := h.store.CreateCredentialDocument(r.Context(), user.PersonID, credID,
+	doc, err := h.store.CreateVocEvidenceDocument(r.Context(), user.PersonID, credID,
 		title, fileName, objectKey, externalURL)
 	if err != nil {
 		if objectKey != "" {
 			_ = h.storage.Delete(r.Context(), objectKey)
 		}
-		log.Printf("CreateCredentialDocument(%d,%d): %v", user.PersonID, credID, err)
+		log.Printf("CreateVocEvidenceDocument(%d,%d): %v", user.PersonID, credID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}
@@ -3298,6 +3299,176 @@ func (h *Handler) VCCCredentialDeleteDoc(w http.ResponseWriter, r *http.Request)
 	}
 	if err := h.store.DeletePQDocument(r.Context(), user.PersonID, docID); err != nil {
 		log.Printf("DeleteCredentialDoc(%d,%d): %v", user.PersonID, docID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) VCCVetKnowledge(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	vcc, err := h.store.GetLatestVCCForTeacher(r.Context(), user.PersonID)
+	if err == pgx.ErrNoRows {
+		h.render(w, "vcc-vet-knowledge-currency", map[string]any{"VCC": nil, "User": user, "ItemStatuses": validVCCItemStatuses})
+		return
+	}
+	if err != nil {
+		log.Printf("GetLatestVCCForTeacher(%d): %v", user.PersonID, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	h.render(w, "vcc-vet-knowledge-currency", map[string]any{
+		"VCC": vcc, "User": user, "ItemStatuses": validVCCItemStatuses,
+	})
+}
+
+func (h *Handler) VCCProfEvidenceCreate(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	code := strings.TrimSpace(r.FormValue("credential_code"))
+	title := strings.TrimSpace(r.FormValue("credential_title"))
+	if code == "" || title == "" {
+		http.Error(w, `{"error":"code and title required"}`, http.StatusBadRequest)
+		return
+	}
+	year, _ := strconv.Atoi(r.FormValue("year"))
+	month, _ := strconv.Atoi(r.FormValue("month"))
+	pe, err := h.store.CreateVCCProfEvidence(r.Context(), user.PersonID, code, title,
+		strings.TrimSpace(r.FormValue("issuing_organisation")), year, month)
+	if err != nil {
+		log.Printf("CreateVCCProfEvidence(%d): %v", user.PersonID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"id":%d,"code":%q,"title":%q,"issuing_organisation":%q,"year":%d,"month":%d,"status":%q}`,
+		pe.ID, pe.Code, pe.Title, pe.Institution, pe.Year, pe.Month, pe.Status)
+}
+
+func (h *Handler) VCCProfEvidenceUpdate(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	peID, err := strconv.ParseInt(r.PathValue("pid"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	code := strings.TrimSpace(r.FormValue("credential_code"))
+	title := strings.TrimSpace(r.FormValue("credential_title"))
+	status := r.FormValue("status")
+	if code == "" || title == "" || !containsStr(validVCCItemStatuses, status) {
+		http.Error(w, `{"error":"missing required fields"}`, http.StatusBadRequest)
+		return
+	}
+	approvedAt := parseDateField(r.FormValue("approved_at"))
+	year, _ := strconv.Atoi(r.FormValue("year"))
+	month, _ := strconv.Atoi(r.FormValue("month"))
+	if err := h.store.UpdateVCCProfEvidence(r.Context(), user.PersonID, peID,
+		code, title,
+		strings.TrimSpace(r.FormValue("issuing_organisation")),
+		status, approvedAt,
+		strings.TrimSpace(r.FormValue("notes")),
+		year, month,
+	); err != nil {
+		log.Printf("UpdateVCCProfEvidence(%d,%d): %v", user.PersonID, peID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) VCCProfEvidenceDelete(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	peID, err := strconv.ParseInt(r.PathValue("pid"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	keys, err := h.store.DeleteVCCProfEvidence(r.Context(), user.PersonID, peID)
+	if err != nil {
+		log.Printf("DeleteVCCProfEvidence(%d,%d): %v", user.PersonID, peID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	for _, key := range keys {
+		if derr := h.storage.Delete(r.Context(), key); derr != nil {
+			log.Printf("VCCProfEvidenceDelete MinIO delete(%s): %v", key, derr)
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) VCCProfEvidenceAddDoc(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	peID, err := strconv.ParseInt(r.PathValue("pid"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		_ = r.ParseForm()
+	}
+	title := strings.TrimSpace(r.FormValue("title"))
+	if title == "" {
+		http.Error(w, `{"error":"title required"}`, http.StatusBadRequest)
+		return
+	}
+	externalURL := strings.TrimSpace(r.FormValue("external_url"))
+
+	var fileName, objectKey string
+	if file, fh, ferr := r.FormFile("file"); ferr == nil {
+		defer file.Close()
+		fileName = fh.Filename
+		ct := fh.Header.Get("Content-Type")
+		if ct == "" {
+			ct = "application/octet-stream"
+		}
+		objectKey = fmt.Sprintf("teacher/%d/prof-evidence/%s_%s", user.PersonID, time.Now().Format("20060102150405"), fileName)
+		if err := h.storage.Upload(r.Context(), objectKey, file, fh.Size, ct); err != nil {
+			log.Printf("VCCProfEvidenceAddDoc upload(%d): %v", user.PersonID, err)
+			http.Error(w, `{"error":"upload failed"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+
+	doc, err := h.store.CreateProfEvidenceDocument(r.Context(), user.PersonID, peID,
+		title, fileName, objectKey, externalURL)
+	if err != nil {
+		if objectKey != "" {
+			_ = h.storage.Delete(r.Context(), objectKey)
+		}
+		log.Printf("CreateProfEvidenceDocument(%d,%d): %v", user.PersonID, peID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"id":%d,"title":%q,"external_url":%q,"has_file":%v}`,
+		doc.ID, doc.Title, doc.ExternalURL, objectKey != "")
+}
+
+func (h *Handler) VCCProfEvidenceDeleteDoc(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	docID, err := strconv.ParseInt(r.PathValue("did"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if objectKey, kerr := h.store.GetTeacherDocumentObjectKey(r.Context(), user.PersonID, docID); kerr == nil && objectKey != "" {
+		if derr := h.storage.Delete(r.Context(), objectKey); derr != nil {
+			log.Printf("VCCProfEvidenceDeleteDoc MinIO delete(%s): %v", objectKey, derr)
+		}
+	}
+	if err := h.store.DeletePQDocument(r.Context(), user.PersonID, docID); err != nil {
+		log.Printf("DeleteProfEvidenceDoc(%d,%d): %v", user.PersonID, docID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}

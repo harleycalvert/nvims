@@ -2276,7 +2276,8 @@ type VCCDetail struct {
 	Notes        string
 	PQs          []VCCPQ // Teaching qualifications
 	VocQuals     []VCCPQ // Vocational qualifications
-	Credentials  []VCCPQ // Certifications & micro-credentials
+	VocEvidence  []VCCPQ // Certifications & micro-credentials (vocational evidence)
+	ProfEvidence []VCCPQ // VET Knowledge Currency (professional evidence)
 	Courses      []VCCCourse
 }
 
@@ -2422,11 +2423,11 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 		}
 	}
 
-	// Credentials (Certifications & Micro-Credentials)
+	// Vocational Evidence (Certifications & Micro-Credentials)
 	crRows, err := s.pool.Query(ctx, `
 		SELECT id, credential_code, credential_title, COALESCE(issuing_organisation,''),
 		       COALESCE(year, 0), COALESCE(month, 0), status, approved_at, COALESCE(notes,'')
-		FROM teacher_vcc_credentials
+		FROM teacher_vcc_vocational_evidence
 		WHERE vcc_id = $1 ORDER BY id
 	`, id)
 	if err != nil {
@@ -2443,26 +2444,26 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 		if at.Valid {
 			cred.ApprovedAt = at.Time
 		}
-		crMap[cred.ID] = len(v.Credentials)
-		v.Credentials = append(v.Credentials, cred)
+		crMap[cred.ID] = len(v.VocEvidence)
+		v.VocEvidence = append(v.VocEvidence, cred)
 	}
 	if err := crRows.Err(); err != nil {
 		return nil, err
 	}
 
-	// Credential documents
-	if len(v.Credentials) > 0 {
-		crIDs := make([]int64, len(v.Credentials))
-		for i, cred := range v.Credentials {
+	// Vocational Evidence documents
+	if len(v.VocEvidence) > 0 {
+		crIDs := make([]int64, len(v.VocEvidence))
+		for i, cred := range v.VocEvidence {
 			crIDs[i] = cred.ID
 		}
 		cdRows, err := s.pool.Query(ctx, `
-			SELECT tdc.vcc_credential_id, td.id, td.title, td.file_category,
+			SELECT tdc.vcc_vocational_evidence_id, td.id, td.title, td.file_category,
 			       COALESCE(td.year_of_document, 0), COALESCE(td.document_url, ''), COALESCE(td.external_url, '')
 			FROM teacher_document_connections tdc
 			JOIN teacher_documents td ON td.id = tdc.document_id
-			WHERE tdc.vcc_credential_id = ANY($1)
-			ORDER BY tdc.vcc_credential_id, td.id
+			WHERE tdc.vcc_vocational_evidence_id = ANY($1)
+			ORDER BY tdc.vcc_vocational_evidence_id, td.id
 		`, crIDs)
 		if err != nil {
 			return nil, err
@@ -2475,10 +2476,71 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 				return nil, err
 			}
 			if idx, ok := crMap[crID]; ok {
-				v.Credentials[idx].Documents = append(v.Credentials[idx].Documents, d)
+				v.VocEvidence[idx].Documents = append(v.VocEvidence[idx].Documents, d)
 			}
 		}
 		if err := cdRows.Err(); err != nil {
+			return nil, err
+		}
+	}
+
+	// Professional Evidence (VET Knowledge Currency)
+	peRows, err := s.pool.Query(ctx, `
+		SELECT id, credential_code, credential_title, COALESCE(issuing_organisation,''),
+		       COALESCE(year, 0), COALESCE(month, 0), status, approved_at, COALESCE(notes,'')
+		FROM teacher_vcc_professional_evidence
+		WHERE vcc_id = $1 ORDER BY id
+	`, id)
+	if err != nil {
+		return nil, err
+	}
+	peMap := map[int64]int{}
+	for peRows.Next() {
+		var pe VCCPQ
+		var at pgtype.Date
+		if err := peRows.Scan(&pe.ID, &pe.Code, &pe.Title, &pe.Institution, &pe.Year, &pe.Month, &pe.Status, &at, &pe.Notes); err != nil {
+			peRows.Close()
+			return nil, err
+		}
+		if at.Valid {
+			pe.ApprovedAt = at.Time
+		}
+		peMap[pe.ID] = len(v.ProfEvidence)
+		v.ProfEvidence = append(v.ProfEvidence, pe)
+	}
+	if err := peRows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Professional Evidence documents
+	if len(v.ProfEvidence) > 0 {
+		peIDs := make([]int64, len(v.ProfEvidence))
+		for i, pe := range v.ProfEvidence {
+			peIDs[i] = pe.ID
+		}
+		pdRows, err := s.pool.Query(ctx, `
+			SELECT tdc.vcc_professional_evidence_id, td.id, td.title, td.file_category,
+			       COALESCE(td.year_of_document, 0), COALESCE(td.document_url, ''), COALESCE(td.external_url, '')
+			FROM teacher_document_connections tdc
+			JOIN teacher_documents td ON td.id = tdc.document_id
+			WHERE tdc.vcc_professional_evidence_id = ANY($1)
+			ORDER BY tdc.vcc_professional_evidence_id, td.id
+		`, peIDs)
+		if err != nil {
+			return nil, err
+		}
+		for pdRows.Next() {
+			var peID int64
+			var d VCCDocument
+			if err := pdRows.Scan(&peID, &d.ID, &d.Title, &d.Category, &d.Year, &d.URL, &d.ExternalURL); err != nil {
+				pdRows.Close()
+				return nil, err
+			}
+			if idx, ok := peMap[peID]; ok {
+				v.ProfEvidence[idx].Documents = append(v.ProfEvidence[idx].Documents, d)
+			}
+		}
+		if err := pdRows.Err(); err != nil {
 			return nil, err
 		}
 	}
@@ -2980,7 +3042,7 @@ func (s *Store) DeleteVCCPQ(ctx context.Context, teacherID, pqID int64) (objectK
 	return objectKeys, err
 }
 
-func (s *Store) CreateVCCCredential(ctx context.Context, teacherID int64, code, title, issuingOrg string, year, month int) (VCCPQ, error) {
+func (s *Store) CreateVCCVocEvidence(ctx context.Context, teacherID int64, code, title, issuingOrg string, year, month int) (VCCPQ, error) {
 	var yr pgtype.Int2
 	if year > 0 {
 		yr = pgtype.Int2{Int16: int16(year), Valid: true}
@@ -2991,7 +3053,7 @@ func (s *Store) CreateVCCCredential(ctx context.Context, teacherID int64, code, 
 	}
 	var cred VCCPQ
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO teacher_vcc_credentials
+		INSERT INTO teacher_vcc_vocational_evidence
 		       (vcc_id, credential_code, credential_title, issuing_organisation, year, month, status)
 		SELECT id, $2, $3, NULLIF($4,''), $5, $6, 'Draft'
 		FROM teacher_vccs WHERE teacher_id = $1
@@ -3003,7 +3065,7 @@ func (s *Store) CreateVCCCredential(ctx context.Context, teacherID int64, code, 
 	return cred, err
 }
 
-func (s *Store) UpdateVCCCredential(ctx context.Context, teacherID, credID int64,
+func (s *Store) UpdateVCCVocEvidence(ctx context.Context, teacherID, credID int64,
 	code, title, issuingOrg, status string, approvedAt pgtype.Date, notes string, year, month int,
 ) error {
 	var yr pgtype.Int2
@@ -3015,7 +3077,7 @@ func (s *Store) UpdateVCCCredential(ctx context.Context, teacherID, credID int64
 		mo = pgtype.Int2{Int16: int16(month), Valid: true}
 	}
 	_, err := s.pool.Exec(ctx, `
-		UPDATE teacher_vcc_credentials
+		UPDATE teacher_vcc_vocational_evidence
 		SET credential_code      = $1,
 		    credential_title     = $2,
 		    issuing_organisation = NULLIF($3, ''),
@@ -3030,12 +3092,12 @@ func (s *Store) UpdateVCCCredential(ctx context.Context, teacherID, credID int64
 	return err
 }
 
-func (s *Store) DeleteVCCCredential(ctx context.Context, teacherID, credID int64) (objectKeys []string, err error) {
+func (s *Store) DeleteVCCVocEvidence(ctx context.Context, teacherID, credID int64) (objectKeys []string, err error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT COALESCE(td.document_url, '')
 		FROM teacher_document_connections tdc
 		JOIN teacher_documents td ON td.id = tdc.document_id
-		WHERE tdc.vcc_credential_id = $1
+		WHERE tdc.vcc_vocational_evidence_id = $1
 		  AND td.teacher_id = $2
 		  AND td.document_url IS NOT NULL
 	`, credID, teacherID)
@@ -3059,21 +3121,21 @@ func (s *Store) DeleteVCCCredential(ctx context.Context, teacherID, credID int64
 		DELETE FROM teacher_documents
 		WHERE id IN (
 			SELECT document_id FROM teacher_document_connections
-			WHERE vcc_credential_id = $1
+			WHERE vcc_vocational_evidence_id = $1
 		) AND teacher_id = $2
 	`, credID, teacherID)
 	if err != nil {
 		return objectKeys, err
 	}
 	_, err = s.pool.Exec(ctx, `
-		DELETE FROM teacher_vcc_credentials
+		DELETE FROM teacher_vcc_vocational_evidence
 		WHERE id = $1
 		  AND vcc_id IN (SELECT id FROM teacher_vccs WHERE teacher_id = $2)
 	`, credID, teacherID)
 	return objectKeys, err
 }
 
-func (s *Store) CreateCredentialDocument(ctx context.Context, teacherID, credID int64, title, fileName, objectKey, externalURL string) (VCCDocument, error) {
+func (s *Store) CreateVocEvidenceDocument(ctx context.Context, teacherID, credID int64, title, fileName, objectKey, externalURL string) (VCCDocument, error) {
 	var d VCCDocument
 	d.Title = title
 	d.ExternalURL = externalURL
@@ -3082,9 +3144,9 @@ func (s *Store) CreateCredentialDocument(ctx context.Context, teacherID, credID 
 		INSERT INTO teacher_documents (teacher_id, title, file_category, file_name, document_url, external_url)
 		SELECT $1, $2, 'Other', NULLIF($3,''), NULLIF($4,''), NULLIF($5,'')
 		WHERE EXISTS (
-			SELECT 1 FROM teacher_vcc_credentials cred
-			JOIN teacher_vccs tv ON tv.id = cred.vcc_id
-			WHERE cred.id = $6 AND tv.teacher_id = $1
+			SELECT 1 FROM teacher_vcc_vocational_evidence ve
+			JOIN teacher_vccs tv ON tv.id = ve.vcc_id
+			WHERE ve.id = $6 AND tv.teacher_id = $1
 		)
 		RETURNING id
 	`, teacherID, title, fileName, objectKey, externalURL, credID).Scan(&d.ID)
@@ -3092,9 +3154,127 @@ func (s *Store) CreateCredentialDocument(ctx context.Context, teacherID, credID 
 		return VCCDocument{}, err
 	}
 	_, err = s.pool.Exec(ctx, `
-		INSERT INTO teacher_document_connections (document_id, vcc_credential_id)
+		INSERT INTO teacher_document_connections (document_id, vcc_vocational_evidence_id)
 		VALUES ($1, $2)
 	`, d.ID, credID)
+	return d, err
+}
+
+func (s *Store) CreateVCCProfEvidence(ctx context.Context, teacherID int64, code, title, issuingOrg string, year, month int) (VCCPQ, error) {
+	var yr pgtype.Int2
+	if year > 0 {
+		yr = pgtype.Int2{Int16: int16(year), Valid: true}
+	}
+	var mo pgtype.Int2
+	if month > 0 {
+		mo = pgtype.Int2{Int16: int16(month), Valid: true}
+	}
+	var pe VCCPQ
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO teacher_vcc_professional_evidence
+		       (vcc_id, credential_code, credential_title, issuing_organisation, year, month, status)
+		SELECT id, $2, $3, NULLIF($4,''), $5, $6, 'Draft'
+		FROM teacher_vccs WHERE teacher_id = $1
+		ORDER BY calendar_year DESC, version DESC LIMIT 1
+		RETURNING id, credential_code, credential_title, COALESCE(issuing_organisation,''),
+		          COALESCE(year,0), COALESCE(month,0), status
+	`, teacherID, code, title, issuingOrg, yr, mo).Scan(
+		&pe.ID, &pe.Code, &pe.Title, &pe.Institution, &pe.Year, &pe.Month, &pe.Status)
+	return pe, err
+}
+
+func (s *Store) UpdateVCCProfEvidence(ctx context.Context, teacherID, peID int64,
+	code, title, issuingOrg, status string, approvedAt pgtype.Date, notes string, year, month int,
+) error {
+	var yr pgtype.Int2
+	if year > 0 {
+		yr = pgtype.Int2{Int16: int16(year), Valid: true}
+	}
+	var mo pgtype.Int2
+	if month > 0 {
+		mo = pgtype.Int2{Int16: int16(month), Valid: true}
+	}
+	_, err := s.pool.Exec(ctx, `
+		UPDATE teacher_vcc_professional_evidence
+		SET credential_code      = $1,
+		    credential_title     = $2,
+		    issuing_organisation = NULLIF($3, ''),
+		    status               = $4,
+		    approved_at          = $5,
+		    notes                = NULLIF($6, ''),
+		    year                 = $9,
+		    month                = $10
+		WHERE id = $7
+		  AND vcc_id IN (SELECT id FROM teacher_vccs WHERE teacher_id = $8)
+	`, code, title, issuingOrg, status, approvedAt, notes, peID, teacherID, yr, mo)
+	return err
+}
+
+func (s *Store) DeleteVCCProfEvidence(ctx context.Context, teacherID, peID int64) (objectKeys []string, err error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT COALESCE(td.document_url, '')
+		FROM teacher_document_connections tdc
+		JOIN teacher_documents td ON td.id = tdc.document_id
+		WHERE tdc.vcc_professional_evidence_id = $1
+		  AND td.teacher_id = $2
+		  AND td.document_url IS NOT NULL
+	`, peID, teacherID)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if key != "" {
+			objectKeys = append(objectKeys, key)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	_, err = s.pool.Exec(ctx, `
+		DELETE FROM teacher_documents
+		WHERE id IN (
+			SELECT document_id FROM teacher_document_connections
+			WHERE vcc_professional_evidence_id = $1
+		) AND teacher_id = $2
+	`, peID, teacherID)
+	if err != nil {
+		return objectKeys, err
+	}
+	_, err = s.pool.Exec(ctx, `
+		DELETE FROM teacher_vcc_professional_evidence
+		WHERE id = $1
+		  AND vcc_id IN (SELECT id FROM teacher_vccs WHERE teacher_id = $2)
+	`, peID, teacherID)
+	return objectKeys, err
+}
+
+func (s *Store) CreateProfEvidenceDocument(ctx context.Context, teacherID, peID int64, title, fileName, objectKey, externalURL string) (VCCDocument, error) {
+	var d VCCDocument
+	d.Title = title
+	d.ExternalURL = externalURL
+	d.URL = objectKey
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO teacher_documents (teacher_id, title, file_category, file_name, document_url, external_url)
+		SELECT $1, $2, 'Other', NULLIF($3,''), NULLIF($4,''), NULLIF($5,'')
+		WHERE EXISTS (
+			SELECT 1 FROM teacher_vcc_professional_evidence pe
+			JOIN teacher_vccs tv ON tv.id = pe.vcc_id
+			WHERE pe.id = $6 AND tv.teacher_id = $1
+		)
+		RETURNING id
+	`, teacherID, title, fileName, objectKey, externalURL, peID).Scan(&d.ID)
+	if err != nil {
+		return VCCDocument{}, err
+	}
+	_, err = s.pool.Exec(ctx, `
+		INSERT INTO teacher_document_connections (document_id, vcc_professional_evidence_id)
+		VALUES ($1, $2)
+	`, d.ID, peID)
 	return d, err
 }
 

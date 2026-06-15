@@ -1,6 +1,12 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.40, 2026-06-15
+-- AVETMISS-compliant SMS schema  --  version 0.41, 2026-06-15
 -- =========================================================================
+-- Changes from v0.41:
+--   1.  teacher_vcc_credentials renamed → teacher_vcc_vocational_evidence.
+--   2.  teacher_vcc_professional_evidence: new table for VET Knowledge Currency.
+--       Same schema as teacher_vcc_vocational_evidence.
+--   3.  teacher_document_connections: vcc_credential_id renamed →
+--       vcc_vocational_evidence_id; new vcc_professional_evidence_id column added.
 -- Changes from v0.40:
 --   1.  teacher_vcc_credentials: new table for Certifications & Micro-Credentials.
 --       Columns: credential_code, credential_title, issuing_organisation, month (1–12),
@@ -2658,8 +2664,8 @@ CREATE TABLE IF NOT EXISTS public.teacher_vcc_vocational_qualifications (
     CONSTRAINT chk_vcc_vocqual_aqf    CHECK (aqf_level BETWEEN 1 AND 10)
 );
 
--- Certifications, micro-credentials and short courses declared in a VCC.
-CREATE TABLE IF NOT EXISTS public.teacher_vcc_credentials (
+-- Certifications, micro-credentials and short courses declared in a VCC (Vocational Evidence).
+CREATE TABLE IF NOT EXISTS public.teacher_vcc_vocational_evidence (
     id                   bigserial    NOT NULL,
     vcc_id               bigint       NOT NULL,
     credential_code      varchar(30)  NOT NULL,
@@ -2672,9 +2678,28 @@ CREATE TABLE IF NOT EXISTS public.teacher_vcc_credentials (
     notes                text         NULL,
     created_at           timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    CONSTRAINT fk_vcc_cred_vcc     FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE,
-    CONSTRAINT chk_vcc_cred_status CHECK (status IN ('Draft','Pending','Approved','Rejected')),
-    CONSTRAINT chk_vcc_cred_month  CHECK (month BETWEEN 1 AND 12)
+    CONSTRAINT fk_vcc_vocevid_vcc     FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE,
+    CONSTRAINT chk_vcc_vocevid_status CHECK (status IN ('Draft','Pending','Approved','Rejected')),
+    CONSTRAINT chk_vcc_vocevid_month  CHECK (month BETWEEN 1 AND 12)
+);
+
+-- Professional evidence (VET Knowledge Currency) declared in a VCC.
+CREATE TABLE IF NOT EXISTS public.teacher_vcc_professional_evidence (
+    id                   bigserial    NOT NULL,
+    vcc_id               bigint       NOT NULL,
+    credential_code      varchar(30)  NOT NULL,
+    credential_title     varchar(200) NOT NULL,
+    issuing_organisation varchar(200) NULL,
+    month                smallint     NULL,    -- 1–12; NULL = month not recorded
+    year                 smallint     NULL,
+    status               varchar(20)  NOT NULL DEFAULT 'Draft',
+    approved_at          date         NULL,
+    notes                text         NULL,
+    created_at           timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_vcc_profevid_vcc     FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE,
+    CONSTRAINT chk_vcc_profevid_status CHECK (status IN ('Draft','Pending','Approved','Rejected')),
+    CONSTRAINT chk_vcc_profevid_month  CHECK (month BETWEEN 1 AND 12)
 );
 
 -- Courses (qualifications) the teacher is mapped to deliver in this VCC.
@@ -2780,15 +2805,17 @@ CREATE TABLE IF NOT EXISTS public.teacher_document_connections (
     vcc_unit_id              bigint    NULL,
     vcc_currency_activity_id bigint    NULL,
     vcc_unit_element_id      bigint    NULL,
-    vcc_credential_id        bigint    NULL,
+    vcc_vocational_evidence_id   bigint    NULL,
+    vcc_professional_evidence_id bigint    NULL,
     PRIMARY KEY (id),
-    CONSTRAINT fk_tdc_document    FOREIGN KEY (document_id)              REFERENCES public.teacher_documents(id)                        ON DELETE CASCADE,
-    CONSTRAINT fk_tdc_pq          FOREIGN KEY (vcc_professional_qual_id) REFERENCES public.teacher_vcc_professional_qualifications(id)   ON DELETE CASCADE,
-    CONSTRAINT fk_tdc_vocqual     FOREIGN KEY (vcc_vocational_qual_id)   REFERENCES public.teacher_vcc_vocational_qualifications(id)     ON DELETE CASCADE,
-    CONSTRAINT fk_tdc_unit        FOREIGN KEY (vcc_unit_id)              REFERENCES public.teacher_vcc_units(id)                        ON DELETE CASCADE,
-    CONSTRAINT fk_tdc_unit_element FOREIGN KEY (vcc_unit_element_id)     REFERENCES public.teacher_vcc_unit_elements(id)                ON DELETE CASCADE,
-    CONSTRAINT fk_tdc_credential  FOREIGN KEY (vcc_credential_id)        REFERENCES public.teacher_vcc_credentials(id)                  ON DELETE CASCADE,
-    CONSTRAINT chk_tdc_target     CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id, vcc_unit_element_id, vcc_credential_id) = 1)
+    CONSTRAINT fk_tdc_document      FOREIGN KEY (document_id)              REFERENCES public.teacher_documents(id)                        ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_pq            FOREIGN KEY (vcc_professional_qual_id) REFERENCES public.teacher_vcc_professional_qualifications(id)   ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_vocqual       FOREIGN KEY (vcc_vocational_qual_id)   REFERENCES public.teacher_vcc_vocational_qualifications(id)     ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_unit          FOREIGN KEY (vcc_unit_id)              REFERENCES public.teacher_vcc_units(id)                        ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_unit_element  FOREIGN KEY (vcc_unit_element_id)      REFERENCES public.teacher_vcc_unit_elements(id)                ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_voc_evidence  FOREIGN KEY (vcc_vocational_evidence_id)   REFERENCES public.teacher_vcc_vocational_evidence(id)      ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_prof_evidence FOREIGN KEY (vcc_professional_evidence_id) REFERENCES public.teacher_vcc_professional_evidence(id)    ON DELETE CASCADE,
+    CONSTRAINT chk_tdc_target       CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id, vcc_unit_element_id, vcc_vocational_evidence_id, vcc_professional_evidence_id) = 1)
 );
 
 -- =========================================================================
@@ -2832,28 +2859,72 @@ ALTER TABLE public.teacher_document_connections
     ADD CONSTRAINT fk_tdc_currency FOREIGN KEY (vcc_currency_activity_id)
     REFERENCES public.teacher_currency_activities(id) ON DELETE CASCADE;
 
--- v0.40 live-migration: add vcc_credential_id to existing teacher_document_connections tables.
+-- v0.41 live-migration: rename teacher_vcc_credentials → teacher_vcc_vocational_evidence.
+DO $$ BEGIN
+    ALTER TABLE public.teacher_vcc_credentials RENAME TO teacher_vcc_vocational_evidence;
+EXCEPTION WHEN duplicate_table THEN NULL;
+         WHEN undefined_table  THEN NULL;
+END $$;
+
+-- v0.41 live-migration: rename institution → issuing_organisation on vocational evidence table.
+DO $$ BEGIN
+    ALTER TABLE public.teacher_vcc_vocational_evidence RENAME COLUMN institution TO issuing_organisation;
+EXCEPTION WHEN undefined_column THEN NULL;
+         WHEN undefined_table  THEN NULL;
+END $$;
+
+-- v0.41 live-migration: drop aqf_level from vocational evidence table if it exists.
+DO $$ BEGIN
+    ALTER TABLE public.teacher_vcc_vocational_evidence DROP COLUMN IF EXISTS aqf_level;
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
+DO $$ BEGIN
+    ALTER TABLE public.teacher_vcc_vocational_evidence DROP CONSTRAINT IF EXISTS chk_vcc_cred_aqf;
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
+
+-- v0.41 live-migration: update teacher_document_connections — rename vcc_credential_id
+--   → vcc_vocational_evidence_id, add vcc_professional_evidence_id, rebuild constraints.
+DO $$ BEGIN
+    -- Rename old column if it exists under old name.
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'teacher_document_connections'
+          AND column_name = 'vcc_credential_id'
+    ) THEN
+        ALTER TABLE public.teacher_document_connections
+            RENAME COLUMN vcc_credential_id TO vcc_vocational_evidence_id;
+    -- Add column if neither old nor new name exists (fresh install from pre-v0.40).
+    ELSIF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'teacher_document_connections'
+          AND column_name = 'vcc_vocational_evidence_id'
+    ) THEN
+        ALTER TABLE public.teacher_document_connections
+            ADD COLUMN vcc_vocational_evidence_id bigint NULL;
+    END IF;
+END $$;
 ALTER TABLE public.teacher_document_connections
-    ADD COLUMN IF NOT EXISTS vcc_credential_id bigint NULL;
+    ADD COLUMN IF NOT EXISTS vcc_professional_evidence_id bigint NULL;
+ALTER TABLE public.teacher_document_connections
+    DROP CONSTRAINT IF EXISTS fk_tdc_credential;
 ALTER TABLE public.teacher_document_connections
     DROP CONSTRAINT IF EXISTS chk_tdc_target;
 ALTER TABLE public.teacher_document_connections
     ADD CONSTRAINT chk_tdc_target
-        CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id, vcc_unit_element_id, vcc_credential_id) = 1);
+        CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id, vcc_unit_element_id, vcc_vocational_evidence_id, vcc_professional_evidence_id) = 1);
 DO $$ BEGIN
     ALTER TABLE public.teacher_document_connections
-        ADD CONSTRAINT fk_tdc_credential FOREIGN KEY (vcc_credential_id)
-        REFERENCES public.teacher_vcc_credentials(id) ON DELETE CASCADE;
+        ADD CONSTRAINT fk_tdc_voc_evidence FOREIGN KEY (vcc_vocational_evidence_id)
+        REFERENCES public.teacher_vcc_vocational_evidence(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
-
--- v0.40 live-migration: rename institution → issuing_organisation, drop aqf_level.
 DO $$ BEGIN
-    ALTER TABLE public.teacher_vcc_credentials RENAME COLUMN institution TO issuing_organisation;
-EXCEPTION WHEN undefined_column THEN NULL;
+    ALTER TABLE public.teacher_document_connections
+        ADD CONSTRAINT fk_tdc_prof_evidence FOREIGN KEY (vcc_professional_evidence_id)
+        REFERENCES public.teacher_vcc_professional_evidence(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
-ALTER TABLE public.teacher_vcc_credentials DROP COLUMN IF EXISTS aqf_level;
-ALTER TABLE public.teacher_vcc_credentials DROP CONSTRAINT IF EXISTS chk_vcc_cred_aqf;
 
 CREATE OR REPLACE TRIGGER trg_touch_teacher_currency_activities
     BEFORE UPDATE ON public.teacher_currency_activities
@@ -2918,8 +2989,11 @@ CREATE INDEX IF NOT EXISTS idx_teacher_vccs_year
 CREATE INDEX IF NOT EXISTS idx_vcc_pq_vcc
     ON public.teacher_vcc_professional_qualifications(vcc_id);
 
-CREATE INDEX IF NOT EXISTS idx_vcc_cred_vcc
-    ON public.teacher_vcc_credentials(vcc_id);
+CREATE INDEX IF NOT EXISTS idx_vcc_vocevid_vcc
+    ON public.teacher_vcc_vocational_evidence(vcc_id);
+
+CREATE INDEX IF NOT EXISTS idx_vcc_profevid_vcc
+    ON public.teacher_vcc_professional_evidence(vcc_id);
 
 CREATE INDEX IF NOT EXISTS idx_vcc_courses_vcc
     ON public.teacher_vcc_courses(vcc_id);
