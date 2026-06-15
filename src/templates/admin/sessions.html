@@ -31,6 +31,8 @@
 
     {{template "admin-nav" .}}
 
+    <p class="page-desc">Class sessions are the individual occurrences of a class on a specific date. Each session records the room, time, and whether it was cancelled. Use <strong>Generate Sessions</strong> to create sessions automatically from a class's timetable slot, or add them one at a time. Attendance is recorded per session.</p>
+
     {{/* ── Toolbar ── */}}
     <div class="sess-toolbar">
 
@@ -48,7 +50,7 @@
           <option value="">— select teacher —</option>
           {{range .Teachers}}
           <option value="{{.ID}}"{{if and (eq $.View "teacher") (eq $.EntityID .ID)}} selected{{end}}>
-            {{.FullName}} ({{.TeacherNumber}})
+            {{.FullName}} ({{.StaffNumber}})
           </option>
           {{end}}
         </select>

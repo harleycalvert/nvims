@@ -31,6 +31,31 @@
   </header>
 
   <main>
+    <p class="page-desc">
+      {{if eq .RoleType "student"}}Assign a student role to this person. Fill in their student number, prior education, and enrolment details required for AVETMISS reporting.
+      {{else if eq .RoleType "teacher"}}Add teaching capabilities to this staff member. The staff number, email, employment status, and FTE are all inherited from the Staff record.
+      {{else}}Assign a staff role to this person to grant them access to the appropriate areas of NVIMS.{{end}}
+    </p>
+
+    {{if eq .RoleType "teacher"}}
+      {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
+      {{if not .Person.IsStaff}}
+        <p class="form-error">A Staff role is required before a Teacher role can be added. Please add a Staff role first.</p>
+        <div class="form-actions">
+          <a class="btn-primary" href="/admin/people/{{.Person.ID}}/role?type=staff">Add Staff Role</a>
+          <a class="btn-secondary" href="/admin/people/{{.Person.ID}}">Cancel</a>
+        </div>
+      {{else}}
+        <p>Staff number: <strong>{{.Person.StaffNumber}}</strong>. Employment details are managed on the Staff record.</p>
+        <form class="admin-form" method="POST" action="/admin/people/{{.Person.ID}}/role">
+          <input type="hidden" name="role_type" value="teacher">
+          <div class="form-actions">
+            <button type="submit" class="btn-primary">{{if .Person.IsTeacher}}Save{{else}}Add Teacher Role{{end}}</button>
+            <a class="btn-secondary" href="/admin/people/{{.Person.ID}}">Cancel</a>
+          </div>
+        </form>
+      {{end}}
+    {{else}}
     {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
 
     <form class="admin-form" method="POST"
@@ -64,7 +89,7 @@
           </div>
         </div>
 
-        {{if or (eq .RoleType "teacher") (eq .RoleType "staff")}}
+        {{if eq .RoleType "staff"}}
         <div class="form-row">
           <div class="form-group fg-220">
             <label>Employment Status <span class="req">*</span></label>
@@ -92,6 +117,7 @@
         <a class="btn-secondary" href="/admin/people/{{.Person.ID}}">Cancel</a>
       </div>
     </form>
+    {{end}}
   </main>
 
 <script>

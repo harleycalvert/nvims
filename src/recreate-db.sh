@@ -41,8 +41,13 @@ sudo -u postgres psql -d "$DB" -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA 
 sudo -u postgres psql -d "$DB" -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO $DB_USER;"
 sudo -u postgres psql -d "$DB" -c "GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO $DB_USER;"
 
-echo "==> Seeding data..."
-python3 "$SEED"
+read -r -p "==> Seed database? [Enter=yes, n=no]: " _seed_reply
+if [[ "${_seed_reply}" != "n" && "${_seed_reply}" != "N" ]]; then
+  echo "==> Seeding data..."
+  python3 "$SEED"
+else
+  echo "==> Skipping seed."
+fi
 
 echo "==> Restarting Go server..."
 fuser -k 8080/tcp 2>/dev/null || true

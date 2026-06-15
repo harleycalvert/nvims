@@ -2,7 +2,7 @@
 
 PostgreSQL schema for a national, potentially AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.33`: its entities, relationships, business rules, and the
+describes the design of `v0.34`: its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -31,7 +31,7 @@ mapping to the AVETMISS NAT reporting files.
   - [13. Intakes & cohorts](#13-intakes--cohorts)
 - [Table reference](#table-reference)
 - [Data dictionary](#data-dictionary)
-  - Identity & reference: [`people`](#people) · [`students`](#students) · [`teachers`](#teachers) · [`teacher_availability`](#teacher_availability) · [`staff`](#staff) · [`staff_availability`](#staff_availability) · [`app_users`](#app_users) · [`teacher_yearly_balances`](#teacher_yearly_balances) · [`teacher_period_allocations`](#teacher_period_allocations) · [`student_guardians`](#student_guardians) · [`student_disabilities`](#student_disabilities) · [`student_prior_achievements`](#student_prior_achievements) · [`australian_states`](#australian_states) · [`disability_types`](#disability_types) · [`prior_educational_achievements`](#prior_educational_achievements) · [`highest_school_levels`](#highest_school_levels) · [`secondary_schools`](#secondary_schools) · [`faculties`](#faculties)
+  - Identity & reference: [`people`](#people) · [`students`](#students) · [`staff`](#staff) · [`staff_availability`](#staff_availability) · [`teachers`](#teachers) · [`teacher_availability`](#teacher_availability) · [`app_users`](#app_users) · [`teacher_yearly_balances`](#teacher_yearly_balances) · [`teacher_period_allocations`](#teacher_period_allocations) · [`student_guardians`](#student_guardians) · [`student_disabilities`](#student_disabilities) · [`student_prior_achievements`](#student_prior_achievements) · [`australian_states`](#australian_states) · [`disability_types`](#disability_types) · [`prior_educational_achievements`](#prior_educational_achievements) · [`highest_school_levels`](#highest_school_levels) · [`secondary_schools`](#secondary_schools) · [`faculties`](#faculties)
   - Curriculum: [`programs`](#programs) · [`subjects`](#subjects) · [`subject_programs`](#subject_programs)
   - Intakes & cohorts: [`program_intakes`](#program_intakes) · [`intake_groups`](#intake_groups)
   - Enrolment & extensions: [`student_course_enrollments`](#student_course_enrollments) · [`client_subject_enrolments`](#client_subject_enrolments) · [`apprenticeship_details`](#apprenticeship_details) · [`traineeship_details`](#traineeship_details) · [`training_plans`](#training_plans) · [`learning_access_plans`](#learning_access_plans) · [`vet_student_loans`](#vet_student_loans) · [`he_enrolment_details`](#he_enrolment_details) · [`enrollment_credit_claims`](#enrollment_credit_claims) · [`state_funding_details`](#state_funding_details)
@@ -151,10 +151,9 @@ Diagrams are split by domain for readability. `||--o{` = one-to-many, `||--o|` =
 ```mermaid
 erDiagram
     PEOPLE ||--o| STUDENTS : "is-a (shared PK)"
-    PEOPLE ||--o| TEACHERS : "is-a (shared PK)"
     PEOPLE ||--o| STAFF : "is-a (shared PK)"
+    STAFF ||--o| TEACHERS : "is-a (shared PK)"
     PEOPLE ||--o{ APP_USERS : "may log in as"
-    FACULTIES ||--o{ TEACHERS : employs
     FACULTIES ||--o{ STAFF : employs
     STUDENTS ||--o{ STUDENT_GUARDIANS : has
     STUDENTS ||--o{ STUDENT_DISABILITIES : declares
@@ -183,6 +182,13 @@ erDiagram
         varchar usi UK
         varchar indigenous_status_id
         timestamptz deleted_at
+    }
+    STAFF {
+        bigint id PK,FK
+        varchar staff_number UK
+        varchar staff_email UK
+        enum employment_status
+        numeric fte
     }
     TEACHERS {
         bigint id PK,FK
@@ -588,8 +594,8 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 |---|---|---|
 | `people` | Single identity spine — name, DOB, gender, address, contact, `preferred_contact_method`, WWCC number and expiry. Owns the surrogate id. | → `australian_states` |
 | `students` | Student-specific data: student number, USI, AVETMISS demographics, photo, ID expiry. Shares PK with `people`. Soft-deletable. | PK = FK → `people`; → `secondary_schools`, `highest_school_levels` |
-| `teachers` | Teacher-specific data: sector (`VET`/`HE`/`DUAL`), annual hours cap, optional per-period cap, police check status and date. Shares PK with `people`. | PK = FK → `people`; → `faculties` |
-| `staff` | Support/admin staff. Police check status and date. Shares PK with `people`. | PK = FK → `people`; → `faculties` |
+| `staff` | Support, admin, and teaching staff. Shares PK with `people`. Number, email, employment status, FTE, and faculty all live here. May be extended into a `teachers` row. | PK = FK → `people`; → `faculties` |
+| `teachers` | Teaching-specific capacity data: sector (`VET`/`HE`/`DUAL`), annual hours cap, optional per-period cap. Always paired with a `staff` row which provides number, email, employment, and faculty. | PK = FK → `staff` |
 | `app_users` | Login/system accounts and RBAC role. Source of every `*_by` audit actor. | → `people` (nullable, for service accounts) |
 | `teacher_yearly_balances` | Maintained cache of booked teaching hours per teacher per calendar year. Cap seeded from `teachers.default_max_hours_per_year`; overridable per-year. | → `teachers` |
 | `teacher_period_allocations` | Per-academic-period hour cap and running total for HE/DUAL teachers with `max_hours_per_period` set. Auto-created on first session booking. | → `teachers`, `academic_periods` |
@@ -734,13 +740,13 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 
 ## Data dictionary
 
-Every table and column, generated from `v0.28`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
+Every table and column, generated from `v0.34`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
 
 ### Identity & reference
 
 #### `people`
 
-The central identity spine for every person in the system. Stores all personal details — name, preferred name, date of birth, gender, full address, contact information (email, phone, emergency contact), WWCC number and expiry, police check status and date, and photo URL — regardless of the person's role. Every other person-subtype table (`students`, `teachers`, `staff`) uses `people.id` as its own primary key (shared-PK subtyping), so this table owns the surrogate identity and all role-specific data extends from it. Also referenced by `app_users`, `student_guardians`, `delivery_locations`, `training_orgs`, and any table that stores an address or contact.
+The central identity spine for every person in the system. Stores all personal details — name, preferred name, date of birth, gender, full address, contact information (email, phone, emergency contact), WWCC number and expiry, police check status and date, and photo URL — regardless of the person's role. The immediate person-subtype tables (`students`, `staff`) use `people.id` as their own primary key (shared-PK subtyping). `teachers` extends `staff` the same way (shared PK with `staff`), making the full chain `people → staff → teachers`. This table owns the surrogate identity and all role-specific data extends from it. Also referenced by `app_users`, `student_guardians`, `delivery_locations`, `training_orgs`, and any table that stores an address or contact.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -840,17 +846,11 @@ Student-specific demographic and AVETMISS compliance data. Extends `people` via 
 
 #### `teachers`
 
-Teacher-specific employment and capacity data. Extends `people` via a shared PK (`teachers.id = people.id`). Stores the teacher's sector (`VET`/`HE`/`DUAL`), employment status, FTE (Full-Time Equivalent — Casual = 0.00, Full-Time = 1.00, Part-Time = 0.01–0.99), annual teaching hour cap (`default_max_hours_per_year`), optional per-period hour cap for HE/DUAL teachers (`max_hours_per_period`), and faculty assignment. Police check details are stored on `people`. The hour caps seed `teacher_yearly_balances` and `teacher_period_allocations` for enforcement by triggers. Availability by day of week is stored in `teacher_availability`. Referenced by `class_slots`, `session_teachers`, `workplans`, `timesheets`, `teacher_vccs`, and `teacher_currency_activities`.
+Teaching-specific capacity data. Extends `staff` via a shared PK (`teachers.id = staff.id`). A teacher is always also a staff member; number, email, phone, employment status, FTE, and faculty are all inherited from the `staff` record. This table adds only the teaching-specific attributes: sector (`VET`/`HE`/`DUAL`), annual teaching hour cap (`default_max_hours_per_year`), and optional per-period hour cap for HE/DUAL teachers (`max_hours_per_period`). The hour caps seed `teacher_yearly_balances` and `teacher_period_allocations` for enforcement by triggers. Availability by day of week is stored in `teacher_availability`. Referenced by `class_slots`, `session_teachers`, `workplans`, `timesheets`, `teacher_vccs`, and `teacher_currency_activities`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
-| `id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;people |
-| `faculty_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;faculties |
-| `teacher_number` | `varchar(20)` | no |  | UK |
-| `teacher_email` | `varchar(100)` | no |  | UK |
-| `teacher_phone` | `varchar(15)` | yes |  |  |
-| `employment_status` | `public.employment_type` | no | `'Casual'` |  |
-| `fte` | `numeric(3,2)` | no | `0.00` |  |
+| `id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;staff |
 | `sector` | `public.teacher_sector` | no | `'VET'` |  |
 | `default_max_hours_per_year` | `numeric(6,2)` | no | `800.00` |  |
 | `max_hours_per_period` | `numeric(6,2)` | yes |  |  |
@@ -860,17 +860,13 @@ Teacher-specific employment and capacity data. Extends `people` via a shared PK 
 *Constraints:*
 
 - `PRIMARY KEY (id)`
-- `CONSTRAINT fk_teachers_people FOREIGN KEY (id) REFERENCES public.people(id) ON DELETE CASCADE`
-- `CONSTRAINT fk_teachers_faculty FOREIGN KEY (faculty_id) REFERENCES public.faculties(id) ON DELETE SET NULL`
-- `CONSTRAINT uq_teachers_number UNIQUE (teacher_number)`
-- `CONSTRAINT uq_teachers_email UNIQUE (teacher_email)`
+- `CONSTRAINT fk_teachers_staff FOREIGN KEY (id) REFERENCES public.staff(id) ON DELETE CASCADE`
 - `CONSTRAINT chk_teacher_max_hours CHECK (default_max_hours_per_year > 0)`
 - `CONSTRAINT chk_teacher_period_hours CHECK (max_hours_per_period IS NULL OR max_hours_per_period > 0)`
-- `CONSTRAINT chk_teacher_fte CHECK ((employment_status='Casual' AND fte=0.00) OR (employment_status='Full-Time' AND fte=1.00) OR (employment_status='Part-Time' AND fte>0.00 AND fte<1.00))`
 
 #### `staff`
 
-Support and administrative staff. Extends `people` via a shared PK (`staff.id = people.id`). Holds the staff number, staff email, phone, employment status, FTE (Full-Time Equivalent), and faculty assignment. FTE is constrained by employment status: Casual = 0.00, Full-Time = 1.00, Part-Time = 0.01–0.99. Police check details are stored on `people`. Availability by day of week is stored in `staff_availability`. Staff appear as assessors on Learning Access Plans (`learning_access_plans.assessor_id`), support workers on classes (`class_support_staff`), recipients of bulk communications (`message_deliveries`), and audit actors (`app_users`).
+Support, administrative, and teaching staff. Extends `people` via a shared PK (`staff.id = people.id`). Holds the staff number, staff email, phone, employment status, FTE (Full-Time Equivalent), and faculty assignment. FTE is constrained by employment status: Casual = 0.00, Full-Time = 1.00, Part-Time = 0.01–0.99. Police check details are stored on `people`. Availability by day of week is stored in `staff_availability`. A staff member may optionally be extended into a teacher by adding a `teachers` row (same PK). Staff appear as assessors on Learning Access Plans (`learning_access_plans.assessor_id`), support workers on classes (`class_support_staff`), recipients of bulk communications (`message_deliveries`), and audit actors (`app_users`).
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1120,7 +1116,7 @@ Registry of secondary schools that students may have last attended. Referenced b
 
 #### `faculties`
 
-Organisational units (faculties or departments) within the training organisation. Programs, teachers, and staff are assigned to a faculty for reporting and workload management purposes. Has no further parent; it is a top-level reference table.
+Organisational units (faculties or departments) within the training organisation. Programs and staff are assigned to a faculty for reporting and workload management purposes; teachers inherit faculty through their staff record. Has no further parent; it is a top-level reference table.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -2957,8 +2953,8 @@ to `app_users` with role `Trainer`.
 
 **Sender CC.** When `messages.status` transitions from any state to `'Sent'`, the trigger
 `trg_cc_sender_on_send` fires and inserts a `message_recipients` row with `is_cc = true` pointing
-back to the sender. The sender's preferred address is `teachers.teacher_email` (falling back to
-`people.primary_email`). Staff senders follow the same pattern using `staff.staff_email`. Service
+back to the sender. The sender's preferred address is `staff.staff_email` (teachers are always staff,
+so this covers both). Falling back to `people.primary_email` if no staff record exists. Service
 accounts without a `person_id` produce no CC row.
 
 **Read tracking.** When a recipient opens the message in the application, set `read_at` on their
@@ -3101,4 +3097,4 @@ periodically.
 
 ---
 
-*Generated from `v0.24` (2026-06-11).*
+*Generated from `v0.34` (2026-06-15).*

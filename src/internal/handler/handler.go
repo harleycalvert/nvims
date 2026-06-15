@@ -1054,7 +1054,12 @@ func (h *Handler) AdminRoleAdd(w http.ResponseWriter, r *http.Request) {
 	case "student":
 		roleErr = h.store.AddStudentRole(r.Context(), id, number, email)
 	case "teacher":
-		roleErr = h.store.AddTeacherRole(r.Context(), id, number, email, empStatus, fte)
+		person, pErr := h.store.GetPerson(r.Context(), id)
+		if pErr != nil || !person.IsStaff {
+			roleErr = fmt.Errorf("person must have a Staff role before a Teacher role can be added")
+		} else {
+			roleErr = h.store.AddTeacherRole(r.Context(), id)
+		}
 	case "staff":
 		roleErr = h.store.AddStaffRole(r.Context(), id, number, email, empStatus, fte)
 	default:
@@ -1065,6 +1070,10 @@ func (h *Handler) AdminRoleAdd(w http.ResponseWriter, r *http.Request) {
 	if roleErr != nil {
 		log.Printf("AddRole(%s,%d): %v", roleType, id, roleErr)
 		person, _ := h.store.GetPerson(r.Context(), id)
+		errMsg := "Could not add role — check that the number is not already in use."
+		if roleType == "teacher" {
+			errMsg = roleErr.Error()
+		}
 		role := store.RoleDetail{
 			Number: number, Email: email,
 			EmploymentStatus: empStatus,
@@ -1073,7 +1082,7 @@ func (h *Handler) AdminRoleAdd(w http.ResponseWriter, r *http.Request) {
 		h.render(w, "admin-role-form", map[string]any{
 			"Person": person, "RoleType": roleType,
 			"Role": role,
-			"Error": "Could not add role — check that the number is not already in use.",
+			"Error": errMsg,
 			"User": user,
 		})
 		return

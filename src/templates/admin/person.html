@@ -28,6 +28,11 @@
 
   <main>
     {{template "admin-nav" .}}
+    {{if .IsNew}}
+    <p class="page-desc">Create a new person record. Fill in contact and demographic details, then save. Once saved, use <strong>Add Role</strong> on the person's profile to grant them system access as a student, teacher, or staff member.</p>
+    {{else}}
+    <p class="page-desc">Edit this person's contact details, address, and demographic information. Changes take effect immediately on save. To manage system access or role-specific details, use the tabs above.</p>
+    {{end}}
     {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
     {{if .Success}}<p class="form-success">Changes saved.</p>{{end}}
 
@@ -190,7 +195,7 @@
           <div class="role-card-header role-teacher-header">Teacher</div>
           <div class="role-card-body">
             {{if .Person.IsTeacher}}
-              <p class="role-number">{{.Person.TeacherNumber}}</p>
+              <p class="role-number">{{.Person.StaffNumber}}</p>
               <a class="btn-row-action" href="/admin/people/{{.Form.ID}}/role?type=teacher">Edit</a>
             {{else}}
               <p class="role-none">Not assigned</p>

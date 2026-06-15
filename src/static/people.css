@@ -31,6 +31,16 @@
   font-style: italic;
 }
 
+/* ── Page description ─────────────────────────────────────── */
+.page-desc {
+  font-size: 13px;
+  color: #555;
+  line-height: 1.6;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #eee;
+}
+
 /* ── Admin toolbar / search ───────────────────────────────── */
 .admin-toolbar {
   display: flex;

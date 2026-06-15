@@ -558,7 +558,6 @@ type PersonListRow struct {
 	IsTeacher     bool
 	IsStaff       bool
 	StudentNumber string
-	TeacherNumber string
 	StaffNumber   string
 }
 
@@ -584,7 +583,6 @@ type PersonDetail struct {
 	IsTeacher     bool
 	IsStaff       bool
 	StudentNumber string
-	TeacherNumber string
 	StaffNumber   string
 }
 
@@ -600,13 +598,12 @@ func (s *Store) ListPeople(ctx context.Context, search, role string, limit int) 
 		       (t.id  IS NOT NULL)            AS is_teacher,
 		       (sf.id IS NOT NULL)            AS is_staff,
 		       COALESCE(st.student_number, '') AS student_number,
-		       COALESCE(t.teacher_number,  '') AS teacher_number,
 		       COALESCE(sf.staff_number,   '') AS staff_number,
 		       COUNT(*) OVER ()               AS total_count
 		FROM public.people p
 		LEFT JOIN public.students st ON st.id = p.id AND st.deleted_at IS NULL
-		LEFT JOIN public.teachers  t  ON t.id  = p.id
 		LEFT JOIN public.staff     sf ON sf.id = p.id
+		LEFT JOIN public.teachers  t  ON t.id  = sf.id
 	`
 	var conds []string
 	var args []any
@@ -617,7 +614,6 @@ func (s *Store) ListPeople(ctx context.Context, search, role string, limit int) 
 		conds = append(conds, fmt.Sprintf(
 			`(p.family_name ILIKE $%[1]d OR p.first_given_name ILIKE $%[1]d
 			  OR st.student_number ILIKE $%[1]d OR st.student_email ILIKE $%[1]d
-			  OR t.teacher_number  ILIKE $%[1]d OR t.teacher_email  ILIKE $%[1]d
 			  OR sf.staff_number   ILIKE $%[1]d OR sf.staff_email   ILIKE $%[1]d)`,
 			n,
 		))
@@ -648,7 +644,7 @@ func (s *Store) ListPeople(ctx context.Context, search, role string, limit int) 
 		var r PersonListRow
 		if err := rows.Scan(&r.ID, &r.FirstName, &r.FamilyName, &r.DOB,
 			&r.IsStudent, &r.IsTeacher, &r.IsStaff,
-			&r.StudentNumber, &r.TeacherNumber, &r.StaffNumber,
+			&r.StudentNumber, &r.StaffNumber,
 			&res.Total); err != nil {
 			return PeopleResult{}, err
 		}
@@ -674,7 +670,6 @@ func (s *Store) GetPerson(ctx context.Context, id int64) (PersonDetail, error) {
 		       EXISTS(SELECT 1 FROM public.teachers t  WHERE t.id  = p.id),
 		       EXISTS(SELECT 1 FROM public.staff   sf WHERE sf.id  = p.id),
 		       COALESCE((SELECT student_number FROM public.students WHERE id = p.id),''),
-		       COALESCE((SELECT teacher_number FROM public.teachers WHERE id = p.id),''),
 		       COALESCE((SELECT staff_number   FROM public.staff    WHERE id = p.id),'')
 		FROM public.people p WHERE p.id = $1
 	`, id).Scan(
@@ -684,7 +679,7 @@ func (s *Store) GetPerson(ctx context.Context, id int64) (PersonDetail, error) {
 		&d.PhotoURL, &d.WWCCNumber, &d.WWCCExpiryStr,
 		&d.PoliceCheckStatus, &d.PoliceCheckDateStr,
 		&d.IsStudent, &d.IsTeacher, &d.IsStaff,
-		&d.StudentNumber, &d.TeacherNumber, &d.StaffNumber,
+		&d.StudentNumber, &d.StaffNumber,
 	)
 	return d, err
 }
@@ -798,16 +793,12 @@ func (s *Store) AddStudentRole(ctx context.Context, personID int64, studentNumbe
 	return err
 }
 
-func (s *Store) AddTeacherRole(ctx context.Context, personID int64, teacherNumber, teacherEmail, employmentStatus string, fte float64) error {
+func (s *Store) AddTeacherRole(ctx context.Context, personID int64) error {
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO public.teachers (id, teacher_number, teacher_email, employment_status, fte)
-		VALUES ($1, $2, $3, $4::public.employment_type, $5)
-		ON CONFLICT (id) DO UPDATE SET
-		    teacher_number    = EXCLUDED.teacher_number,
-		    teacher_email     = EXCLUDED.teacher_email,
-		    employment_status = EXCLUDED.employment_status,
-		    fte               = EXCLUDED.fte
-	`, personID, teacherNumber, teacherEmail, employmentStatus, fte)
+		INSERT INTO public.teachers (id)
+		VALUES ($1)
+		ON CONFLICT (id) DO NOTHING
+	`, personID)
 	return err
 }
 
@@ -842,9 +833,11 @@ func (s *Store) GetRoleDetail(ctx context.Context, personID int64, roleType stri
 		`, personID).Scan(&d.Number, &d.Email)
 	case "teacher":
 		err = s.pool.QueryRow(ctx, `
-			SELECT COALESCE(teacher_number,''), COALESCE(teacher_email,''),
-			       COALESCE(employment_status::text,''), fte
-			FROM public.teachers WHERE id = $1
+			SELECT COALESCE(sf.staff_number,''), COALESCE(sf.staff_email,''),
+			       COALESCE(sf.employment_status::text,''), sf.fte
+			FROM public.teachers t
+			JOIN public.staff sf ON sf.id = t.id
+			WHERE t.id = $1
 		`, personID).Scan(&d.Number, &d.Email, &d.EmploymentStatus, &d.FTE)
 	case "staff":
 		err = s.pool.QueryRow(ctx, `
@@ -1318,9 +1311,9 @@ type SessionListRow struct {
 }
 
 type TeacherListRow struct {
-	ID            int64
-	TeacherNumber string
-	FullName      string
+	ID          int64
+	StaffNumber string
+	FullName    string
 }
 
 type ScheduleSession struct {
@@ -1846,9 +1839,10 @@ func (s *Store) ListSessionsForClass(ctx context.Context, classID int64) ([]Sess
 
 func (s *Store) ListTeachers(ctx context.Context) ([]TeacherListRow, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT t.id, t.teacher_number, p.family_name || ', ' || p.first_given_name
+		SELECT t.id, sf.staff_number, p.family_name || ', ' || p.first_given_name
 		FROM public.teachers t
-		JOIN public.people p ON p.id = t.id
+		JOIN public.staff sf ON sf.id = t.id
+		JOIN public.people p ON p.id = sf.id
 		ORDER BY p.family_name, p.first_given_name
 	`)
 	if err != nil {
@@ -1858,7 +1852,7 @@ func (s *Store) ListTeachers(ctx context.Context) ([]TeacherListRow, error) {
 	var out []TeacherListRow
 	for rows.Next() {
 		var r TeacherListRow
-		if err := rows.Scan(&r.ID, &r.TeacherNumber, &r.FullName); err != nil {
+		if err := rows.Scan(&r.ID, &r.StaffNumber, &r.FullName); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
