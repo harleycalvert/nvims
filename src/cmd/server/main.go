@@ -10,6 +10,7 @@ import (
 
 	"nvims/internal/auth"
 	"nvims/internal/handler"
+	"nvims/internal/storage"
 	"nvims/internal/store"
 )
 
@@ -30,9 +31,25 @@ func main() {
 	}
 	log.Println("database connected")
 
+	minioEndpoint := os.Getenv("MINIO_ENDPOINT")
+	if minioEndpoint == "" {
+		minioEndpoint = "localhost:9000"
+	}
+	minioBucket := os.Getenv("MINIO_BUCKET")
+	if minioBucket == "" {
+		minioBucket = "nvims-docs"
+	}
+	stor, err := storage.New(minioEndpoint, os.Getenv("MINIO_ROOT_USER"), os.Getenv("MINIO_ROOT_PASSWORD"), minioBucket)
+	if err != nil {
+		log.Fatalf("storage client: %v", err)
+	}
+	if err := stor.EnsureBucket(context.Background()); err != nil {
+		log.Fatalf("storage bucket: %v", err)
+	}
+
 	sessions := auth.NewSessions()
 	st := store.New(pool)
-	h := handler.New(st, sessions)
+	h := handler.New(st, sessions, stor)
 
 	protect := func(fn http.HandlerFunc) http.HandlerFunc {
 		return sessions.Middleware(fn).ServeHTTP
@@ -123,6 +140,10 @@ func main() {
 	mux.HandleFunc("POST /admin/sessions/generate", protect(h.AdminSessionsGenerate))
 	mux.HandleFunc("POST /admin/sessions/{id}", protect(h.AdminSessionUpdate))
 	mux.HandleFunc("POST /admin/sessions/{id}/delete", protect(h.AdminSessionDelete))
+	mux.HandleFunc("GET /vcc/documents", protect(h.VCCDocumentLibrary))
+	mux.HandleFunc("POST /vcc/documents/upload", protect(h.VCCDocumentUpload))
+	mux.HandleFunc("GET /vcc/documents/{id}/download", protect(h.VCCDocumentDownload))
+	mux.HandleFunc("POST /vcc/documents/{id}/delete", protect(h.VCCDocumentDelete))
 	mux.HandleFunc("GET /vcc", protect(h.VCCMenu))
 	mux.HandleFunc("GET /vcc/vocational-evidence", protect(h.VCCVocationalEvidence))
 	mux.HandleFunc("GET /vcc/vocational-qualifications", protect(h.VCCVocQuals))

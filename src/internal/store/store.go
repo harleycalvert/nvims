@@ -2179,7 +2179,20 @@ type VCCDocument struct {
 	Category    string
 	Year        int
 	URL         string
+	FileName    string
 	ExternalURL string
+	UploadedAt  time.Time
+}
+
+type LibraryDocument struct {
+	ID         int64
+	Title      string
+	Category   string
+	Year       int
+	FileName   string
+	ObjectKey  string
+	ExternalURL string
+	UploadedAt time.Time
 }
 
 type VCCPQ struct {
@@ -2789,6 +2802,70 @@ func (s *Store) CreateElementDocument(ctx context.Context, teacherID, elementID 
 }
 
 func (s *Store) DeleteElementDocument(ctx context.Context, teacherID, docID int64) error {
+	_, err := s.pool.Exec(ctx, `
+		DELETE FROM teacher_documents WHERE id = $1 AND teacher_id = $2
+	`, docID, teacherID)
+	return err
+}
+
+func (s *Store) CreateLibraryDocument(ctx context.Context, teacherID int64, title, category string, year int, fileName, objectKey, externalURL string) (LibraryDocument, error) {
+	var d LibraryDocument
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO teacher_documents
+		    (teacher_id, title, file_category, year_of_document,
+		     file_name, document_url, external_url)
+		VALUES ($1, $2, $3, NULLIF($4,0), NULLIF($5,''), NULLIF($6,''), NULLIF($7,''))
+		RETURNING id, title, file_category,
+		          COALESCE(year_of_document,0),
+		          COALESCE(file_name,''), COALESCE(document_url,''),
+		          COALESCE(external_url,''), uploaded_at
+	`, teacherID, title, category, year, fileName, objectKey, externalURL).Scan(
+		&d.ID, &d.Title, &d.Category, &d.Year,
+		&d.FileName, &d.ObjectKey, &d.ExternalURL, &d.UploadedAt,
+	)
+	return d, err
+}
+
+func (s *Store) ListTeacherDocuments(ctx context.Context, teacherID int64) ([]LibraryDocument, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, title, file_category,
+		       COALESCE(year_of_document,0),
+		       COALESCE(file_name,''), COALESCE(document_url,''),
+		       COALESCE(external_url,''), uploaded_at
+		FROM teacher_documents
+		WHERE teacher_id = $1
+		ORDER BY file_category, uploaded_at DESC
+	`, teacherID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []LibraryDocument
+	for rows.Next() {
+		var d LibraryDocument
+		if err := rows.Scan(&d.ID, &d.Title, &d.Category, &d.Year,
+			&d.FileName, &d.ObjectKey, &d.ExternalURL, &d.UploadedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// GetTeacherDocumentObjectKey returns the MinIO object key for a document the
+// teacher owns, so the caller can delete it from object storage before removing
+// the DB row.
+func (s *Store) GetTeacherDocumentObjectKey(ctx context.Context, teacherID, docID int64) (string, error) {
+	var key string
+	err := s.pool.QueryRow(ctx, `
+		SELECT COALESCE(document_url,'')
+		FROM teacher_documents
+		WHERE id = $1 AND teacher_id = $2
+	`, docID, teacherID).Scan(&key)
+	return key, err
+}
+
+func (s *Store) DeleteTeacherDocument(ctx context.Context, teacherID, docID int64) error {
 	_, err := s.pool.Exec(ctx, `
 		DELETE FROM teacher_documents WHERE id = $1 AND teacher_id = $2
 	`, docID, teacherID)

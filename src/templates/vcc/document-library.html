@@ -1,0 +1,253 @@
+{{define "vcc-document-library"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS — Document Library</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/sidebar.css">
+  <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
+  <style>
+    .dl-header        { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
+    .dl-title         { font-size:18px; font-weight:600; color:#1e293b; flex:1; }
+    .dl-upload-panel  { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;
+                        padding:18px 20px; margin-bottom:24px; }
+    .dl-upload-title  { font-size:13px; font-weight:600; color:#475569; text-transform:uppercase;
+                        letter-spacing:.04em; margin-bottom:12px; }
+    .dl-upload-row    { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; }
+    .dl-field         { display:flex; flex-direction:column; gap:4px; }
+    .dl-field label   { font-size:12px; color:#64748b; font-weight:500; }
+    .dl-field input,
+    .dl-field select  { font-size:13px; padding:6px 9px; border:1px solid #cbd5e1;
+                        border-radius:5px; background:#fff; color:#1e293b; }
+    .dl-field.grow    { flex:1; min-width:160px; }
+    .dl-or            { font-size:12px; color:#94a3b8; align-self:center; padding-top:16px; }
+    .dl-upload-btn    { padding:7px 16px; font-size:13px; font-weight:600;
+                        background:#2563eb; color:#fff; border:none; border-radius:5px;
+                        cursor:pointer; align-self:flex-end; }
+    .dl-upload-btn:hover { background:#1d4ed8; }
+    .dl-upload-err    { font-size:12px; color:#dc2626; margin-top:8px; display:none; }
+
+    .dl-section       { margin-bottom:28px; }
+    .dl-section-hdr   { font-size:11px; font-weight:700; color:#94a3b8; text-transform:uppercase;
+                        letter-spacing:.06em; padding:6px 0; border-bottom:1px solid #f1f5f9;
+                        margin-bottom:8px; }
+    .dl-empty         { font-size:13px; color:#94a3b8; padding:12px 0; }
+
+    .dl-grid          { display:flex; flex-direction:column; gap:6px; }
+    .dl-card          { display:flex; align-items:center; gap:10px; padding:10px 12px;
+                        background:#fff; border:1px solid #e2e8f0; border-radius:6px; }
+    .dl-icon          { width:32px; height:32px; border-radius:5px; background:#eff6ff;
+                        display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .dl-icon svg      { width:16px; height:16px; stroke:#2563eb; }
+    .dl-info          { flex:1; min-width:0; }
+    .dl-doc-title     { font-size:13px; font-weight:500; color:#1e293b;
+                        white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .dl-doc-meta      { font-size:11px; color:#94a3b8; margin-top:2px; }
+    .dl-actions       { display:flex; gap:6px; flex-shrink:0; }
+    .dl-btn-dl        { font-size:12px; color:#2563eb; text-decoration:none;
+                        padding:4px 10px; border:1px solid #bfdbfe; border-radius:4px; }
+    .dl-btn-dl:hover  { background:#eff6ff; }
+    .dl-btn-del       { font-size:12px; color:#dc2626; padding:4px 10px;
+                        border:1px solid #fecaca; border-radius:4px; background:none; cursor:pointer; }
+    .dl-btn-del:hover { background:#fef2f2; }
+  </style>
+</head>
+<body>
+  {{template "sidebar" .}}
+  <div class="page-wrap">
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/vcc">VCC</a>
+        <h1>Document Library</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+
+  <main class="sessions-main">
+    <p class="page-desc">Upload and manage your evidence files — testamurs, credentials, licences, and other supporting documents. Files are stored securely and can be linked to VCC evidence items.</p>
+
+    <div class="dl-upload-panel">
+      <div class="dl-upload-title">Add Document</div>
+      <div class="dl-upload-row">
+        <div class="dl-field grow">
+          <label>Title <span class="req">*</span></label>
+          <input type="text" id="up-title" placeholder="e.g. Certificate IV in Training &amp; Assessment">
+        </div>
+        <div class="dl-field">
+          <label>Category</label>
+          <select id="up-category">
+            {{range .Categories}}<option>{{.}}</option>{{end}}
+          </select>
+        </div>
+        <div class="dl-field" style="width:76px">
+          <label>Year</label>
+          <input type="number" id="up-year" placeholder="2024" min="1980" max="2099">
+        </div>
+        <div class="dl-field">
+          <label>File</label>
+          <input type="file" id="up-file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
+        </div>
+        <div class="dl-or">or</div>
+        <div class="dl-field grow">
+          <label>External URL</label>
+          <input type="url" id="up-url" placeholder="https://...">
+        </div>
+        <button class="dl-upload-btn" id="btn-upload">Upload</button>
+      </div>
+      <div class="dl-upload-err" id="up-err"></div>
+    </div>
+
+    <div id="dl-sections">
+      {{$cats := .Categories}}
+      {{range $cat := $cats}}
+        {{$hasDocs := false}}
+        {{range $.Docs}}{{if eq .Category $cat}}{{$hasDocs = true}}{{end}}{{end}}
+        <div class="dl-section" data-cat="{{$cat}}">
+          <div class="dl-section-hdr">{{$cat}}</div>
+          <div class="dl-grid" id="cat-{{$cat | printf "%s"}}">
+            {{range $.Docs}}
+            {{if eq .Category $cat}}
+            <div class="dl-card" data-id="{{.ID}}">
+              <div class="dl-icon">
+                <svg viewBox="0 0 16 16" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 1H3a1 1 0 00-1 1v12a1 1 0 001 1h10a1 1 0 001-1V6L9 1z"/>
+                  <polyline points="9 1 9 6 14 6"/>
+                </svg>
+              </div>
+              <div class="dl-info">
+                <div class="dl-doc-title">{{.Title}}</div>
+                <div class="dl-doc-meta">
+                  {{if .Year}}{{.Year}} · {{end}}
+                  {{if .FileName}}{{.FileName}}{{else if .ExternalURL}}Link{{end}}
+                  · {{.UploadedAt.Format "2 Jan 2006"}}
+                </div>
+              </div>
+              <div class="dl-actions">
+                {{if .ObjectKey}}
+                <a class="dl-btn-dl" href="/vcc/documents/{{.ID}}/download">Download</a>
+                {{else if .ExternalURL}}
+                <a class="dl-btn-dl" href="{{.ExternalURL}}" target="_blank" rel="noopener">Open</a>
+                {{end}}
+                <button class="dl-btn-del" data-id="{{.ID}}">Delete</button>
+              </div>
+            </div>
+            {{end}}
+            {{end}}
+          </div>
+          {{if not $hasDocs}}<p class="dl-empty" id="empty-{{$cat}}">No documents in this category.</p>{{end}}
+        </div>
+      {{end}}
+    </div>
+  </main>
+  </div>
+
+<script>
+(function () {
+  const btn    = document.getElementById('btn-upload');
+  const errEl  = document.getElementById('up-err');
+
+  function showErr(msg) {
+    errEl.textContent = msg;
+    errEl.style.display = 'block';
+  }
+  function clearErr() { errEl.style.display = 'none'; }
+
+  btn.addEventListener('click', async () => {
+    clearErr();
+    const title = document.getElementById('up-title').value.trim();
+    if (!title) { showErr('Title is required.'); return; }
+
+    const fd = new FormData();
+    fd.append('title',    title);
+    fd.append('category', document.getElementById('up-category').value);
+    fd.append('year',     document.getElementById('up-year').value);
+    fd.append('external_url', document.getElementById('up-url').value.trim());
+    const fileInput = document.getElementById('up-file');
+    if (fileInput.files[0]) fd.append('file', fileInput.files[0]);
+
+    btn.disabled = true;
+    btn.textContent = 'Uploading…';
+    try {
+      const res = await fetch('/vcc/documents/upload', { method: 'POST', body: fd });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        showErr(j.error || 'Upload failed.');
+        return;
+      }
+      const doc = await res.json();
+      appendCard(doc);
+      document.getElementById('up-title').value = '';
+      document.getElementById('up-year').value  = '';
+      document.getElementById('up-url').value   = '';
+      fileInput.value = '';
+    } catch { showErr('Network error.'); }
+    finally { btn.disabled = false; btn.textContent = 'Upload'; }
+  });
+
+  function appendCard(doc) {
+    const cat   = doc.category;
+    const grid  = document.getElementById('cat-' + cat);
+    const empty = document.getElementById('empty-' + cat);
+    if (empty) empty.remove();
+
+    const card = document.createElement('div');
+    card.className = 'dl-card';
+    card.dataset.id = doc.id;
+
+    const hasFile = doc.file_name && doc.file_name !== '';
+    const hasURL  = doc.external_url && doc.external_url !== '';
+    const linkHTML = hasFile
+      ? `<a class="dl-btn-dl" href="/vcc/documents/${doc.id}/download">Download</a>`
+      : hasURL
+        ? `<a class="dl-btn-dl" href="${doc.external_url}" target="_blank" rel="noopener">Open</a>`
+        : '';
+
+    card.innerHTML = `
+      <div class="dl-icon">
+        <svg viewBox="0 0 16 16" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 1H3a1 1 0 00-1 1v12a1 1 0 001 1h10a1 1 0 001-1V6L9 1z"/>
+          <polyline points="9 1 9 6 14 6"/>
+        </svg>
+      </div>
+      <div class="dl-info">
+        <div class="dl-doc-title">${escHtml(doc.title)}</div>
+        <div class="dl-doc-meta">${doc.year ? doc.year + ' · ' : ''}${escHtml(doc.file_name || (hasURL ? 'Link' : ''))}</div>
+      </div>
+      <div class="dl-actions">
+        ${linkHTML}
+        <button class="dl-btn-del" data-id="${doc.id}">Delete</button>
+      </div>`;
+    grid.appendChild(card);
+    attachDelete(card.querySelector('.dl-btn-del'));
+  }
+
+  function attachDelete(btn) {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this document?')) return;
+      const id   = btn.dataset.id;
+      const card = btn.closest('.dl-card');
+      try {
+        const res = await fetch(`/vcc/documents/${id}/delete`, { method: 'POST' });
+        if (!res.ok) { alert('Could not delete.'); return; }
+        card.remove();
+      } catch { alert('Network error.'); }
+    });
+  }
+
+  document.querySelectorAll('.dl-btn-del').forEach(attachDelete);
+
+  function escHtml(s) {
+    return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+})();
+</script>
+</body>
+</html>{{end}}

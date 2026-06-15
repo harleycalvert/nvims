@@ -20,19 +20,21 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"nvims/internal/auth"
+	"nvims/internal/storage"
 	"nvims/internal/store"
 )
 
 type Handler struct {
 	store    *store.Store
 	sessions *auth.Sessions
+	storage  *storage.Client
 	tmpl     *template.Template
 	mu       sync.RWMutex
 	lmsName  string
 	lmsURL   string
 }
 
-func New(st *store.Store, sessions *auth.Sessions) *Handler {
+func New(st *store.Store, sessions *auth.Sessions, stor *storage.Client) *Handler {
 	funcs := template.FuncMap{
 		"dateShort": func(t time.Time) string { return t.Format("2 Jan") },
 		"dateFull":  func(t time.Time) string { return t.Format("Mon 2 Jan 2006") },
@@ -153,6 +155,7 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 			"templates/partials/sidebar.html",
 			"templates/partials/admin-nav.html",
 			"templates/vcc/menu.html",
+			"templates/vcc/document-library.html",
 			"templates/vcc/vocational-evidence.html",
 			"templates/vcc/detail.html",
 			"templates/vcc/vocational-qualifications.html",
@@ -168,7 +171,7 @@ func New(st *store.Store, sessions *auth.Sessions) *Handler {
 			"templates/admin/departments.html",
 		),
 	)
-	h := &Handler{store: st, sessions: sessions, tmpl: tmpl}
+	h := &Handler{store: st, sessions: sessions, storage: stor, tmpl: tmpl}
 	// pre-load LMS config from DB
 	ctx := context.Background()
 	h.lmsName, _ = st.GetSetting(ctx, "lms.name")
@@ -2831,6 +2834,122 @@ func (h *Handler) VCCElementDeleteDoc(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) VCCDocumentLibrary(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	docs, err := h.store.ListTeacherDocuments(r.Context(), user.PersonID)
+	if err != nil {
+		log.Printf("ListTeacherDocuments(%d): %v", user.PersonID, err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	h.render(w, "vcc-document-library", map[string]any{
+		"User": user,
+		"Docs": docs,
+		"Categories": []string{
+			"Testamurs", "Accreditations", "Registrations",
+			"Statement of attainment", "Transcripts",
+			"Credentials", "Licenses", "Job cards", "Other",
+		},
+	})
+}
+
+func (h *Handler) VCCDocumentUpload(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	title := strings.TrimSpace(r.FormValue("title"))
+	if title == "" {
+		http.Error(w, `{"error":"title required"}`, http.StatusBadRequest)
+		return
+	}
+	category := r.FormValue("category")
+	if category == "" {
+		category = "Other"
+	}
+	year, _ := strconv.Atoi(r.FormValue("year"))
+	externalURL := strings.TrimSpace(r.FormValue("external_url"))
+
+	var fileName, objectKey string
+	if file, fh, ferr := r.FormFile("file"); ferr == nil {
+		defer file.Close()
+		fileName = fh.Filename
+		ct := fh.Header.Get("Content-Type")
+		if ct == "" {
+			ct = "application/octet-stream"
+		}
+		objectKey = fmt.Sprintf("teacher/%d/%s_%s", user.PersonID, time.Now().Format("20060102150405"), fileName)
+		if err := h.storage.Upload(r.Context(), objectKey, file, fh.Size, ct); err != nil {
+			log.Printf("VCCDocumentUpload upload(%d): %v", user.PersonID, err)
+			http.Error(w, `{"error":"upload failed"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+
+	doc, err := h.store.CreateLibraryDocument(r.Context(), user.PersonID,
+		title, category, year, fileName, objectKey, externalURL)
+	if err != nil {
+		if objectKey != "" {
+			_ = h.storage.Delete(r.Context(), objectKey)
+		}
+		log.Printf("CreateLibraryDocument(%d): %v", user.PersonID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"id":%d,"title":%q,"category":%q,"year":%d,"file_name":%q,"external_url":%q}`,
+		doc.ID, doc.Title, doc.Category, doc.Year, doc.FileName, doc.ExternalURL)
+}
+
+func (h *Handler) VCCDocumentDelete(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	docID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	objectKey, err := h.store.GetTeacherDocumentObjectKey(r.Context(), user.PersonID, docID)
+	if err != nil {
+		log.Printf("GetTeacherDocumentObjectKey(%d,%d): %v", user.PersonID, docID, err)
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	if objectKey != "" {
+		if err := h.storage.Delete(r.Context(), objectKey); err != nil {
+			log.Printf("VCCDocumentDelete storage(%d,%d): %v", user.PersonID, docID, err)
+		}
+	}
+	if err := h.store.DeleteTeacherDocument(r.Context(), user.PersonID, docID); err != nil {
+		log.Printf("DeleteTeacherDocument(%d,%d): %v", user.PersonID, docID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) VCCDocumentDownload(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	docID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	objectKey, err := h.store.GetTeacherDocumentObjectKey(r.Context(), user.PersonID, docID)
+	if err != nil || objectKey == "" {
+		http.NotFound(w, r)
+		return
+	}
+	url, err := h.storage.PresignedURL(r.Context(), objectKey)
+	if err != nil {
+		log.Printf("VCCDocumentDownload presign(%d,%d): %v", user.PersonID, docID, err)
+		http.Error(w, "could not generate download link", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, url, http.StatusFound)
 }
 
 func parseDateField(s string) pgtype.Date {

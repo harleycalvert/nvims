@@ -1,8 +1,16 @@
-echo "==> Restarting Go server..."
-fuser -k 8080/tcp 2>/dev/null || true
-sleep 1
-cd "$HOME/nvims-sms/src"
-nohup go run ./cmd/server >> /tmp/nvims-server.log 2>&1 &
-echo "==> Server restarted (PID $!, log: /tmp/nvims-server.log)"
+echo "==> Restarting PostgreSQL..."
+sudo systemctl restart postgresql@16-main
+echo "==> PostgreSQL restarted."
 
+echo "==> Restarting MinIO..."
+sudo systemctl restart minio
+echo "==> MinIO restarted."
+
+echo "==> Building Go server..."
+cd "$HOME/nvims-sms/src"
+go build -o "$HOME/nvims-sms/nvims-sms" ./cmd/server
+echo "==> Restarting Go server..."
+sudo systemctl restart nvims
+
+echo "==> Server restarted."
 echo "==> Done."
