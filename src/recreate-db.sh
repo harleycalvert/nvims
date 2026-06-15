@@ -12,7 +12,7 @@ set -a; source "$ENV_FILE"; set +a
 DB="nvims"
 DB_USER="nvims"
 DB_PASS="${DB_PASS:?DB_PASS not set in nvims.env}"
-SQL="$HOME/nvims-sms/src/nvims-sms.sql"
+SQL="$HOME/nvims-sms/src/nvims.sql"
 SEED="$HOME/nvims/private_seed/private_seed.py"
 
 echo "==> Dropping database '$DB' (if exists)..."

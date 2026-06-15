@@ -154,6 +154,8 @@ func New(st *store.Store, sessions *auth.Sessions, stor *storage.Client) *Handle
 			"templates/backup.html",
 			"templates/partials/sidebar.html",
 			"templates/partials/admin-nav.html",
+			"templates/workplan/menu.html",
+			"templates/workplan/availability.html",
 			"templates/vcc/menu.html",
 			"templates/vcc/document-library.html",
 			"templates/vcc/vocational-evidence.html",
@@ -2385,6 +2387,229 @@ func containsStr(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func (h *Handler) WorkplanMenu(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	h.render(w, "workplan-menu", map[string]any{"User": user})
+}
+
+type availDay struct {
+	DayNum    int
+	DayName   string
+	ShortName string
+	Available bool
+	StartTime string
+	EndTime   string
+	Notes     string
+}
+
+func (h *Handler) WorkplanAvailability(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	if user.PersonID == 0 {
+		http.Error(w, "no linked person", http.StatusForbidden)
+		return
+	}
+
+	empStatus, _ := h.store.GetTeacherEmploymentStatus(r.Context(), user.PersonID)
+	rows, err := h.store.GetTeacherAvailability(r.Context(), user.PersonID)
+	if err != nil {
+		log.Printf("GetTeacherAvailability(%d): %v", user.PersonID, err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	byDay := make(map[int]store.TeacherAvailability)
+	for _, a := range rows {
+		byDay[a.Day] = a
+	}
+
+	days := []availDay{
+		{1, "Monday", "Mon", false, "08:00", "22:00", ""},
+		{2, "Tuesday", "Tue", false, "08:00", "22:00", ""},
+		{3, "Wednesday", "Wed", false, "08:00", "22:00", ""},
+		{4, "Thursday", "Thu", false, "08:00", "22:00", ""},
+		{5, "Friday", "Fri", false, "08:00", "22:00", ""},
+		{6, "Saturday", "Sat", false, "08:00", "22:00", ""},
+	}
+	for i, d := range days {
+		if a, ok := byDay[d.DayNum]; ok {
+			days[i].Available = true
+			days[i].StartTime = a.StartTime
+			days[i].EndTime = a.EndTime
+			days[i].Notes = a.Notes
+		}
+	}
+
+	leaveReqs, err := h.store.ListLeaveRequests(r.Context(), user.PersonID)
+	if err != nil {
+		log.Printf("ListLeaveRequests(%d): %v", user.PersonID, err)
+		leaveReqs = nil
+	}
+
+	h.render(w, "workplan-availability", map[string]any{
+		"User":           user,
+		"EmploymentType": empStatus,
+		"Days":           days,
+		"HasAny":         len(rows) > 0,
+		"LeaveRequests":  leaveReqs,
+	})
+}
+
+func (h *Handler) WorkplanAvailabilitySet(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	if user.PersonID == 0 {
+		http.Error(w, `{"error":"no linked person"}`, http.StatusForbidden)
+		return
+	}
+	dayStr := r.PathValue("day")
+	var day int
+	fmt.Sscanf(dayStr, "%d", &day)
+	if day < 1 || day > 6 {
+		http.Error(w, `{"error":"invalid day"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	start := strings.TrimSpace(r.FormValue("start"))
+	end := strings.TrimSpace(r.FormValue("end"))
+	notes := strings.TrimSpace(r.FormValue("notes"))
+	if start == "" || end == "" {
+		http.Error(w, `{"error":"start and end required"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.UpsertTeacherAvailability(r.Context(), user.PersonID, day, start, end, notes); err != nil {
+		log.Printf("UpsertTeacherAvailability(%d, %d): %v", user.PersonID, day, err)
+		http.Error(w, `{"error":"save failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"ok":true}`)
+}
+
+func (h *Handler) WorkplanAvailabilityDelete(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	if user.PersonID == 0 {
+		http.Error(w, `{"error":"no linked person"}`, http.StatusForbidden)
+		return
+	}
+	dayStr := r.PathValue("day")
+	var day int
+	fmt.Sscanf(dayStr, "%d", &day)
+	if day < 1 || day > 6 {
+		http.Error(w, `{"error":"invalid day"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.DeleteTeacherAvailability(r.Context(), user.PersonID, day); err != nil {
+		log.Printf("DeleteTeacherAvailability(%d, %d): %v", user.PersonID, day, err)
+		http.Error(w, `{"error":"delete failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"ok":true}`)
+}
+
+func (h *Handler) WorkplanAvailabilitySetDefaults(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	if user.PersonID == 0 {
+		http.Error(w, `{"error":"no linked person"}`, http.StatusForbidden)
+		return
+	}
+	for day := 1; day <= 5; day++ {
+		if err := h.store.UpsertTeacherAvailability(r.Context(), user.PersonID, day, "08:00", "22:00", ""); err != nil {
+			log.Printf("UpsertTeacherAvailability defaults (%d, %d): %v", user.PersonID, day, err)
+			http.Error(w, `{"error":"save failed"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+	http.Redirect(w, r, "/workplan/availability", http.StatusSeeOther)
+}
+
+func (h *Handler) WorkplanLeaveCreate(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	if user.PersonID == 0 {
+		http.Error(w, `{"error":"no linked person"}`, http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+
+	leaveType := strings.TrimSpace(r.FormValue("leave_type"))
+	notes := strings.TrimSpace(r.FormValue("notes"))
+	mode := r.FormValue("mode") // "range" or "individual"
+
+	var dates []string
+	if mode == "range" {
+		start := r.FormValue("range_start")
+		end := r.FormValue("range_end")
+		if start == "" || end == "" {
+			http.Error(w, `{"error":"start and end date required"}`, http.StatusBadRequest)
+			return
+		}
+		startDate, err1 := time.Parse("2006-01-02", start)
+		endDate, err2 := time.Parse("2006-01-02", end)
+		if err1 != nil || err2 != nil || endDate.Before(startDate) {
+			http.Error(w, `{"error":"invalid date range"}`, http.StatusBadRequest)
+			return
+		}
+		for d := startDate; !d.After(endDate); d = d.AddDate(0, 0, 1) {
+			dates = append(dates, d.Format("2006-01-02"))
+		}
+	} else {
+		for _, d := range r.Form["dates[]"] {
+			d = strings.TrimSpace(d)
+			if d != "" {
+				if _, err := time.Parse("2006-01-02", d); err == nil {
+					dates = append(dates, d)
+				}
+			}
+		}
+	}
+
+	if len(dates) == 0 {
+		http.Error(w, `{"error":"no dates selected"}`, http.StatusBadRequest)
+		return
+	}
+
+	isPartial := r.FormValue("is_partial") == "1"
+	partialStart := strings.TrimSpace(r.FormValue("partial_start"))
+	partialEnd := strings.TrimSpace(r.FormValue("partial_end"))
+	if isPartial && len(dates) > 1 {
+		http.Error(w, `{"error":"partial day only allowed for a single day"}`, http.StatusBadRequest)
+		return
+	}
+
+	id, err := h.store.CreateLeaveRequest(r.Context(), user.PersonID,
+		leaveType, isPartial, partialStart, partialEnd, notes, dates)
+	if err != nil {
+		log.Printf("CreateLeaveRequest(%d): %v", user.PersonID, err)
+		http.Error(w, `{"error":"save failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"ok":true,"id":%d}`, id)
+}
+
+func (h *Handler) WorkplanLeaveCancel(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	if user.PersonID == 0 {
+		http.Error(w, `{"error":"no linked person"}`, http.StatusForbidden)
+		return
+	}
+	var id int64
+	fmt.Sscanf(r.PathValue("id"), "%d", &id)
+	if err := h.store.CancelLeaveRequest(r.Context(), user.PersonID, id); err != nil {
+		log.Printf("CancelLeaveRequest(%d, %d): %v", user.PersonID, id, err)
+		http.Error(w, `{"error":"cancel failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprint(w, `{"ok":true}`)
 }
 
 // VCCMenu — landing page with section tiles.

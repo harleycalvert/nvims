@@ -3070,3 +3070,189 @@ func (s *Store) DeleteEnrollment(ctx context.Context, id int64) error {
 	return err
 }
 
+
+// ── Teacher availability ──────────────────────────────────────────────────
+
+type TeacherAvailability struct {
+	Day       int    // 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+	StartTime string // "08:00"
+	EndTime   string // "22:00"
+	Notes     string
+}
+
+func (s *Store) GetTeacherAvailability(ctx context.Context, teacherID int64) ([]TeacherAvailability, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT day_of_week,
+		       TO_CHAR(start_time, 'HH24:MI'),
+		       TO_CHAR(end_time,   'HH24:MI'),
+		       COALESCE(notes, '')
+		FROM public.teacher_availability
+		WHERE teacher_id = $1
+		ORDER BY day_of_week
+	`, teacherID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TeacherAvailability
+	for rows.Next() {
+		var a TeacherAvailability
+		if err := rows.Scan(&a.Day, &a.StartTime, &a.EndTime, &a.Notes); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) UpsertTeacherAvailability(ctx context.Context, teacherID int64, day int, startTime, endTime, notes string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO public.teacher_availability (teacher_id, day_of_week, start_time, end_time, notes)
+		VALUES ($1, $2, $3::time, $4::time, NULLIF($5, ''))
+		ON CONFLICT (teacher_id, day_of_week) DO UPDATE
+		    SET start_time = EXCLUDED.start_time,
+		        end_time   = EXCLUDED.end_time,
+		        notes      = EXCLUDED.notes
+	`, teacherID, day, startTime, endTime, notes)
+	return err
+}
+
+func (s *Store) DeleteTeacherAvailability(ctx context.Context, teacherID int64, day int) error {
+	_, err := s.pool.Exec(ctx, `
+		DELETE FROM public.teacher_availability
+		WHERE teacher_id = $1 AND day_of_week = $2
+	`, teacherID, day)
+	return err
+}
+
+func (s *Store) GetTeacherEmploymentStatus(ctx context.Context, teacherID int64) (string, error) {
+	var status string
+	err := s.pool.QueryRow(ctx, `
+		SELECT COALESCE(sf.employment_status::text, '')
+		FROM public.teachers t
+		JOIN public.staff sf ON sf.id = t.id
+		WHERE t.id = $1
+	`, teacherID).Scan(&status)
+	return status, err
+}
+
+// ── Leave requests ────────────────────────────────────────────────────────
+
+type LeaveRequest struct {
+	ID            int64
+	LeaveType     string
+	IsPartialDay  bool
+	PartialStart  string // "HH:MM" or ""
+	PartialEnd    string
+	Notes         string
+	Status        string
+	ApproverNotes string
+	CreatedAt     time.Time
+	Dates         []string // "YYYY-MM-DD" sorted
+}
+
+func (s *Store) CreateLeaveRequest(
+	ctx context.Context,
+	teacherID int64,
+	leaveType string,
+	isPartialDay bool,
+	partialStart, partialEnd string,
+	notes string,
+	dates []string,
+) (int64, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+
+	var id int64
+	var ps, pe interface{}
+	if isPartialDay && partialStart != "" && partialEnd != "" {
+		ps, pe = partialStart, partialEnd
+	}
+	err = tx.QueryRow(ctx, `
+		INSERT INTO public.leave_requests
+		    (teacher_id, leave_type, is_partial_day, partial_start, partial_end, notes)
+		VALUES ($1, $2, $3, $4::time, $5::time, NULLIF($6,''))
+		RETURNING id
+	`, teacherID, leaveType, isPartialDay, ps, pe, notes).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+	for _, d := range dates {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO public.leave_request_dates (request_id, leave_date)
+			VALUES ($1, $2::date)
+			ON CONFLICT DO NOTHING
+		`, id, d); err != nil {
+			return 0, err
+		}
+	}
+	return id, tx.Commit(ctx)
+}
+
+func (s *Store) ListLeaveRequests(ctx context.Context, teacherID int64) ([]LeaveRequest, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT lr.id, lr.leave_type, lr.is_partial_day,
+		       COALESCE(TO_CHAR(lr.partial_start,'HH24:MI'),''),
+		       COALESCE(TO_CHAR(lr.partial_end,  'HH24:MI'),''),
+		       COALESCE(lr.notes,''), lr.status,
+		       COALESCE(lr.approver_notes,''),
+		       lr.created_at,
+		       ARRAY_AGG(lrd.leave_date::text ORDER BY lrd.leave_date) AS dates
+		FROM public.leave_requests lr
+		JOIN public.leave_request_dates lrd ON lrd.request_id = lr.id
+		WHERE lr.teacher_id = $1
+		GROUP BY lr.id
+		ORDER BY MIN(lrd.leave_date) DESC, lr.created_at DESC
+	`, teacherID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []LeaveRequest
+	for rows.Next() {
+		var r LeaveRequest
+		var dates pgtype.Array[string]
+		if err := rows.Scan(
+			&r.ID, &r.LeaveType, &r.IsPartialDay,
+			&r.PartialStart, &r.PartialEnd,
+			&r.Notes, &r.Status, &r.ApproverNotes,
+			&r.CreatedAt, &dates,
+		); err != nil {
+			return nil, err
+		}
+		r.Dates = dates.Elements
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) CancelLeaveRequest(ctx context.Context, teacherID, requestID int64) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.leave_requests SET status = 'Cancelled'
+		WHERE id = $1 AND teacher_id = $2 AND status = 'Pending'
+	`, requestID, teacherID)
+	return err
+}
+
+func (s *Store) ApproveLeaveRequest(ctx context.Context, approverID, requestID int64, notes string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.leave_requests
+		SET status = 'Approved', approved_by = $1, approved_at = NOW(),
+		    approver_notes = NULLIF($2,'')
+		WHERE id = $3 AND status = 'Pending'
+	`, approverID, notes, requestID)
+	return err
+}
+
+func (s *Store) DeclineLeaveRequest(ctx context.Context, approverID, requestID int64, notes string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.leave_requests
+		SET status = 'Declined', approved_by = $1, approved_at = NOW(),
+		    approver_notes = NULLIF($2,'')
+		WHERE id = $3 AND status = 'Pending'
+	`, approverID, notes, requestID)
+	return err
+}
