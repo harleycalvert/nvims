@@ -1,8 +1,8 @@
-# A National VET Information Management System (NVIMS), Student Management System (SMS) — Database Design
+# A National VET Information Management System (NVIMS), Student Management System (SMS) — Database Design v0.41, 2026-06-15
 
-PostgreSQL schema for a national, potentially AVETMISS-compliant Student Management System (SMS)
+PostgreSQL schema for a national, AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.41`: its entities, relationships, business rules, and the
+describes the design of `v0.41` (2026-06-15): its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -28,10 +28,11 @@ mapping to the AVETMISS NAT reporting files.
   - [10. Timesheet](#10-timesheet)
   - [11. Employment services](#11-employment-services)
   - [12. VCC](#12-vcc)
-  - [13. Intakes & cohorts](#13-intakes--cohorts)
+  - [13. System settings](#13-system-settings)
+  - [14. Intakes & cohorts](#14-intakes--cohorts)
 - [Table reference](#table-reference)
 - [Data dictionary](#data-dictionary)
-  - Identity & reference: [`people`](#people) · [`students`](#students) · [`staff`](#staff) · [`staff_availability`](#staff_availability) · [`teachers`](#teachers) · [`teacher_availability`](#teacher_availability) · [`app_users`](#app_users) · [`teacher_yearly_balances`](#teacher_yearly_balances) · [`teacher_period_allocations`](#teacher_period_allocations) · [`student_guardians`](#student_guardians) · [`student_disabilities`](#student_disabilities) · [`student_prior_achievements`](#student_prior_achievements) · [`australian_states`](#australian_states) · [`disability_types`](#disability_types) · [`prior_educational_achievements`](#prior_educational_achievements) · [`highest_school_levels`](#highest_school_levels) · [`secondary_schools`](#secondary_schools) · [`faculties`](#faculties)
+  - Identity & reference: [`people`](#people) · [`students`](#students) · [`staff`](#staff) · [`staff_availability`](#staff_availability) · [`teachers`](#teachers) · [`teacher_availability`](#teacher_availability) · [`app_users`](#app_users) · [`app_user_roles`](#app_user_roles) · [`teacher_yearly_balances`](#teacher_yearly_balances) · [`teacher_period_allocations`](#teacher_period_allocations) · [`student_guardians`](#student_guardians) · [`student_disabilities`](#student_disabilities) · [`student_prior_achievements`](#student_prior_achievements) · [`australian_states`](#australian_states) · [`disability_types`](#disability_types) · [`prior_educational_achievements`](#prior_educational_achievements) · [`highest_school_levels`](#highest_school_levels) · [`secondary_schools`](#secondary_schools) · [`faculties`](#faculties) · [`departments`](#departments) · [`person_departments`](#person_departments)
   - Curriculum: [`programs`](#programs) · [`subjects`](#subjects) · [`subject_programs`](#subject_programs)
   - Intakes & cohorts: [`program_intakes`](#program_intakes) · [`intake_groups`](#intake_groups)
   - Enrolment & extensions: [`student_course_enrollments`](#student_course_enrollments) · [`client_subject_enrolments`](#client_subject_enrolments) · [`apprenticeship_details`](#apprenticeship_details) · [`traineeship_details`](#traineeship_details) · [`training_plans`](#training_plans) · [`learning_access_plans`](#learning_access_plans) · [`vet_student_loans`](#vet_student_loans) · [`he_enrolment_details`](#he_enrolment_details) · [`enrollment_credit_claims`](#enrollment_credit_claims) · [`state_funding_details`](#state_funding_details)
@@ -44,6 +45,7 @@ mapping to the AVETMISS NAT reporting files.
   - Timesheet: [`pay_periods`](#pay_periods) · [`timesheets`](#timesheets) · [`timesheet_entries`](#timesheet_entries)
   - Employment services: [`student_employment_services`](#student_employment_services) · [`student_employment_registrations`](#student_employment_registrations)
   - VCC: [`teacher_vccs`](#teacher_vccs) · [`teacher_vcc_professional_qualifications`](#teacher_vcc_professional_qualifications) · [`teacher_vcc_vocational_qualifications`](#teacher_vcc_vocational_qualifications) · [`teacher_vcc_vocational_evidence`](#teacher_vcc_vocational_evidence) · [`teacher_vcc_professional_evidence`](#teacher_vcc_professional_evidence) · [`teacher_vcc_courses`](#teacher_vcc_courses) · [`teacher_vcc_units`](#teacher_vcc_units) · [`teacher_vcc_unit_elements`](#teacher_vcc_unit_elements) · [`teacher_documents`](#teacher_documents) · [`teacher_document_connections`](#teacher_document_connections) · [`teacher_currency_activities`](#teacher_currency_activities) · [`teacher_currency_unit_links`](#teacher_currency_unit_links) · [`teacher_vcc_profiling`](#teacher_vcc_profiling)
+  - System: [`system_settings`](#system_settings)
 - [Business rules & constraints](#business-rules--constraints)
 - [Functions & triggers](#functions--triggers)
 - [AVETMISS NAT file mapping](#avetmiss-nat-file-mapping)
@@ -62,6 +64,131 @@ mapping to the AVETMISS NAT reporting files.
 2. **New table `teacher_vcc_professional_evidence`.** Identical schema to `teacher_vcc_vocational_evidence` — records VET Knowledge Currency professional evidence declared in a VCC. Constraints: `fk_vcc_profevid_vcc`, `chk_vcc_profevid_status`, `chk_vcc_profevid_month`. Index: `idx_vcc_profevid_vcc (vcc_id)`.
 
 3. **`teacher_document_connections` updated.** Column `vcc_credential_id` renamed to `vcc_vocational_evidence_id` (FK `fk_tdc_credential` dropped, replaced by `fk_tdc_voc_evidence` → `teacher_vcc_vocational_evidence`). New column `vcc_professional_evidence_id bigint NULL` added with FK `fk_tdc_prof_evidence` → `teacher_vcc_professional_evidence`. `chk_tdc_target` now checks `num_nonnulls` across 7 columns (was 6).
+
+### v0.40 — prior
+
+1. **New table `teacher_vcc_credentials`** (renamed `teacher_vcc_vocational_evidence` in v0.41). Columns: `credential_code`, `credential_title`, `issuing_organisation`, `month` (1–12), `year`, `status`, `approved_at`, `notes`. FK → `teacher_vccs`. No `aqf_level`.
+2. **`teacher_document_connections`**: added `vcc_credential_id bigint NULL` FK → `teacher_vcc_credentials(id)` ON DELETE CASCADE; updated `num_nonnulls` check.
+
+### v0.39 — prior
+
+1. **`teacher_vcc_professional_qualifications`**: replaced `date_of_completion` with `year smallint NULL`.
+2. **`teacher_vcc_vocational_qualifications`**: same — replaced `date_of_completion` with `year smallint NULL`.
+3. **`teacher_currency_activities`**: added `external_url varchar(2048) NULL`.
+
+### v0.36 — prior
+
+1. **`class_sessions`**: added `building_id bigint NULL` FK → `buildings(id)` ON DELETE SET NULL. Allows a session to be assigned directly to a building without requiring a room (e.g. Building W at Frankston). The application resolves the effective building as `COALESCE(cs.building_id, r.building_id)`.
+
+### v0.34 — prior
+
+1. **New table `leave_requests`**: teacher leave requests with leave type, optional partial-day times, and status workflow (Pending → Approved / Declined / Cancelled), approver fields.
+2. **New table `leave_request_dates`**: individual calendar dates per leave request (supports non-contiguous day selection and date-range expansion). Indexed on `leave_date`.
+
+### v0.33 — prior
+
+1. **`teacher_availability`**: added `start_time time NOT NULL DEFAULT '08:00'`, `end_time time NOT NULL DEFAULT '22:00'`, and `notes text NULL`.
+2. **`teacher_availability.chk_teacher_avail_day`**: range corrected to `BETWEEN 1 AND 6` (Mon–Sat; Sunday excluded).
+3. **`teacher_availability`**: added `chk_teacher_avail_times CHECK (end_time > start_time)`.
+
+### v0.32 — prior
+
+1. **`people → staff → teachers` chain** (was `people → teachers` directly). `teachers.id` now references `staff.id` (ON DELETE CASCADE) instead of `people.id`. `staff` must be created before `teachers` in schema order.
+2. **`teachers`**: removed `teacher_number` (now inherited as `staff.staff_number`).
+3. **`teachers`**: removed `teacher_email`, `employment_status`, `fte` (now on `staff`).
+4. **`staff`**: now an optional extension of `people`; `staff.id` references `people.id`. Holds `staff_number`, `staff_email`, `employment_status`, `fte`.
+
+### v0.31 — prior
+
+1. **`teacher_vcc_professional_qualifications`**: added `aqf_level smallint NULL`.
+2. **`teacher_vcc_vocational_qualifications`**: added `aqf_level smallint NULL`.
+
+### v0.30 — prior
+
+1. Replaced `qual_type` discriminator with a dedicated `teacher_vcc_vocational_qualifications` table (same schema as `teacher_vcc_professional_qualifications`, no `qual_type` column).
+2. **`teacher_document_connections`**: added `vcc_vocational_qual_id` FK and updated `num_nonnulls` check to include it.
+
+### v0.28 — prior
+
+1. **`teacher_documents`**: `document_url` and `file_name` made nullable to support link-only documents (title + `external_url`, no file upload) for VCC evidence records.
+
+### v0.27 — prior
+
+1. **`buildings`**: added `address text NULL`, `suburb varchar(50) NULL`, `state_code varchar(3) NULL` (FK → `australian_states`), and `postcode varchar(4) NULL` for buildings at distinct street addresses.
+
+### v0.26 — prior
+
+1. **`delivery_locations`**: added `latitude numeric(9,6) NULL` and `longitude numeric(9,6) NULL` for GPS coordinates.
+2. **`buildings`**: added `latitude numeric(9,6) NULL` and `longitude numeric(9,6) NULL` for GPS coordinates.
+
+### v0.25 — prior
+
+1. **`teacher_documents`**: added `external_url varchar(2048) NULL` for linking to digital badges, eQuals transcripts, or other verification pages.
+2. **`rooms`**: added `is_computer_lab boolean NOT NULL DEFAULT false`.
+3. **New table `room_computer_lab_specs`**: hardware profile for lab rooms (workstations, ram_gb, has_microphone, has_webcam).
+4. **New table `room_lab_software`**: software titles installed per lab room.
+5. **New table `room_issues`**: fault/maintenance issues per room with Open/Investigating/Resolved workflow.
+6. **New table `person_location_preferences`**: per-person ranked delivery location preferences; equal ranks permitted.
+
+### v0.24 — prior
+
+1. **`app_users.role` (single varchar) replaced by `app_user_roles` table.** A user may hold multiple roles simultaneously (e.g. Trainer + Student). Roleless accounts are valid (service accounts, pending onboarding). `app_users.is_active` remains as an account-level lock. `app_user_roles.revoked_at` is NULL while the role is active; set to the revocation timestamp when removed. The surrogate PK allows re-granting a previously revoked role while preserving audit history. A partial unique index (`uq_aur_active_role`) prevents duplicate active grants for the same `(user_id, role)` pair. Login evaluation: account must be active AND at least one role row must have `revoked_at IS NULL`.
+
+### v0.23 — prior
+
+1. **`police_check_status` / `police_check_date`** moved from `teachers` and `staff` to `people`. Any person (student, teacher, staff, guardian) may be subject to a police check; storing it on `people` avoids duplication across role tables.
+
+### v0.22 — prior
+
+1. **`program_intakes`**: gains `graded_assessment boolean NOT NULL DEFAULT false`. When true, the results UI requires a grade value (e.g. P, CR, D, HD) in addition to the standard VET competency outcome (SC / NS).
+
+### v0.21 — prior
+
+1. **`program_intakes.intake_name`**: widened `varchar(100)` → `varchar(150)`.
+
+### v0.20 — prior
+
+1. **`program_intakes`**: added `duration_years numeric(3,1)` — the calendar duration of the program in years.
+
+### v0.19 — prior
+
+1. **New tables `program_intakes` and `intake_groups`** (section 4.5). `intake_group_id` (nullable FK) added to `student_course_enrollments` and `classes`.
+
+### v0.18 — prior
+
+1. **`people`**: `photo_url varchar(2048)` and `photo_uploaded_at timestamptz` moved from `students` to `people`.
+
+### v0.17 — prior
+
+1. **`people`**: gains `wwcc_number text` and `wwcc_expiry date` for Working with Children Check details.
+2. **New tables `student_employment_services` and `student_employment_registrations`** for Centrelink CRN, job seeker, and provider registration data.
+3. **VCC tables** (`teacher_vccs`, `teacher_vcc_professional_qualifications`, `teacher_vcc_courses`, `teacher_vcc_units`, `teacher_documents`, `teacher_document_connections`, `teacher_currency_activities`, `teacher_currency_unit_links`, `teacher_vcc_profiling`) introduced.
+4. **`programs`**: gains `program_type varchar(20)`.
+5. **`subject_programs`**: gains `is_core boolean`, `group_code varchar(20)`, `group_title varchar(100)`.
+6. **`session_attendance`**: extended with `units_nominated`, `arrived_at`/`departed_at`, `break_minutes`, `absence_reason`, `absence_is_acceptable`, `has_childcare`, `is_note_private`. `chk_attendance_status` extended with `'Not-Applicable'`.
+
+### v0.16 — prior
+
+1. **`people`**: added `preferred_contact_method varchar(20)`.
+2. **`student_guardians`**: added `is_emergency_contact boolean`.
+
+### v0.15 — prior
+
+1. **`classes`**: added `group_code varchar(20)` (legacy free-text cohort label). Index `idx_classes_group` on `(academic_period_id, group_code)`.
+
+### v0.14 — prior
+
+1. **`fn_upper_family_name` / `trg_upper_family_name`**: `BEFORE INSERT OR UPDATE OF family_name ON people` normalises `family_name` to `UPPER()`.
+
+### v0.13 — prior
+
+1. **New table `messages`**: teacher-composed individual messages with Draft → Sent → Failed workflow.
+2. **New table `message_recipients`**: per-recipient delivery rows for direct messages; includes `teacher_id` FK and `is_cc` boolean.
+3. **`fn_cc_sender_on_send` / `trg_cc_sender_on_send`**: auto-inserts sender CC row on status transition to `'Sent'`.
+4. **New table `pay_periods`**: administrator-defined pay periods.
+5. **New table `timesheets`**: one per teacher per pay period. Status Draft → Submitted → Approved → Exported.
+6. **New table `timesheet_entries`**: individual hour lines with `entry_type`, `class_session_id`, `workplan_entry_id`, `is_overtime`.
+7. **View `vw_timesheet_summary`** added.
 
 ---
 
@@ -167,7 +294,10 @@ erDiagram
     PEOPLE ||--o| STAFF : "is-a (shared PK)"
     STAFF ||--o| TEACHERS : "is-a (shared PK)"
     PEOPLE ||--o{ APP_USERS : "may log in as"
+    APP_USERS ||--o{ APP_USER_ROLES : "holds roles"
     FACULTIES ||--o{ STAFF : employs
+    FACULTIES ||--o{ DEPARTMENTS : contains
+    PEOPLE }o--o{ DEPARTMENTS : "assigned to (via PERSON_DEPARTMENTS)"
     STUDENTS ||--o{ STUDENT_GUARDIANS : has
     STUDENTS ||--o{ STUDENT_DISABILITIES : declares
     STUDENTS ||--o{ STUDENT_PRIOR_ACHIEVEMENTS : declares
@@ -212,7 +342,15 @@ erDiagram
     APP_USERS {
         bigserial id PK
         bigint person_id FK
+        varchar username UK
+        boolean is_active
+    }
+    APP_USER_ROLES {
+        bigserial id PK
+        bigint user_id FK
         varchar role
+        timestamptz granted_at
+        timestamptz revoked_at "NULL = active"
     }
 ```
 
@@ -638,7 +776,8 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | `students` | Student-specific data: student number, USI, AVETMISS demographics, photo, ID expiry. Shares PK with `people`. Soft-deletable. | PK = FK → `people`; → `secondary_schools`, `highest_school_levels` |
 | `staff` | Support, admin, and teaching staff. Shares PK with `people`. Number, email, employment status, FTE, and faculty all live here. May be extended into a `teachers` row. | PK = FK → `people`; → `faculties` |
 | `teachers` | Teaching-specific capacity data: sector (`VET`/`HE`/`DUAL`), annual hours cap, optional per-period cap. Always paired with a `staff` row which provides number, email, employment, and faculty. | PK = FK → `staff` |
-| `app_users` | Login/system accounts and RBAC role. Source of every `*_by` audit actor. | → `people` (nullable, for service accounts) |
+| `app_users` | Login/system accounts (without embedded role since v0.24). Source of every `*_by` audit actor. `is_active` is account-level lock. | → `people` (nullable, for service accounts) |
+| `app_user_roles` | Per-user role grants. A user may hold multiple active roles simultaneously. `revoked_at IS NULL` = currently active. Partial unique index prevents duplicate active grants. | → `app_users` |
 | `teacher_yearly_balances` | Maintained cache of booked teaching hours per teacher per calendar year. Cap seeded from `teachers.default_max_hours_per_year`; overridable per-year. | → `teachers` |
 | `teacher_period_allocations` | Per-academic-period hour cap and running total for HE/DUAL teachers with `max_hours_per_period` set. Auto-created on first session booking. | → `teachers`, `academic_periods` |
 | `student_guardians` | Guardians/emergency contacts (`is_emergency_contact`); comms targets for under-18s. | → `students` |
@@ -646,6 +785,8 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | `student_prior_achievements` | Prior educational achievement (NAT00100). | → `students`, `prior_educational_achievements` |
 | `australian_states` | State/territory reference, incl. the **numeric AVETMISS state id**. | — |
 | `disability_types`, `prior_educational_achievements`, `highest_school_levels`, `secondary_schools`, `faculties` | Classification & org reference data. | — |
+| `departments` | Second-level organisational units within a faculty. Soft-deletable. Referenced by `classes` and `programs`. | → `faculties` |
+| `person_departments` | Many-to-many assignment of people to departments. | → `people`, `departments` |
 
 ### Curriculum
 
@@ -952,14 +1093,14 @@ Days of the week a staff member is available to work. Each row marks one availab
 
 #### `app_users`
 
-System login accounts and RBAC roles. Each account links to a person via `person_id` (nullable for service accounts). The `role` column drives access control (`Admin`, `Trainer`, `Compliance`, `Reception`, `SupportStaff`, `System`, `Staff`, `Student`). Every `*_by` audit column in the schema (e.g. `recorded_by`, `submitted_by`, `deleted_by`, `created_by`) references this table, making it the universal audit actor. Also used as the sender identity for `messages` and `message_campaigns`.
+System login accounts. Each account links to a person via `person_id` (nullable for service accounts). `is_active` is an account-level lock — disabling it prevents login regardless of role grants. Roles are stored separately in `app_user_roles` (added in v0.24); a user may hold multiple roles simultaneously, or none (service/pending accounts). Every `*_by` audit column in the schema (e.g. `recorded_by`, `submitted_by`, `deleted_by`, `created_by`) references this table, making it the universal audit actor. Also used as the sender identity for `messages` and `message_campaigns`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `id` | `bigserial` | no |  | PK |
 | `person_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;people |
 | `username` | `varchar(100)` | no |  | UK |
-| `role` | `varchar(30)` | no | `'Staff'` |  |
+| `password_hash` | `varchar(255)` | no | `''` |  |
 | `is_active` | `boolean` | no | `true` |  |
 | `last_login_at` | `timestamp with time zone` | yes |  |  |
 | `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
@@ -970,7 +1111,26 @@ System login accounts and RBAC roles. Each account links to a person via `person
 - `PRIMARY KEY (id)`
 - `CONSTRAINT uq_app_user_username UNIQUE (username)`
 - `CONSTRAINT fk_app_user_person FOREIGN KEY (person_id) REFERENCES public.people(id) ON DELETE SET NULL`
-- `CONSTRAINT chk_app_user_role CHECK (role IN ('Admin','Trainer','Compliance','Reception','SupportStaff','System','Staff','Student'))`
+
+#### `app_user_roles`
+
+Per-user role grants. A user may hold multiple roles simultaneously (e.g. `Trainer` + `Student`) and may hold no roles (service accounts, pending onboarding). `revoked_at IS NULL` means the role is currently active; setting `revoked_at` revokes it while preserving the history row. The surrogate PK allows the same role to be re-granted after revocation. The partial unique index `uq_aur_active_role` prevents duplicate active grants for the same `(user_id, role)` pair. Login evaluation: `app_users.is_active` must be `true` AND at least one `app_user_roles` row for the user must have `revoked_at IS NULL`. Added in v0.24.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `user_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;app_users |
+| `role` | `varchar(30)` | no |  |  |
+| `granted_at` | `timestamp with time zone` | no | `CURRENT_TIMESTAMP` |  |
+| `revoked_at` | `timestamp with time zone` | yes |  |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_aur_user FOREIGN KEY (user_id) REFERENCES public.app_users(id) ON DELETE CASCADE`
+- `CONSTRAINT chk_aur_role CHECK (role IN ('Admin','Trainer','Compliance','Reception','SupportStaff','System','Staff','Student'))`
+
+*Indexes:* `UNIQUE INDEX uq_aur_active_role (user_id, role) WHERE (revoked_at IS NULL)`
 
 #### `teacher_yearly_balances`
 
@@ -1090,8 +1250,8 @@ Prior educational achievement declarations required for AVETMISS NAT00100 report
 *Constraints:*
 
 - `PRIMARY KEY (student_id, achievement_id)`
-- `CONSTRAINT fk_stud_ach_student FOREIGN KEY (student_id) REFERENCES public.students (id) ON DELETE CASCADE`
-- `CONSTRAINT fk_stud_ach_type FOREIGN KEY (achievement_id) REFERENCES public.prior_educational_achievements (achievement_id) ON DELETE RESTRICT`
+- `CONSTRAINT fk_spa_student FOREIGN KEY (student_id) REFERENCES public.students (id) ON DELETE CASCADE`
+- `CONSTRAINT fk_spa_achievement FOREIGN KEY (achievement_id) REFERENCES public.prior_educational_achievements (achievement_id) ON DELETE RESTRICT`
 
 #### `australian_states`
 
@@ -1177,6 +1337,37 @@ Organisational units (faculties or departments) within the training organisation
 
 - `PRIMARY KEY (id)`
 
+#### `departments`
+
+Departments within a faculty. Provides a second level of organisational hierarchy below `faculties`. `deleted_at` supports soft-deletion — a deleted department is excluded from active lists but its history (e.g. class or workplan references) is preserved. Optionally owned by a faculty (ON DELETE SET NULL). Referenced by `classes` and `programs`.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `faculty_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;faculties |
+| `dept_name` | `varchar(100)` | no |  |  |
+| `deleted_at` | `timestamptz` | yes |  |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_dept_faculty FOREIGN KEY (faculty_id) REFERENCES public.faculties(id) ON DELETE SET NULL`
+
+#### `person_departments`
+
+Many-to-many assignment of people to departments. A person may belong to multiple departments; a department may contain multiple people. Cascade-deletes when either the person or department is deleted.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `person_id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;people |
+| `department_id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;departments |
+
+*Constraints:*
+
+- `PRIMARY KEY (person_id, department_id)`
+- `CONSTRAINT fk_pd_person FOREIGN KEY (person_id) REFERENCES public.people(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_pd_department FOREIGN KEY (department_id) REFERENCES public.departments(id) ON DELETE CASCADE`
+
 ### Curriculum
 
 #### `programs`
@@ -1200,11 +1391,13 @@ Qualifications and courses (AVETMISS NAT00030). Each row is a single nationally-
 | `credit_points` | `integer` | yes |  |  |
 | `aqf_level` | `smallint` | yes |  |  |
 | `program_type` | `varchar(20)` | yes |  |  |
+| `department_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;departments |
 
 *Constraints:*
 
 - `PRIMARY KEY (id)`
 - `CONSTRAINT fk_programs_faculty FOREIGN KEY (faculty_id) REFERENCES public.faculties(id) ON DELETE RESTRICT`
+- `CONSTRAINT fk_programs_department FOREIGN KEY (department_id) REFERENCES public.departments(id) ON DELETE SET NULL`
 - `CONSTRAINT uq_programs_code UNIQUE (program_code)`
 - `CONSTRAINT chk_program_credit_points CHECK (credit_points IS NULL OR credit_points > 0)`
 - `CONSTRAINT chk_program_aqf_level CHECK (aqf_level IS NULL OR aqf_level BETWEEN 1 AND 10)`
@@ -1289,7 +1482,7 @@ A scheduled offering of a program — the concrete instance of when, where, and 
 - `CONSTRAINT chk_intake_duration CHECK (duration_periods > 0)`
 - `CONSTRAINT chk_intake_duration_years CHECK (duration_years IS NULL OR duration_years > 0)`
 - `CONSTRAINT chk_intake_status CHECK (status IN ('Planned', 'Active', 'Closed', 'Cancelled'))`
-- `CONSTRAINT chk_intake_enrolment_dates CHECK (open IS NULL OR close IS NULL OR close >= open)`
+- `CONSTRAINT chk_intake_enrolment_dates CHECK (enrolment_open_date IS NULL OR enrolment_close_date IS NULL OR enrolment_close_date >= enrolment_open_date)`
 
 #### `intake_groups`
 
@@ -1379,6 +1572,8 @@ Subject-level training activity record (AVETMISS NAT00120) — the key operation
 | `associated_course_id` | `varchar(10)` | yes |  |  |
 | `grade` | `varchar(20)` | yes |  |  |
 | `mark` | `numeric(5,2)` | yes |  |  |
+| `result` | `varchar(3)` | yes |  |  |
+| `result_is_published` | `boolean` | no | `false` |  |
 | `finalised_date` | `date` | yes |  |  |
 | `result_status` | `varchar(20)` | no | `'In Progress'` |  |
 | `result_finalised_by` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;app_users |
@@ -1883,6 +2078,7 @@ A delivery instance of a program within an academic period at a delivery locatio
 | `academic_period_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;academic_periods |
 | `delivery_location_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;delivery_locations |
 | `enrolment_cap` | `integer` | yes |  |  |
+| `department_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;departments |
 | `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 | `updated_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 
@@ -1893,6 +2089,7 @@ A delivery instance of a program within an academic period at a delivery locatio
 - `CONSTRAINT fk_class_period FOREIGN KEY (academic_period_id) REFERENCES public.academic_periods(id)`
 - `CONSTRAINT fk_class_location FOREIGN KEY (delivery_location_id) REFERENCES public.delivery_locations(id)`
 - `CONSTRAINT fk_class_intake_group FOREIGN KEY (intake_group_id) REFERENCES public.intake_groups(id) ON DELETE SET NULL`
+- `CONSTRAINT fk_class_department FOREIGN KEY (department_id) REFERENCES public.departments(id) ON DELETE SET NULL`
 - `CONSTRAINT chk_class_cap CHECK (enrolment_cap > 0)`
 
 #### `class_subjects`
@@ -2619,7 +2816,8 @@ Centrelink and employment service details for a student (1:1 shared PK with `stu
 
 - `PRIMARY KEY (student_id)`
 - `CONSTRAINT fk_ses_student FOREIGN KEY (student_id) REFERENCES public.students(id) ON DELETE CASCADE`
-- `CONSTRAINT chk_ses_participation_type CHECK (participation_type IS NULL OR participation_type IN ('Full-Time','Part-Time'))`
+- `CONSTRAINT chk_ses_type CHECK (participation_type IN ('Full-Time','Part-Time'))`
+- `CONSTRAINT chk_ses_hours CHECK (participation_hours >= 0)`
 
 #### `student_employment_registrations`
 
@@ -2892,8 +3090,8 @@ Per-teacher document library: testamurs, transcripts, accreditations, registrati
 *Constraints:*
 
 - `PRIMARY KEY (id)`
-- `CONSTRAINT fk_tdoc_teacher FOREIGN KEY (teacher_id) REFERENCES public.teachers(id) ON DELETE CASCADE`
-- `CONSTRAINT chk_tdoc_category CHECK (file_category IN ('Testamurs','Accreditations','Registrations','Statement of attainment','Transcripts','Credentials','Licenses','Job cards','Other'))`
+- `CONSTRAINT fk_td_teacher FOREIGN KEY (teacher_id) REFERENCES public.teachers(id) ON DELETE CASCADE`
+- `CONSTRAINT chk_td_category CHECK (file_category IN ('Testamurs','Accreditations','Registrations','Statement of attainment','Transcripts','Credentials','Licenses','Job cards','Other'))`
 
 #### `teacher_document_connections`
 
@@ -2977,7 +3175,7 @@ Many-to-many join between currency activities and the subjects they contribute c
 *Constraints:*
 
 - `PRIMARY KEY (id)`
-- `CONSTRAINT uq_tcul_activity_unit UNIQUE (currency_activity_id, unit_code)`
+- `CONSTRAINT uq_currency_unit UNIQUE (currency_activity_id, unit_code)`
 - `CONSTRAINT fk_tcul_activity FOREIGN KEY (currency_activity_id) REFERENCES public.teacher_currency_activities(id) ON DELETE CASCADE`
 - `CONSTRAINT fk_tcul_subject FOREIGN KEY (subject_id) REFERENCES public.subjects(id) ON DELETE SET NULL`
 
