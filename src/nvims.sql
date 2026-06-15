@@ -1,6 +1,13 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.35, 2026-06-15
+-- AVETMISS-compliant SMS schema  --  version 0.36, 2026-06-15
 -- =========================================================================
+-- Changes from v0.35:
+--   1.  class_sessions: added building_id bigint NULL FK → buildings(id)
+--       ON DELETE SET NULL. Allows a session to be assigned directly to a
+--       building without requiring a room (e.g. Building W at Frankston).
+--       The application resolves the effective building as
+--       COALESCE(cs.building_id, r.building_id) for map display and
+--       session admin.
 -- Changes from v0.34:
 --   1.  leave_requests: new table — teacher leave requests with leave type,
 --       optional partial-day times, status workflow (Pending → Approved /
@@ -1228,14 +1235,16 @@ CREATE TABLE IF NOT EXISTS public.class_sessions (
     start_time time WITHOUT TIME ZONE NOT NULL,
     end_time time WITHOUT TIME ZONE NOT NULL,
     room_id bigint NULL,
+    building_id bigint NULL,
     session_type varchar(20) NOT NULL DEFAULT 'Scheduled',
     notes text NULL,
     cancelled boolean NOT NULL DEFAULT false,
     cancel_reason varchar(255) NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    CONSTRAINT fk_session_class FOREIGN KEY (class_id) REFERENCES public.classes(id) ON DELETE CASCADE,
-    CONSTRAINT fk_session_room FOREIGN KEY (room_id) REFERENCES public.rooms(id) ON DELETE SET NULL,
+    CONSTRAINT fk_session_class    FOREIGN KEY (class_id)    REFERENCES public.classes(id)   ON DELETE CASCADE,
+    CONSTRAINT fk_session_room     FOREIGN KEY (room_id)     REFERENCES public.rooms(id)     ON DELETE SET NULL,
+    CONSTRAINT fk_session_building FOREIGN KEY (building_id) REFERENCES public.buildings(id) ON DELETE SET NULL,
     CONSTRAINT uq_session_natural UNIQUE (class_id, session_date, start_time),  -- enables idempotent generation
     CONSTRAINT chk_session_times CHECK (end_time > start_time),
     CONSTRAINT chk_session_type CHECK (session_type IN ('Scheduled', 'Replacement', 'Assessment', 'Online', 'Other')),

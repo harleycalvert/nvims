@@ -78,7 +78,7 @@
         <option value="">— select period —</option>
         {{range .Periods}}
         <option value="{{.ID}}"{{if eq $.PeriodID .ID}} selected{{end}}
-          data-start="{{.StartDate}}" data-end="{{.EndDate}}">
+          data-start="{{dateISO .StartDate}}" data-end="{{dateISO .EndDate}}">
           {{.PeriodName}} {{.Year}}
         </option>
         {{end}}
@@ -126,6 +126,7 @@
             <th>Type</th>
             <th>Teacher</th>
             <th>Location</th>
+            <th>Building</th>
             <th>Room</th>
             <th>Notes</th>
             <th></th>
@@ -158,12 +159,8 @@
             </td>
             <td class="sess-static sess-teachers">{{.Teachers}}</td>
             <td class="sess-static">{{.Location}}</td>
-            <td>{{$rid := .RoomID}}
-              <select class="sess-input si-room" name="room_id">
-                <option value="0">— no room —</option>
-                {{range $.Rooms}}<option value="{{.ID}}"{{if eq .ID $rid}} selected{{end}}>{{.BuildingName}} / {{.RoomName}}</option>{{end}}
-              </select>
-            </td>
+            <td><select class="sess-input si-building" name="building_id" data-init-bid="{{.BuildingID}}"></select></td>
+            <td><select class="sess-input si-room"     name="room_id"     data-init-rid="{{.RoomID}}"></select></td>
             <td><input class="sess-input si-notes" type="text" name="notes" value="{{.Notes}}" maxlength="255" placeholder="—"></td>
             <td class="sess-actions">
               <span class="sess-status"></span>
@@ -175,7 +172,7 @@
         <tfoot>
           <tr class="sess-total-row">
             <td colspan="2" class="sess-total-label">Contact hours</td>
-            <td colspan="9" class="sess-total-value"><span id="total-hours">—</span></td>
+            <td colspan="10" class="sess-total-value"><span id="total-hours">—</span></td>
           </tr>
         </tfoot>
       </table>
@@ -192,7 +189,8 @@
 (function () {
   const sessionTypes = [{{range $i,$t := .SessionTypes}}{{if $i}},{{end}}"{{$t}}"{{end}}];
   const allClasses   = [{{range $i,$c := .Classes}}{{if $i}},{{end}}{"id":{{$c.ID}},"label":"{{$c.ClassCode}} — {{$c.PeriodName}}"}{{end}}];
-  const allRooms     = [{{range $i,$r := .Rooms}}{{if $i}},{{end}}{"id":{{$r.ID}},"building":{{printf "%q" $r.BuildingName}},"room":{{printf "%q" $r.RoomName}}}{{end}}];
+  const allRooms     = [{{range $i,$r := .Rooms}}{{if $i}},{{end}}{"id":{{$r.ID}},"bid":{{$r.BuildingID}},"room":{{printf "%q" $r.RoomName}}}{{end}}];
+  const allBuildings = [{{range $i,$b := .Buildings}}{{if $i}},{{end}}{"id":{{$b.ID}},"name":{{printf "%q" $b.BuildingName}}}{{end}}];
   const periodEnd    = "{{.PeriodEndDate}}";
   const periodEndDMY = "{{.PeriodEndDMY}}";
 
@@ -262,6 +260,21 @@
     function selectedEra() {
       return document.querySelector('input[name=period_era]:checked')?.value || 'future';
     }
+
+    // If a period is pre-selected from the URL, detect its era and check the matching radio
+    // so the page reload after selecting "current" doesn't immediately flip back to "future".
+    (function() {
+      const pre = sel.options[sel.selectedIndex];
+      if (!pre || !pre.value) return;
+      const s = pre.dataset.start || '';
+      const e = pre.dataset.end   || '';
+      let era = 'all';
+      if      (e < today)                   era = 'historical';
+      else if (s > today)                   era = 'future';
+      else if (s <= today && e >= today)    era = 'current';
+      const radio = document.querySelector(`input[name=period_era][value="${era}"]`);
+      if (radio) radio.checked = true;
+    })();
 
     applyEra(selectedEra());
 
@@ -342,10 +355,17 @@
       `<option value="${t}"${t === selected ? ' selected' : ''}>${t}</option>`
     ).join('');
   }
-  function roomOptions(selectedID) {
+  function buildingOptions(selectedBid) {
+    return '<option value="0">— no building —</option>' +
+      allBuildings.map(b =>
+        `<option value="${b.id}"${b.id === selectedBid ? ' selected' : ''}>${b.name}</option>`
+      ).join('');
+  }
+  function roomOptions(bid, selectedRid) {
+    const rooms = bid ? allRooms.filter(r => r.bid === bid) : [];
     return '<option value="0">— no room —</option>' +
-      allRooms.map(r =>
-        `<option value="${r.id}"${r.id === selectedID ? ' selected' : ''}>${r.building} / ${r.room}</option>`
+      rooms.map(r =>
+        `<option value="${r.id}"${r.id === selectedRid ? ' selected' : ''}>${r.room}</option>`
       ).join('');
   }
   function classOptions() {
@@ -390,10 +410,11 @@
       return;
     }
 
-    const roomID = tr.querySelector('[name=room_id]')?.value || '0';
+    const buildingID = tr.querySelector('[name=building_id]')?.value || '0';
+    const roomID     = tr.querySelector('[name=room_id]')?.value     || '0';
     const body = new URLSearchParams({
       session_date: isoDate, start_time: start, end_time: end,
-      session_type: type, notes, room_id: roomID,
+      session_type: type, notes, building_id: buildingID, room_id: roomID,
     });
     try {
       const res = await fetch(`/admin/sessions/${id}`, {method:'POST', body});
@@ -473,7 +494,23 @@
       }
     });
     tr.querySelector('select[name=session_type]')?.addEventListener('change', () => saveRow(tr));
-    tr.querySelector('select[name=room_id]')?.addEventListener('change', () => saveRow(tr));
+
+    // Building → Room cascade: populate both selects from data-init attrs, then wire change events.
+    const buildingEl = tr.querySelector('[name=building_id]');
+    const roomEl     = tr.querySelector('[name=room_id]');
+    if (buildingEl && roomEl) {
+      const initBid = parseInt(buildingEl.dataset.initBid || '0');
+      const initRid = parseInt(roomEl.dataset.initRid     || '0');
+      buildingEl.innerHTML = buildingOptions(initBid);
+      roomEl.innerHTML     = roomOptions(initBid, initRid);
+      buildingEl.addEventListener('change', () => {
+        const bid = parseInt(buildingEl.value || '0');
+        roomEl.innerHTML = roomOptions(bid, 0);
+        saveRow(tr);
+      });
+      roomEl.addEventListener('change', () => saveRow(tr));
+    }
+
     tr.querySelector('[name=notes]')?.addEventListener('blur', () => saveRow(tr));
     tr.querySelector('.sess-delete')?.addEventListener('click', () => deleteRow(tr));
   }
@@ -501,7 +538,8 @@
       <td><select class="sess-input si-type" name="session_type">${typeOptions('Scheduled')}</select></td>
       <td class="sess-static"></td>
       <td class="sess-static"></td>
-      <td><select class="sess-input si-room" name="room_id">${roomOptions(0)}</select></td>
+      <td><select class="sess-input si-building" name="building_id" data-init-bid="0"></select></td>
+      <td><select class="sess-input si-room"     name="room_id"     data-init-rid="0"></select></td>
       <td><input class="sess-input si-notes" type="text" name="notes" maxlength="255" placeholder="—"></td>
       <td class="sess-actions">
         <span class="sess-status"></span>
@@ -514,7 +552,7 @@
     if (tbody.querySelectorAll('.sess-row:not(.sess-new)').length === 0 && periodEnd) {
       const af = document.createElement('tr');
       af.id = 'autofill-row';
-      af.innerHTML = `<td colspan="11" class="sess-autofill-cell">
+      af.innerHTML = `<td colspan="12" class="sess-autofill-cell">
         <label class="sess-autofill-label">
           <input type="checkbox" id="autofill-cb" checked>
           Autofill weekly for the rest of the period${periodEndDMY ? ' (until ' + periodEndDMY + ')' : ''}

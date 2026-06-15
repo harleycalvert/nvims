@@ -8,7 +8,7 @@ echo "==> MinIO restarted."
 
 echo "==> Building Go server..."
 cd "$HOME/nvims-sms/src"
-go build -o "$HOME/nvims-sms/nvims-sms" ./cmd/server
+go build -o "$HOME/nvims-sms/nvims" ./cmd/server
 echo "==> Restarting Go server..."
 sudo systemctl restart nvims
 

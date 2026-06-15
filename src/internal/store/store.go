@@ -859,14 +859,14 @@ const scheduledSessionSQL = `
 	       ),''),
 	       dl.name,
 	       COALESCE(cs.room_id, 0),
-	       COALESCE(r.building_id, 0),
+	       COALESCE(cs.building_id, r.building_id, 0),
 	       COALESCE(b.building_name,''),
 	       COALESCE(r.room_name,'')
 	FROM public.class_sessions cs
 	JOIN public.classes c ON c.id = cs.class_id
 	JOIN public.delivery_locations dl ON dl.id = c.delivery_location_id
 	LEFT JOIN public.rooms r ON r.id = cs.room_id
-	LEFT JOIN public.buildings b ON b.id = r.building_id
+	LEFT JOIN public.buildings b ON b.id = COALESCE(cs.building_id, r.building_id)
 	LEFT JOIN public.session_teachers st2 ON st2.session_id = cs.id
 	LEFT JOIN public.teachers t2 ON t2.id = st2.teacher_id
 	LEFT JOIN public.people p ON p.id = t2.id
@@ -910,7 +910,7 @@ func (s *Store) SessionsForTeacher(ctx context.Context, teacherID int64, from, t
 	WHERE cs.session_date >= $2::date AND cs.session_date <= $3::date` + classFilter + `
 	GROUP BY cs.id, c.id, c.class_code, cs.session_date, cs.start_time, cs.end_time,
 	         cs.session_type, cs.notes, cs.cancelled, dl.name,
-	         cs.room_id, r.building_id, b.building_name, r.room_name
+	         cs.room_id, cs.building_id, r.building_id, b.building_name, r.room_name
 	ORDER BY cs.session_date, cs.start_time`
 	rows, err := s.pool.Query(ctx, q, args...)
 	if err != nil {
@@ -985,7 +985,7 @@ func (s *Store) SessionsForIntakeGroup(ctx context.Context, groupID int64, from,
 	  AND cs.session_date >= $2::date AND cs.session_date <= $3::date` + classFilter + `
 	GROUP BY cs.id, c.id, c.class_code, cs.session_date, cs.start_time, cs.end_time,
 	         cs.session_type, cs.notes, cs.cancelled, dl.name,
-	         cs.room_id, r.building_id, b.building_name, r.room_name
+	         cs.room_id, cs.building_id, r.building_id, b.building_name, r.room_name
 	ORDER BY cs.session_date, cs.start_time
 	`
 	rows, err := s.pool.Query(ctx, q, args...)
@@ -1436,7 +1436,7 @@ func (s *Store) TimetableRange(ctx context.Context, start, end time.Time, f Time
 		LEFT JOIN public.teachers t  ON t.id = st.teacher_id
 		LEFT JOIN public.people   p  ON p.id = t.id
 		LEFT JOIN public.rooms r ON r.id = cs.room_id
-		LEFT JOIN public.buildings b ON b.id = r.building_id
+		LEFT JOIN public.buildings b ON b.id = COALESCE(cs.building_id, r.building_id)
 		%s
 		WHERE cs.session_date >= $1 AND cs.session_date < $2
 		  AND NOT cs.cancelled
@@ -1879,7 +1879,7 @@ func (s *Store) ListTeachers(ctx context.Context) ([]TeacherListRow, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) UpdateSession(ctx context.Context, id int64, date, startTime, endTime, sessionType, notes string, roomID int64) error {
+func (s *Store) UpdateSession(ctx context.Context, id int64, date, startTime, endTime, sessionType, notes string, roomID, buildingID int64) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE public.class_sessions
 		SET session_date = $2::date,
@@ -1887,9 +1887,10 @@ func (s *Store) UpdateSession(ctx context.Context, id int64, date, startTime, en
 		    end_time     = $4::time,
 		    session_type = $5,
 		    notes        = NULLIF($6,''),
-		    room_id      = NULLIF($7, 0)
+		    room_id      = NULLIF($7, 0),
+		    building_id  = NULLIF($8, 0)
 		WHERE id = $1
-	`, id, date, startTime, endTime, sessionType, notes, roomID)
+	`, id, date, startTime, endTime, sessionType, notes, roomID, buildingID)
 	return err
 }
 

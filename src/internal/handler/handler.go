@@ -1767,6 +1767,7 @@ func (h *Handler) AdminSessions(w http.ResponseWriter, r *http.Request) {
 	classes, _ := h.store.ListClasses(r.Context())
 	periods, _ := h.store.ListPeriods(r.Context())
 	rooms, _ := h.store.ListRooms(r.Context())
+	buildings, _ := h.store.ListBuildings(r.Context())
 
 	// find selected period
 	var selPeriod *store.PeriodListRow
@@ -1823,6 +1824,7 @@ func (h *Handler) AdminSessions(w http.ResponseWriter, r *http.Request) {
 		"PeriodEndDate":  periodEndDate,
 		"PeriodEndDMY":   periodEndDMY,
 		"Rooms":          rooms,
+		"Buildings":      buildings,
 		"User":           user,
 	})
 }
@@ -1861,13 +1863,14 @@ func (h *Handler) AdminSessionUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	roomID, _ := strconv.ParseInt(r.FormValue("room_id"), 10, 64)
+	buildingID, _ := strconv.ParseInt(r.FormValue("building_id"), 10, 64)
 	if err := h.store.UpdateSession(r.Context(), id,
 		r.FormValue("session_date"),
 		r.FormValue("start_time"),
 		r.FormValue("end_time"),
 		r.FormValue("session_type"),
 		r.FormValue("notes"),
-		roomID,
+		roomID, buildingID,
 	); err != nil {
 		log.Printf("UpdateSession(%d): %v", id, err)
 		w.Header().Set("Content-Type", "application/json")
