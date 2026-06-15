@@ -2,7 +2,7 @@
 
 PostgreSQL schema for a national, potentially AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.35`: its entities, relationships, business rules, and the
+describes the design of `v0.40`: its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -43,7 +43,7 @@ mapping to the AVETMISS NAT reporting files.
   - Workplan: [`workplans`](#workplans) · [`workplan_approvals`](#workplan_approvals) · [`workplan_entries`](#workplan_entries) · [`leave_requests`](#leave_requests) · [`leave_request_dates`](#leave_request_dates)
   - Timesheet: [`pay_periods`](#pay_periods) · [`timesheets`](#timesheets) · [`timesheet_entries`](#timesheet_entries)
   - Employment services: [`student_employment_services`](#student_employment_services) · [`student_employment_registrations`](#student_employment_registrations)
-  - VCC: [`teacher_vccs`](#teacher_vccs) · [`teacher_vcc_professional_qualifications`](#teacher_vcc_professional_qualifications) · [`teacher_vcc_vocational_qualifications`](#teacher_vcc_vocational_qualifications) · [`teacher_vcc_courses`](#teacher_vcc_courses) · [`teacher_vcc_units`](#teacher_vcc_units) · [`teacher_vcc_unit_elements`](#teacher_vcc_unit_elements) · [`teacher_documents`](#teacher_documents) · [`teacher_document_connections`](#teacher_document_connections) · [`teacher_currency_activities`](#teacher_currency_activities) · [`teacher_currency_unit_links`](#teacher_currency_unit_links) · [`teacher_vcc_profiling`](#teacher_vcc_profiling)
+  - VCC: [`teacher_vccs`](#teacher_vccs) · [`teacher_vcc_professional_qualifications`](#teacher_vcc_professional_qualifications) · [`teacher_vcc_vocational_qualifications`](#teacher_vcc_vocational_qualifications) · [`teacher_vcc_credentials`](#teacher_vcc_credentials) · [`teacher_vcc_courses`](#teacher_vcc_courses) · [`teacher_vcc_units`](#teacher_vcc_units) · [`teacher_vcc_unit_elements`](#teacher_vcc_unit_elements) · [`teacher_documents`](#teacher_documents) · [`teacher_document_connections`](#teacher_document_connections) · [`teacher_currency_activities`](#teacher_currency_activities) · [`teacher_currency_unit_links`](#teacher_currency_unit_links) · [`teacher_vcc_profiling`](#teacher_vcc_profiling)
 - [Business rules & constraints](#business-rules--constraints)
 - [Functions & triggers](#functions--triggers)
 - [AVETMISS NAT file mapping](#avetmiss-nat-file-mapping)
@@ -308,6 +308,7 @@ erDiagram
     STUDENTS ||--o{ CLASS_SUPPORT_STAFF : "1:1 support (optional)"
     ROOMS ||--o{ CLASS_SLOTS : ""
     ROOMS ||--o{ CLASS_SESSIONS : ""
+    BUILDINGS ||--o{ CLASS_SESSIONS : "direct building (optional)"
 
     CLASS_SLOTS {
         bigserial id PK
@@ -324,6 +325,8 @@ erDiagram
         date session_date
         time start_time
         time end_time
+        bigint room_id FK
+        bigint building_id FK
         boolean cancelled
     }
     SESSION_ATTENDANCE {
@@ -546,6 +549,7 @@ erDiagram
     TEACHERS ||--o{ TEACHER_VCCS : "has VCC versions"
     TEACHER_VCCS ||--o{ TEACHER_VCC_PROFESSIONAL_QUALIFICATIONS : "teaching quals"
     TEACHER_VCCS ||--o{ TEACHER_VCC_VOCATIONAL_QUALIFICATIONS : "vocational quals"
+    TEACHER_VCCS ||--o{ TEACHER_VCC_CREDENTIALS : "certifications & micro-credentials"
     TEACHER_VCCS ||--o{ TEACHER_VCC_COURSES : "maps courses"
     TEACHER_VCC_COURSES ||--o{ TEACHER_VCC_UNITS : "has units"
     TEACHER_VCCS ||--o{ TEACHER_VCC_UNITS : "standalone units"
@@ -553,6 +557,7 @@ erDiagram
     TEACHERS ||--o{ TEACHER_DOCUMENTS : "document library"
     TEACHER_DOCUMENTS ||--o{ TEACHER_DOCUMENT_CONNECTIONS : "linked to"
     TEACHER_VCC_UNIT_ELEMENTS ||--o{ TEACHER_DOCUMENT_CONNECTIONS : "evidenced by"
+    TEACHER_VCC_CREDENTIALS ||--o{ TEACHER_DOCUMENT_CONNECTIONS : "evidenced by"
     TEACHERS ||--o{ TEACHER_CURRENCY_ACTIVITIES : "currency records"
     TEACHER_CURRENCY_ACTIVITIES ||--o{ TEACHER_CURRENCY_UNIT_LINKS : "related units"
     TEACHER_VCCS ||--o{ TEACHER_VCC_PROFILING : "dimension scores"
@@ -680,7 +685,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | `class_subjects` | The units a class delivers. | → `classes`, `subjects` |
 | `class_enrollments` | Maps a student's subject enrolment to a class. | → `classes`, `client_subject_enrolments` |
 | `class_slots` | **Recurring weekly template** (weekday + time + teacher + room). Carries `academic_period_id` for exclusion scoping. | → `classes`, `academic_periods`, `teachers`, `rooms` |
-| `class_sessions` | **Concrete dated occurrences** — the source of truth for hours/attendance. | → `classes`, `rooms` |
+| `class_sessions` | **Concrete dated occurrences** — the source of truth for hours/attendance. `building_id` allows a session to be assigned directly to a building without requiring a room; the application resolves effective building as `COALESCE(building_id, room_id→building_id)`. | → `classes`, `rooms`, `buildings` |
 | `session_teachers` | Teachers on a session, with role (supports team teaching). Drives the hours cap. | → `class_sessions`, `teachers` |
 | `session_attendance` | Per-student attendance per session. Extended attendance-dialog fields: `units_nominated`, `arrived_at`/`departed_at`, `break_minutes`, `absence_reason`, `absence_is_acceptable`, `has_childcare`, `is_note_private`. | → `class_sessions`, `students`, `app_users` |
 | `class_support_staff` | Support staff per class, optionally tied to one student. | → `classes`, `staff`, `students` |
@@ -751,11 +756,12 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | `teacher_vccs` | VCC document per teacher per year, versioned, with Draft→Submitted→Approved workflow. | → `teachers`, `app_users` (supervisor, approver) |
 | `teacher_vcc_professional_qualifications` | Teacher's TAE and training credentials declared in a VCC. | → `teacher_vccs` |
 | `teacher_vcc_vocational_qualifications` | Teacher's industry/AQF vocational qualifications declared in a VCC. | → `teacher_vccs` |
+| `teacher_vcc_credentials` | Certifications and micro-credentials declared in a VCC (e.g. AWS, Google, short-course certificates). Includes credential code/title, issuing body, year, optional month, AQF level, and approval status. | → `teacher_vccs` |
 | `teacher_vcc_courses` | Courses the teacher is mapped to deliver in a VCC; optionally linked to `programs`. | → `teacher_vccs`, `programs` |
 | `teacher_vcc_units` | Units teacher has currency for, with competency method, description, and self-ratings. Multiple rows per unit allowed. | → `teacher_vccs`, `teacher_vcc_courses`, `subjects` |
 | `teacher_vcc_unit_elements` | Elements of a unit (components / performance criteria clusters). Each element carries a justification and may have evidence documents attached. | → `teacher_vcc_units` |
 | `teacher_documents` | Per-teacher document library (testamurs, transcripts, credentials, other evidence). | → `teachers` |
-| `teacher_document_connections` | Links a document to exactly one VCC entity (professional qual, vocational qual, unit, unit element, or currency activity). `num_nonnulls = 1` enforced. | → `teacher_documents`, `teacher_vcc_professional_qualifications`, `teacher_vcc_vocational_qualifications`, `teacher_vcc_units`, `teacher_vcc_unit_elements`, `teacher_currency_activities` |
+| `teacher_document_connections` | Links a document to exactly one VCC entity (professional qual, vocational qual, unit, unit element, currency activity, or credential). `num_nonnulls = 1` enforced across six target columns. | → `teacher_documents`, `teacher_vcc_professional_qualifications`, `teacher_vcc_vocational_qualifications`, `teacher_vcc_units`, `teacher_vcc_unit_elements`, `teacher_currency_activities`, `teacher_vcc_credentials` |
 | `teacher_currency_activities` | Vocational and professional currency point records with activity detail and approval tracking. Professional-specific fields (`domain_name`, `program_type`, etc.) are nullable columns on the same table. | → `teachers` |
 | `teacher_currency_unit_links` | "Related Unit/s" M2M between currency activities and subjects. | → `teacher_currency_activities`, `subjects` |
 | `teacher_vcc_profiling` | Spider/radar-chart dimension scores (self, supervisor, business ideal) per VCC version. PK is `(vcc_id, dimension)`. | → `teacher_vccs` |
@@ -764,7 +770,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 
 ## Data dictionary
 
-Every table and column, generated from `v0.35`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
+Every table and column, generated from `v0.40`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
 
 ### Identity & reference
 
@@ -1936,7 +1942,7 @@ Recurring weekly template entries for a class. Each row defines one regular teac
 
 #### `class_sessions`
 
-Concrete dated teaching sessions — the authoritative source of truth for teaching hours, attendance, workload, and payroll. Each row carries the actual date, start/end time, room, session type, cancelled flag, and cancel reason. Teacher hour balances (`teacher_yearly_balances`, `teacher_period_allocations`) and timesheet entries are derived from this table via triggers, not from the `class_slots` template. Referenced by `session_teachers`, `session_attendance`, `workplan_entries`, and `timesheet_entries`.
+Concrete dated teaching sessions — the authoritative source of truth for teaching hours, attendance, workload, and payroll. Each row carries the actual date, start/end time, room, session type, cancelled flag, and cancel reason. `building_id` allows a session to be assigned directly to a building without requiring a room; the application resolves the effective building as `COALESCE(building_id, room_id→building_id)` for map display and session admin. Teacher hour balances (`teacher_yearly_balances`, `teacher_period_allocations`) and timesheet entries are derived from this table via triggers, not from the `class_slots` template. Referenced by `session_teachers`, `session_attendance`, `workplan_entries`, and `timesheet_entries`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1946,6 +1952,7 @@ Concrete dated teaching sessions — the authoritative source of truth for teach
 | `start_time` | `time WITHOUT TIME ZONE` | no |  |  |
 | `end_time` | `time WITHOUT TIME ZONE` | no |  |  |
 | `room_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;rooms |
+| `building_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;buildings |
 | `session_type` | `varchar(20)` | no | `'Scheduled'` |  |
 | `notes` | `text` | yes |  |  |
 | `cancelled` | `boolean` | no | `false` |  |
@@ -1957,6 +1964,7 @@ Concrete dated teaching sessions — the authoritative source of truth for teach
 - `PRIMARY KEY (id)`
 - `CONSTRAINT fk_session_class FOREIGN KEY (class_id) REFERENCES public.classes(id) ON DELETE CASCADE`
 - `CONSTRAINT fk_session_room FOREIGN KEY (room_id) REFERENCES public.rooms(id) ON DELETE SET NULL`
+- `CONSTRAINT fk_session_building FOREIGN KEY (building_id) REFERENCES public.buildings(id) ON DELETE SET NULL`
 - `CONSTRAINT uq_session_natural UNIQUE (class_id, session_date, start_time)`
 - `CONSTRAINT chk_session_times CHECK (end_time > start_time)`
 - `CONSTRAINT chk_session_type CHECK (session_type IN ('Scheduled', 'Replacement', 'Assessment', 'Online', 'Other'))`
@@ -2652,7 +2660,7 @@ Annual Vocational Competency & Currency document per teacher, versioned to allow
 
 #### `teacher_vcc_professional_qualifications`
 
-TAE and training credentials declared in a VCC (shown under Teaching Qualifications). Each row has a code, title, institution, and approval status (Draft → Pending → Approved → Rejected). Linked to evidence documents via `teacher_document_connections`. References `teacher_vccs`.
+TAE and training credentials declared in a VCC (shown under Teaching Qualifications). Each row has a code, title, institution, year awarded, and approval status (Draft → Pending → Approved → Rejected). Linked to evidence documents via `teacher_document_connections`. References `teacher_vccs`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -2661,6 +2669,7 @@ TAE and training credentials declared in a VCC (shown under Teaching Qualificati
 | `qualification_code` | `varchar(30)` | no |  |  |
 | `qualification_title` | `varchar(200)` | no |  |  |
 | `institution` | `varchar(200)` | yes |  |  |
+| `year` | `smallint` | yes |  |  |
 | `aqf_level` | `smallint` | yes |  |  |
 | `status` | `varchar(20)` | no | `'Draft'` |  |
 | `approved_at` | `date` | yes |  |  |
@@ -2685,6 +2694,7 @@ Industry and AQF vocational qualifications declared in a VCC (shown under Vocati
 | `qualification_code` | `varchar(30)` | no |  |  |
 | `qualification_title` | `varchar(200)` | no |  |  |
 | `institution` | `varchar(200)` | yes |  |  |
+| `year` | `smallint` | yes |  |  |
 | `aqf_level` | `smallint` | yes |  |  |
 | `status` | `varchar(20)` | no | `'Draft'` |  |
 | `approved_at` | `date` | yes |  |  |
@@ -2697,6 +2707,46 @@ Industry and AQF vocational qualifications declared in a VCC (shown under Vocati
 - `CONSTRAINT fk_vcc_vocqual_vcc FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
 - `CONSTRAINT chk_vcc_vocqual_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))`
 - `CONSTRAINT chk_vcc_vocqual_aqf CHECK (aqf_level BETWEEN 1 AND 10)`
+
+#### `teacher_vcc_credentials`
+
+Certifications, micro-credentials, and short courses declared in a VCC (shown under Vocational Evidence → Certifications & Micro-Credentials). Each row records a credential code, full title, optional issuing body, year, and optionally the specific month (1–12; NULL when month is not recorded). AQF level is optional and applies where the credential maps to an AQF outcome. Progresses through the same Draft → Pending → Approved → Rejected workflow as other VCC sub-records. Linked to evidence documents via `teacher_document_connections`. Cascade-deletes when its parent VCC is deleted. References `teacher_vccs`.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `vcc_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teacher_vccs |
+| `credential_code` | `varchar(30)` | no |  |  |
+| `credential_title` | `varchar(200)` | no |  |  |
+| `institution` | `varchar(200)` | yes |  |  |
+| `year` | `smallint` | yes |  |  |
+| `month` | `smallint` | yes |  |  |
+| `aqf_level` | `smallint` | yes |  |  |
+| `status` | `varchar(20)` | no | `'Draft'` |  |
+| `approved_at` | `date` | yes |  |  |
+| `notes` | `text` | yes |  |  |
+| `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+
+**Column notes:**
+
+| Column | Notes |
+|---|---|
+| `credential_code` | Short identifier for the credential (e.g. `AWS-SAA-C03`, `CERT-IV-WHS`). |
+| `institution` | Issuing body — e.g. `Amazon Web Services`, `Google`, `TAFE Victoria`. NULL if not recorded. |
+| `month` | Calendar month (1–12) the credential was awarded; NULL when only the year is known. |
+| `aqf_level` | Australian Qualifications Framework level (1–10) if applicable; NULL for non-AQF credentials. |
+| `status` | Approval workflow: `Draft` → `Pending` → `Approved` / `Rejected`. |
+| `approved_at` | Date the supervisor approved the credential declaration. NULL until approved. |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_vcc_cred_vcc FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
+- `CONSTRAINT chk_vcc_cred_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))`
+- `CONSTRAINT chk_vcc_cred_aqf CHECK (aqf_level BETWEEN 1 AND 10)`
+- `CONSTRAINT chk_vcc_cred_month CHECK (month BETWEEN 1 AND 12)`
+
+*Indexes:* `idx_vcc_cred_vcc (vcc_id)`
 
 #### `teacher_vcc_courses`
 
@@ -2797,7 +2847,7 @@ Per-teacher document library: testamurs, transcripts, accreditations, registrati
 
 #### `teacher_document_connections`
 
-Links a teacher document to exactly one VCC entity: a professional qualification, a vocational qualification, a VCC unit, a unit element, or a currency activity. The `num_nonnulls(...5 columns...) = 1` constraint enforces the single-target rule — one document connection always points to exactly one entity. References `teacher_documents` and the target entity.
+Links a teacher document to exactly one VCC entity: a professional qualification, a vocational qualification, a VCC credential, a VCC unit, a unit element, or a currency activity. The `num_nonnulls(...6 columns...) = 1` constraint enforces the single-target rule — one document connection always points to exactly one entity. References `teacher_documents` and the target entity.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -2808,6 +2858,7 @@ Links a teacher document to exactly one VCC entity: a professional qualification
 | `vcc_unit_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_vcc_units |
 | `vcc_unit_element_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_vcc_unit_elements |
 | `vcc_currency_activity_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_currency_activities |
+| `vcc_credential_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_vcc_credentials |
 
 *Constraints:*
 
@@ -2818,11 +2869,12 @@ Links a teacher document to exactly one VCC entity: a professional qualification
 - `CONSTRAINT fk_tdc_unit FOREIGN KEY (vcc_unit_id) REFERENCES public.teacher_vcc_units(id) ON DELETE CASCADE`
 - `CONSTRAINT fk_tdc_unit_element FOREIGN KEY (vcc_unit_element_id) REFERENCES public.teacher_vcc_unit_elements(id) ON DELETE CASCADE`
 - `CONSTRAINT fk_tdc_currency FOREIGN KEY (vcc_currency_activity_id) REFERENCES public.teacher_currency_activities(id) ON DELETE CASCADE`
-- `CONSTRAINT chk_tdc_target CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_unit_element_id, vcc_currency_activity_id) = 1)`
+- `CONSTRAINT fk_tdc_credential FOREIGN KEY (vcc_credential_id) REFERENCES public.teacher_vcc_credentials(id) ON DELETE CASCADE`
+- `CONSTRAINT chk_tdc_target CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id, vcc_unit_element_id, vcc_credential_id) = 1)`
 
 #### `teacher_currency_activities`
 
-Vocational and professional currency point records. Each row is one activity (workshop, conference, industry work experience, professional program, etc.) with its type, date, hours, points awarded, approval status, and reflective text fields (`inform_teaching_practice`, `student_benefit`). Professional-currency-specific fields (`domain_name`, `program_type`, `program_name`, etc.) are nullable columns on the same table, avoiding a separate subtype table. Linked to related subjects via `teacher_currency_unit_links` and to evidence documents via `teacher_document_connections`. References `teachers`.
+Vocational and professional currency point records. Each row is one activity (workshop, conference, industry work experience, professional program, etc.) with its type, date, hours, points awarded, approval status, and reflective text fields (`inform_teaching_practice`, `student_benefit`). Professional-currency-specific fields (`domain_name`, `program_type`, `program_name`, etc.) are nullable columns on the same table, avoiding a separate subtype table. `external_url` optionally links to a verification page or digital record for the activity. Linked to related subjects via `teacher_currency_unit_links` and to evidence documents via `teacher_document_connections`. References `teachers`.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -2846,6 +2898,7 @@ Vocational and professional currency point records. Each row is one activity (wo
 | `program_date` | `date` | yes |  |  |
 | `workshop_count` | `smallint` | yes |  |  |
 | `program_summary` | `text` | yes |  |  |
+| `external_url` | `varchar(2048)` | yes |  |  |
 | `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 | `updated_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 
@@ -3170,4 +3223,4 @@ periodically.
 
 ---
 
-*Generated from `v0.35` (2026-06-15).*
+*Generated from `v0.40` (2026-06-15).*

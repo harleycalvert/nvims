@@ -2221,6 +2221,8 @@ type VCCPQ struct {
 	Code        string
 	Title       string
 	Institution string
+	Year        int // 0 = not set (NULL in DB)
+	Month       int // 0 = not set; credentials only (1–12)
 	AQFLevel    int // 0 = not set (NULL in DB)
 	Status      string
 	ApprovedAt  time.Time // zero means not set
@@ -2274,6 +2276,7 @@ type VCCDetail struct {
 	Notes        string
 	PQs          []VCCPQ // Teaching qualifications
 	VocQuals     []VCCPQ // Vocational qualifications
+	Credentials  []VCCPQ // Certifications & micro-credentials
 	Courses      []VCCCourse
 }
 
@@ -2300,7 +2303,7 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 	// Teaching qualifications
 	pqRows, err := s.pool.Query(ctx, `
 		SELECT id, qualification_code, qualification_title, COALESCE(institution,''),
-		       COALESCE(aqf_level, 0), status, approved_at, COALESCE(notes,'')
+		       COALESCE(year, 0), COALESCE(aqf_level, 0), status, approved_at, COALESCE(notes,'')
 		FROM teacher_vcc_professional_qualifications
 		WHERE vcc_id = $1 ORDER BY id
 	`, id)
@@ -2311,7 +2314,7 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 	for pqRows.Next() {
 		var pq VCCPQ
 		var at pgtype.Date
-		if err := pqRows.Scan(&pq.ID, &pq.Code, &pq.Title, &pq.Institution, &pq.AQFLevel, &pq.Status, &at, &pq.Notes); err != nil {
+		if err := pqRows.Scan(&pq.ID, &pq.Code, &pq.Title, &pq.Institution, &pq.Year, &pq.AQFLevel, &pq.Status, &at, &pq.Notes); err != nil {
 			pqRows.Close()
 			return nil, err
 		}
@@ -2361,7 +2364,7 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 	// Vocational qualifications
 	vqRows, err := s.pool.Query(ctx, `
 		SELECT id, qualification_code, qualification_title, COALESCE(institution,''),
-		       COALESCE(aqf_level, 0), status, approved_at, COALESCE(notes,'')
+		       COALESCE(year, 0), COALESCE(aqf_level, 0), status, approved_at, COALESCE(notes,'')
 		FROM teacher_vcc_vocational_qualifications
 		WHERE vcc_id = $1 ORDER BY id
 	`, id)
@@ -2372,7 +2375,7 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 	for vqRows.Next() {
 		var vq VCCPQ
 		var at pgtype.Date
-		if err := vqRows.Scan(&vq.ID, &vq.Code, &vq.Title, &vq.Institution, &vq.AQFLevel, &vq.Status, &at, &vq.Notes); err != nil {
+		if err := vqRows.Scan(&vq.ID, &vq.Code, &vq.Title, &vq.Institution, &vq.Year, &vq.AQFLevel, &vq.Status, &at, &vq.Notes); err != nil {
 			vqRows.Close()
 			return nil, err
 		}
@@ -2415,6 +2418,67 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 			}
 		}
 		if err := vdRows.Err(); err != nil {
+			return nil, err
+		}
+	}
+
+	// Credentials (Certifications & Micro-Credentials)
+	crRows, err := s.pool.Query(ctx, `
+		SELECT id, credential_code, credential_title, COALESCE(institution,''),
+		       COALESCE(year, 0), COALESCE(month, 0), COALESCE(aqf_level, 0), status, approved_at, COALESCE(notes,'')
+		FROM teacher_vcc_credentials
+		WHERE vcc_id = $1 ORDER BY id
+	`, id)
+	if err != nil {
+		return nil, err
+	}
+	crMap := map[int64]int{}
+	for crRows.Next() {
+		var cred VCCPQ
+		var at pgtype.Date
+		if err := crRows.Scan(&cred.ID, &cred.Code, &cred.Title, &cred.Institution, &cred.Year, &cred.Month, &cred.AQFLevel, &cred.Status, &at, &cred.Notes); err != nil {
+			crRows.Close()
+			return nil, err
+		}
+		if at.Valid {
+			cred.ApprovedAt = at.Time
+		}
+		crMap[cred.ID] = len(v.Credentials)
+		v.Credentials = append(v.Credentials, cred)
+	}
+	if err := crRows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Credential documents
+	if len(v.Credentials) > 0 {
+		crIDs := make([]int64, len(v.Credentials))
+		for i, cred := range v.Credentials {
+			crIDs[i] = cred.ID
+		}
+		cdRows, err := s.pool.Query(ctx, `
+			SELECT tdc.vcc_credential_id, td.id, td.title, td.file_category,
+			       COALESCE(td.year_of_document, 0), COALESCE(td.document_url, ''), COALESCE(td.external_url, '')
+			FROM teacher_document_connections tdc
+			JOIN teacher_documents td ON td.id = tdc.document_id
+			WHERE tdc.vcc_credential_id = ANY($1)
+			ORDER BY tdc.vcc_credential_id, td.id
+		`, crIDs)
+		if err != nil {
+			return nil, err
+		}
+		for cdRows.Next() {
+			var crID int64
+			var d VCCDocument
+			if err := cdRows.Scan(&crID, &d.ID, &d.Title, &d.Category, &d.Year, &d.URL, &d.ExternalURL); err != nil {
+				cdRows.Close()
+				return nil, err
+			}
+			if idx, ok := crMap[crID]; ok {
+				v.Credentials[idx].Documents = append(v.Credentials[idx].Documents, d)
+			}
+		}
+		if err := cdRows.Err(); err != nil {
 			return nil, err
 		}
 	}
@@ -2670,11 +2734,15 @@ func (s *Store) UpdateVCCUnitRatings(ctx context.Context, teacherID, unitID int6
 }
 
 func (s *Store) UpdateVCCPQ(ctx context.Context, teacherID, pqID int64,
-	code, title, institution, status string, approvedAt pgtype.Date, notes string, aqfLevel int,
+	code, title, institution, status string, approvedAt pgtype.Date, notes string, aqfLevel, year int,
 ) error {
 	var aqf pgtype.Int2
 	if aqfLevel > 0 {
 		aqf = pgtype.Int2{Int16: int16(aqfLevel), Valid: true}
+	}
+	var yr pgtype.Int2
+	if year > 0 {
+		yr = pgtype.Int2{Int16: int16(year), Valid: true}
 	}
 	_, err := s.pool.Exec(ctx, `
 		UPDATE teacher_vcc_professional_qualifications
@@ -2684,24 +2752,78 @@ func (s *Store) UpdateVCCPQ(ctx context.Context, teacherID, pqID int64,
 		    status              = $4,
 		    approved_at         = $5,
 		    notes               = NULLIF($6, ''),
-		    aqf_level           = $9
+		    aqf_level           = $9,
+		    year                = $10
 		WHERE id = $7
 		  AND vcc_id IN (SELECT id FROM teacher_vccs WHERE teacher_id = $8)
-	`, code, title, institution, status, approvedAt, notes, pqID, teacherID, aqf)
+	`, code, title, institution, status, approvedAt, notes, pqID, teacherID, aqf, yr)
 	return err
 }
 
-func (s *Store) CreateVCCPQ(ctx context.Context, teacherID int64, code, title, institution string) (VCCPQ, error) {
+func (s *Store) CreateVCCPQ(ctx context.Context, teacherID int64, code, title, institution string, year, aqfLevel int) (VCCPQ, error) {
+	var yr pgtype.Int2
+	if year > 0 {
+		yr = pgtype.Int2{Int16: int16(year), Valid: true}
+	}
+	var aqf pgtype.Int2
+	if aqfLevel > 0 {
+		aqf = pgtype.Int2{Int16: int16(aqfLevel), Valid: true}
+	}
 	var pq VCCPQ
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO teacher_vcc_professional_qualifications
-		       (vcc_id, qualification_code, qualification_title, institution, status)
-		SELECT id, $2, $3, NULLIF($4,''), 'Draft'
+		       (vcc_id, qualification_code, qualification_title, institution, year, aqf_level, status)
+		SELECT id, $2, $3, NULLIF($4,''), $5, $6, 'Draft'
 		FROM teacher_vccs WHERE teacher_id = $1
 		ORDER BY calendar_year DESC, version DESC LIMIT 1
-		RETURNING id, qualification_code, qualification_title, COALESCE(institution,''), status
-	`, teacherID, code, title, institution).Scan(&pq.ID, &pq.Code, &pq.Title, &pq.Institution, &pq.Status)
+		RETURNING id, qualification_code, qualification_title, COALESCE(institution,''),
+		          COALESCE(year,0), COALESCE(aqf_level,0), status
+	`, teacherID, code, title, institution, yr, aqf).Scan(
+		&pq.ID, &pq.Code, &pq.Title, &pq.Institution, &pq.Year, &pq.AQFLevel, &pq.Status)
 	return pq, err
+}
+
+func (s *Store) DeleteVCCVocQual(ctx context.Context, teacherID, vqID int64) (objectKeys []string, err error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT COALESCE(td.document_url, '')
+		FROM teacher_document_connections tdc
+		JOIN teacher_documents td ON td.id = tdc.document_id
+		WHERE tdc.vcc_vocational_qual_id = $1
+		  AND td.teacher_id = $2
+		  AND td.document_url IS NOT NULL
+	`, vqID, teacherID)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if key != "" {
+			objectKeys = append(objectKeys, key)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	_, err = s.pool.Exec(ctx, `
+		DELETE FROM teacher_documents
+		WHERE id IN (
+			SELECT document_id FROM teacher_document_connections
+			WHERE vcc_vocational_qual_id = $1
+		) AND teacher_id = $2
+	`, vqID, teacherID)
+	if err != nil {
+		return objectKeys, err
+	}
+	_, err = s.pool.Exec(ctx, `
+		DELETE FROM teacher_vcc_vocational_qualifications
+		WHERE id = $1
+		  AND vcc_id IN (SELECT id FROM teacher_vccs WHERE teacher_id = $2)
+	`, vqID, teacherID)
+	return objectKeys, err
 }
 
 func (s *Store) CreateVCCVocQual(ctx context.Context, teacherID int64, code, title, institution string) (VCCPQ, error) {
@@ -2718,11 +2840,15 @@ func (s *Store) CreateVCCVocQual(ctx context.Context, teacherID int64, code, tit
 }
 
 func (s *Store) UpdateVCCVocQual(ctx context.Context, teacherID, vqID int64,
-	code, title, institution, status string, approvedAt pgtype.Date, notes string, aqfLevel int,
+	code, title, institution, status string, approvedAt pgtype.Date, notes string, aqfLevel, year int,
 ) error {
 	var aqf pgtype.Int2
 	if aqfLevel > 0 {
 		aqf = pgtype.Int2{Int16: int16(aqfLevel), Valid: true}
+	}
+	var yr pgtype.Int2
+	if year > 0 {
+		yr = pgtype.Int2{Int16: int16(year), Valid: true}
 	}
 	_, err := s.pool.Exec(ctx, `
 		UPDATE teacher_vcc_vocational_qualifications
@@ -2732,28 +2858,29 @@ func (s *Store) UpdateVCCVocQual(ctx context.Context, teacherID, vqID int64,
 		    status              = $4,
 		    approved_at         = $5,
 		    notes               = NULLIF($6, ''),
-		    aqf_level           = $9
+		    aqf_level           = $9,
+		    year                = $10
 		WHERE id = $7
 		  AND vcc_id IN (SELECT id FROM teacher_vccs WHERE teacher_id = $8)
-	`, code, title, institution, status, approvedAt, notes, vqID, teacherID, aqf)
+	`, code, title, institution, status, approvedAt, notes, vqID, teacherID, aqf, yr)
 	return err
 }
 
-func (s *Store) CreateVocQualDocument(ctx context.Context, teacherID, vqID int64, title, externalURL string) (VCCDocument, error) {
+func (s *Store) CreateVocQualDocument(ctx context.Context, teacherID, vqID int64, title, fileName, objectKey, externalURL string) (VCCDocument, error) {
 	var d VCCDocument
 	d.Title = title
 	d.ExternalURL = externalURL
-	d.Category = "Other"
+	d.URL = objectKey
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO teacher_documents (teacher_id, title, file_category, external_url)
-		SELECT $1, $2, 'Other', NULLIF($3,'')
+		INSERT INTO teacher_documents (teacher_id, title, file_category, file_name, document_url, external_url)
+		SELECT $1, $2, 'Other', NULLIF($3,''), NULLIF($4,''), NULLIF($5,'')
 		WHERE EXISTS (
 			SELECT 1 FROM teacher_vcc_vocational_qualifications vq
 			JOIN teacher_vccs tv ON tv.id = vq.vcc_id
-			WHERE vq.id = $4 AND tv.teacher_id = $1
+			WHERE vq.id = $6 AND tv.teacher_id = $1
 		)
 		RETURNING id
-	`, teacherID, title, externalURL, vqID).Scan(&d.ID)
+	`, teacherID, title, fileName, objectKey, externalURL, vqID).Scan(&d.ID)
 	if err != nil {
 		return VCCDocument{}, err
 	}
@@ -2764,21 +2891,21 @@ func (s *Store) CreateVocQualDocument(ctx context.Context, teacherID, vqID int64
 	return d, err
 }
 
-func (s *Store) CreatePQDocument(ctx context.Context, teacherID, pqID int64, title, externalURL string) (VCCDocument, error) {
+func (s *Store) CreatePQDocument(ctx context.Context, teacherID, pqID int64, title, fileName, objectKey, externalURL string) (VCCDocument, error) {
 	var d VCCDocument
 	d.Title = title
 	d.ExternalURL = externalURL
-	d.Category = "Other"
+	d.URL = objectKey
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO teacher_documents (teacher_id, title, file_category, external_url)
-		SELECT $1, $2, 'Other', NULLIF($3,'')
+		INSERT INTO teacher_documents (teacher_id, title, file_category, file_name, document_url, external_url)
+		SELECT $1, $2, 'Other', NULLIF($3,''), NULLIF($4,''), NULLIF($5,'')
 		WHERE EXISTS (
 			SELECT 1 FROM teacher_vcc_professional_qualifications pq
 			JOIN teacher_vccs tv ON tv.id = pq.vcc_id
-			WHERE pq.id = $4 AND tv.teacher_id = $1
+			WHERE pq.id = $6 AND tv.teacher_id = $1
 		)
 		RETURNING id
-	`, teacherID, title, externalURL, pqID).Scan(&d.ID)
+	`, teacherID, title, fileName, objectKey, externalURL, pqID).Scan(&d.ID)
 	if err != nil {
 		return VCCDocument{}, err
 	}
@@ -2794,6 +2921,176 @@ func (s *Store) DeletePQDocument(ctx context.Context, teacherID, docID int64) er
 		DELETE FROM teacher_documents WHERE id = $1 AND teacher_id = $2
 	`, docID, teacherID)
 	return err
+}
+
+// DeleteVCCPQ deletes a teaching qualification owned by teacherID.
+// Returns the MinIO object keys of any attached documents so the caller can
+// remove the files from storage.
+func (s *Store) DeleteVCCPQ(ctx context.Context, teacherID, pqID int64) (objectKeys []string, err error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT COALESCE(td.document_url, '')
+		FROM teacher_document_connections tdc
+		JOIN teacher_documents td ON td.id = tdc.document_id
+		WHERE tdc.vcc_professional_qual_id = $1
+		  AND td.teacher_id = $2
+		  AND td.document_url IS NOT NULL
+	`, pqID, teacherID)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if key != "" {
+			objectKeys = append(objectKeys, key)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Delete documents then the PQ (connection rows cascade-delete with PQ).
+	_, err = s.pool.Exec(ctx, `
+		DELETE FROM teacher_documents
+		WHERE id IN (
+			SELECT document_id FROM teacher_document_connections
+			WHERE vcc_professional_qual_id = $1
+		) AND teacher_id = $2
+	`, pqID, teacherID)
+	if err != nil {
+		return objectKeys, err
+	}
+	_, err = s.pool.Exec(ctx, `
+		DELETE FROM teacher_vcc_professional_qualifications
+		WHERE id = $1
+		  AND vcc_id IN (SELECT id FROM teacher_vccs WHERE teacher_id = $2)
+	`, pqID, teacherID)
+	return objectKeys, err
+}
+
+func (s *Store) CreateVCCCredential(ctx context.Context, teacherID int64, code, title, institution string, year, month int) (VCCPQ, error) {
+	var yr pgtype.Int2
+	if year > 0 {
+		yr = pgtype.Int2{Int16: int16(year), Valid: true}
+	}
+	var mo pgtype.Int2
+	if month > 0 {
+		mo = pgtype.Int2{Int16: int16(month), Valid: true}
+	}
+	var cred VCCPQ
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO teacher_vcc_credentials
+		       (vcc_id, credential_code, credential_title, institution, year, month, status)
+		SELECT id, $2, $3, NULLIF($4,''), $5, $6, 'Draft'
+		FROM teacher_vccs WHERE teacher_id = $1
+		ORDER BY calendar_year DESC, version DESC LIMIT 1
+		RETURNING id, credential_code, credential_title, COALESCE(institution,''),
+		          COALESCE(year,0), COALESCE(month,0), status
+	`, teacherID, code, title, institution, yr, mo).Scan(
+		&cred.ID, &cred.Code, &cred.Title, &cred.Institution, &cred.Year, &cred.Month, &cred.Status)
+	return cred, err
+}
+
+func (s *Store) UpdateVCCCredential(ctx context.Context, teacherID, credID int64,
+	code, title, institution, status string, approvedAt pgtype.Date, notes string, aqfLevel, year, month int,
+) error {
+	var aqf pgtype.Int2
+	if aqfLevel > 0 {
+		aqf = pgtype.Int2{Int16: int16(aqfLevel), Valid: true}
+	}
+	var yr pgtype.Int2
+	if year > 0 {
+		yr = pgtype.Int2{Int16: int16(year), Valid: true}
+	}
+	var mo pgtype.Int2
+	if month > 0 {
+		mo = pgtype.Int2{Int16: int16(month), Valid: true}
+	}
+	_, err := s.pool.Exec(ctx, `
+		UPDATE teacher_vcc_credentials
+		SET credential_code  = $1,
+		    credential_title = $2,
+		    institution      = NULLIF($3, ''),
+		    status           = $4,
+		    approved_at      = $5,
+		    notes            = NULLIF($6, ''),
+		    aqf_level        = $9,
+		    year             = $10,
+		    month            = $11
+		WHERE id = $7
+		  AND vcc_id IN (SELECT id FROM teacher_vccs WHERE teacher_id = $8)
+	`, code, title, institution, status, approvedAt, notes, credID, teacherID, aqf, yr, mo)
+	return err
+}
+
+func (s *Store) DeleteVCCCredential(ctx context.Context, teacherID, credID int64) (objectKeys []string, err error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT COALESCE(td.document_url, '')
+		FROM teacher_document_connections tdc
+		JOIN teacher_documents td ON td.id = tdc.document_id
+		WHERE tdc.vcc_credential_id = $1
+		  AND td.teacher_id = $2
+		  AND td.document_url IS NOT NULL
+	`, credID, teacherID)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if key != "" {
+			objectKeys = append(objectKeys, key)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	_, err = s.pool.Exec(ctx, `
+		DELETE FROM teacher_documents
+		WHERE id IN (
+			SELECT document_id FROM teacher_document_connections
+			WHERE vcc_credential_id = $1
+		) AND teacher_id = $2
+	`, credID, teacherID)
+	if err != nil {
+		return objectKeys, err
+	}
+	_, err = s.pool.Exec(ctx, `
+		DELETE FROM teacher_vcc_credentials
+		WHERE id = $1
+		  AND vcc_id IN (SELECT id FROM teacher_vccs WHERE teacher_id = $2)
+	`, credID, teacherID)
+	return objectKeys, err
+}
+
+func (s *Store) CreateCredentialDocument(ctx context.Context, teacherID, credID int64, title, fileName, objectKey, externalURL string) (VCCDocument, error) {
+	var d VCCDocument
+	d.Title = title
+	d.ExternalURL = externalURL
+	d.URL = objectKey
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO teacher_documents (teacher_id, title, file_category, file_name, document_url, external_url)
+		SELECT $1, $2, 'Other', NULLIF($3,''), NULLIF($4,''), NULLIF($5,'')
+		WHERE EXISTS (
+			SELECT 1 FROM teacher_vcc_credentials cred
+			JOIN teacher_vccs tv ON tv.id = cred.vcc_id
+			WHERE cred.id = $6 AND tv.teacher_id = $1
+		)
+		RETURNING id
+	`, teacherID, title, fileName, objectKey, externalURL, credID).Scan(&d.ID)
+	if err != nil {
+		return VCCDocument{}, err
+	}
+	_, err = s.pool.Exec(ctx, `
+		INSERT INTO teacher_document_connections (document_id, vcc_credential_id)
+		VALUES ($1, $2)
+	`, d.ID, credID)
+	return d, err
 }
 
 func (s *Store) CreateElementDocument(ctx context.Context, teacherID, elementID int64, title, externalURL string) (VCCDocument, error) {

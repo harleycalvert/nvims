@@ -1,9 +1,9 @@
-{{define "vcc-vocquals"}}<!DOCTYPE html>
+{{define "vcc-certifications"}}<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>NVIMS — Vocational Qualifications</title>
+  <title>NVIMS — Certifications &amp; Micro-Credentials</title>
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/people.css">
   <link rel="stylesheet" href="/static/sessions.css">
@@ -17,7 +17,7 @@
     <div class="header-top">
       <div class="header-title-group">
         <a class="header-home" href="/vcc/vocational-evidence">Vocational Evidence</a>
-        <h1>Vocational Qualifications</h1>
+        <h1>Certifications &amp; Micro-Credentials</h1>
       </div>
       <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
     </div>
@@ -36,15 +36,15 @@
     {{$vcc := .VCC}}
 
     <div class="vcc-panel-header">
-      <h2>Vocational Qualifications</h2>
-      <p class="vcc-panel-desc">Nationally Recognised Training — AQF qualifications and skill sets (ASQA Standard 3.2)</p>
+      <h2>Certifications &amp; Micro-Credentials</h2>
+      <p class="vcc-panel-desc">Industry Certifications, Short Courses &amp; Digital Badges</p>
     </div>
 
-    <div class="vcc-acc-list" id="vq-list">
-      {{if not $vcc.VocQuals}}
-        <p class="vcc-empty" id="vq-empty-msg">No vocational qualifications recorded.</p>
+    <div class="vcc-acc-list" id="cr-list">
+      {{if not $vcc.Credentials}}
+        <p class="vcc-empty" id="cr-empty-msg">No certifications or micro-credentials recorded.</p>
       {{end}}
-      {{range $vcc.VocQuals}}
+      {{range $vcc.Credentials}}
       <div class="vcc-acc" data-id="{{.ID}}">
         <div class="vcc-acc-hdr">
           <span class="vcc-chev">&#9654;</span>
@@ -53,25 +53,43 @@
           <span class="vcc-badge" data-st="{{.Status}}">{{.Status}}</span>
           {{if not .ApprovedAt.IsZero}}<span class="vcc-approved-date">&#10003; {{.ApprovedAt | dateISO}}</span>{{end}}
           <span class="sess-status vcc-ind"></span>
-          <button type="button" class="vcc-btn-del-vq" title="Delete qualification">&times;</button>
+          <button type="button" class="vcc-btn-del-cr" title="Delete credential">&times;</button>
         </div>
         <div class="vcc-acc-body" style="display:none">
           <div class="vcc-form-grid">
             <label class="vcc-field vcc-field-sm">
               <span>Code</span>
-              <input type="text" name="qualification_code" value="{{.Code}}" maxlength="30" class="vcc-input mono">
+              <input type="text" name="credential_code" value="{{.Code}}" maxlength="30" class="vcc-input mono">
             </label>
             <label class="vcc-field vcc-field-lg">
-              <span>Qualification Title</span>
-              <input type="text" name="qualification_title" value="{{.Title}}" maxlength="200" class="vcc-input">
+              <span>Credential Title</span>
+              <input type="text" name="credential_title" value="{{.Title}}" maxlength="200" class="vcc-input">
             </label>
             <label class="vcc-field vcc-field-md">
-              <span>Institution / RTO</span>
+              <span>Institution / Issuer</span>
               <input type="text" name="institution" value="{{.Institution}}" maxlength="200" class="vcc-input">
             </label>
             <label class="vcc-field vcc-field-xs">
               <span>Year</span>
-              <input type="number" name="year" value="{{if .Year}}{{.Year}}{{end}}" min="1900" max="2099" placeholder="e.g. 2019" class="vcc-input">
+              <input type="number" name="year" value="{{if .Year}}{{.Year}}{{end}}" min="1900" max="2099" placeholder="e.g. 2023" class="vcc-input">
+            </label>
+            <label class="vcc-field vcc-field-sm">
+              <span>Month</span>
+              <select name="month" class="vcc-input">
+                <option value="0"{{if eq .Month 0}} selected{{end}}>—</option>
+                <option value="1"{{if eq .Month 1}} selected{{end}}>January</option>
+                <option value="2"{{if eq .Month 2}} selected{{end}}>February</option>
+                <option value="3"{{if eq .Month 3}} selected{{end}}>March</option>
+                <option value="4"{{if eq .Month 4}} selected{{end}}>April</option>
+                <option value="5"{{if eq .Month 5}} selected{{end}}>May</option>
+                <option value="6"{{if eq .Month 6}} selected{{end}}>June</option>
+                <option value="7"{{if eq .Month 7}} selected{{end}}>July</option>
+                <option value="8"{{if eq .Month 8}} selected{{end}}>August</option>
+                <option value="9"{{if eq .Month 9}} selected{{end}}>September</option>
+                <option value="10"{{if eq .Month 10}} selected{{end}}>October</option>
+                <option value="11"{{if eq .Month 11}} selected{{end}}>November</option>
+                <option value="12"{{if eq .Month 12}} selected{{end}}>December</option>
+              </select>
             </label>
             <label class="vcc-field vcc-field-sm">
               <span>AQF Level</span>
@@ -120,11 +138,11 @@
               {{end}}
             </div>
             <div class="vcc-add-doc-bar" style="display:none">
-              <input type="text" class="vcc-input doc-title-inp" placeholder="Document name (e.g. CPC30220 Certificate)" maxlength="200">
+              <input type="text" class="vcc-input doc-title-inp" placeholder="Document name (e.g. AWS Certified Developer certificate)" maxlength="200">
               <div style="display:flex;align-items:center;gap:8px;margin-top:5px">
                 <input type="file" class="doc-file-inp">
                 <span style="color:#888;font-size:0.85em">or</span>
-                <input type="url" class="vcc-input doc-url-inp" placeholder="External URL (e.g. eQuals link)" maxlength="2048" style="flex:1">
+                <input type="url" class="vcc-input doc-url-inp" placeholder="External URL (e.g. Credly badge link)" maxlength="2048" style="flex:1">
               </div>
               <div class="vcc-add-doc-actions">
                 <button type="button" class="vcc-btn-sm btn-doc-save">Add</button>
@@ -138,24 +156,50 @@
       </div>
       {{end}}
     </div>
-    <div id="vq-add-bar" style="display:none">
+    <div id="cr-add-bar" style="display:none">
       <div class="vcc-form-grid" style="margin-bottom:8px">
         <label class="vcc-field vcc-field-sm">
           <span>Code</span>
-          <input type="text" id="vq-add-code" placeholder="e.g. CPC30220" maxlength="30" class="vcc-input mono">
+          <input type="text" id="cr-add-code" placeholder="e.g. AWS-CDA" maxlength="30" class="vcc-input mono">
         </label>
         <label class="vcc-field vcc-field-lg">
-          <span>Qualification Title</span>
-          <input type="text" id="vq-add-title" placeholder="Certificate III in Carpentry" maxlength="200" class="vcc-input">
+          <span>Credential Title</span>
+          <input type="text" id="cr-add-title" placeholder="AWS Certified Developer – Associate" maxlength="200" class="vcc-input">
+        </label>
+        <label class="vcc-field vcc-field-md">
+          <span>Issuing Organisation</span>
+          <input type="text" id="cr-add-institution" placeholder="e.g. Amazon Web Services" maxlength="200" class="vcc-input">
+        </label>
+        <label class="vcc-field vcc-field-xs">
+          <span>Year</span>
+          <input type="number" id="cr-add-year" min="1900" max="2099" placeholder="e.g. 2024" class="vcc-input">
+        </label>
+        <label class="vcc-field vcc-field-sm">
+          <span>Month</span>
+          <select id="cr-add-month" class="vcc-input">
+            <option value="0">—</option>
+            <option value="1">January</option>
+            <option value="2">February</option>
+            <option value="3">March</option>
+            <option value="4">April</option>
+            <option value="5">May</option>
+            <option value="6">June</option>
+            <option value="7">July</option>
+            <option value="8">August</option>
+            <option value="9">September</option>
+            <option value="10">October</option>
+            <option value="11">November</option>
+            <option value="12">December</option>
+          </select>
         </label>
       </div>
       <div class="vcc-add-actions">
-        <button type="button" id="vq-add-save" class="vcc-btn-sm">Add qualification</button>
-        <button type="button" id="vq-add-cancel" class="vcc-btn-sm vcc-btn-ghost">Cancel</button>
-        <span id="vq-add-err" class="vcc-err-msg"></span>
+        <button type="button" id="cr-add-save" class="vcc-btn-sm">Add credential</button>
+        <button type="button" id="cr-add-cancel" class="vcc-btn-sm vcc-btn-ghost">Cancel</button>
+        <span id="cr-add-err" class="vcc-err-msg"></span>
       </div>
     </div>
-    <button type="button" id="vq-add-btn" class="vcc-btn-add">+ Add qualification</button>
+    <button type="button" id="cr-add-btn" class="vcc-btn-add">+ Add credential</button>
 
   {{end}}
   </main>
@@ -178,8 +222,8 @@
 }
 .vcc-acc-hdr:hover { background: #f8fafc; }
 .vcc-acc.open > .vcc-acc-hdr { background: #f1f5f9; border-bottom: 1px solid #e2e8f0; border-radius: 6px 6px 0 0; }
-.vcc-btn-del-vq { margin-left: auto; background: none; border: none; color: #94a3b8; font-size: 1.2rem; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
-.vcc-btn-del-vq:hover { background: #fee2e2; color: #dc2626; }
+.vcc-btn-del-cr { margin-left: auto; background: none; border: none; color: #94a3b8; font-size: 1.2rem; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+.vcc-btn-del-cr:hover { background: #fee2e2; color: #dc2626; }
 .vcc-chev { font-size: 8px; color: #94a3b8; flex-shrink: 0; transition: transform 0.18s; display: inline-block; }
 .vcc-acc.open > .vcc-acc-hdr .vcc-chev { transform: rotate(90deg); }
 .vcc-acc-code { font-family: monospace; font-size: 12px; font-weight: 700; color: #2563eb; flex-shrink: 0; }
@@ -235,7 +279,7 @@
 .vcc-btn-ghost:hover { background: #f1f5f9; }
 .vcc-btn-add { margin-top: 10px; font-size: 12px; padding: 6px 14px; border-radius: 5px; border: 1px dashed #93c5fd; background: #eff6ff; color: #2563eb; cursor: pointer; display: block; }
 .vcc-btn-add:hover { background: #dbeafe; border-color: #3b82f6; }
-#vq-add-bar { margin-top: 8px; padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; }
+#cr-add-bar { margin-top: 8px; padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; }
 .vcc-add-actions { display: flex; gap: 8px; align-items: center; }
 </style>
 
@@ -272,22 +316,23 @@
     acc.classList.toggle('open', !isOpen);
   });
 
-  // ── Save a vocational qual ──
-  function saveVQ(acc) {
+  // ── Save a credential ──
+  function saveCred(acc) {
     const g = n => acc.querySelector(`[name="${n}"]`)?.value ?? '';
     const fields = {
-      qualification_code:  g('qualification_code').trim(),
-      qualification_title: g('qualification_title').trim(),
-      institution:         g('institution').trim(),
-      year:                g('year'),
-      aqf_level:           g('aqf_level'),
-      status:              g('status'),
-      approved_at:         g('approved_at'),
-      notes:               g('notes').trim(),
+      credential_code:  g('credential_code').trim(),
+      credential_title: g('credential_title').trim(),
+      institution:      g('institution').trim(),
+      year:             g('year'),
+      month:            g('month'),
+      aqf_level:        g('aqf_level'),
+      status:           g('status'),
+      approved_at:      g('approved_at'),
+      notes:            g('notes').trim(),
     };
-    if (!fields.qualification_code || !fields.qualification_title) return;
+    if (!fields.credential_code || !fields.credential_title) return;
     const ind = acc.querySelector('.vcc-ind');
-    postSave('/vcc/vocquals/' + acc.dataset.id, fields, ind);
+    postSave('/vcc/credentials/' + acc.dataset.id, fields, ind);
   }
 
   function autoRevertToDraft(acc) {
@@ -314,34 +359,38 @@
     }
     row.innerHTML = linkHtml + `<button type="button" class="vcc-doc-del" title="Remove">&times;</button>`;
     row.querySelector('.vcc-doc-del').addEventListener('click', () => {
-      fetch('/vcc/vocquals/' + acc.dataset.id + '/docs/' + d.id + '/delete', {method:'POST'})
+      fetch('/vcc/credentials/' + acc.dataset.id + '/docs/' + d.id + '/delete', {method:'POST'})
         .then(r => { if (r.ok) row.remove(); });
     });
     list.appendChild(row);
   }
 
-  function attachVQHandlers(acc) {
-    acc.querySelectorAll('input[type=text], input[type=date]').forEach(el =>
-      el.addEventListener('blur', () => { autoRevertToDraft(acc); saveVQ(acc); }));
+  function attachCredHandlers(acc) {
+    acc.querySelectorAll('input[type=text], input[type=date], input[type=number]').forEach(el =>
+      el.addEventListener('blur', () => { autoRevertToDraft(acc); saveCred(acc); }));
 
-    acc.querySelector('select[name=status]')?.addEventListener('change', () => {
-      const s = acc.querySelector('select[name=status]').value;
-      const badge = acc.querySelector('.vcc-badge');
-      if (badge) { badge.dataset.st = s; badge.textContent = s; }
-      saveVQ(acc);
+    acc.querySelectorAll('select[name=status], select[name=month], select[name=aqf_level]').forEach(sel => {
+      sel.addEventListener('change', () => {
+        if (sel.name === 'status') {
+          const s = sel.value;
+          const badge = acc.querySelector('.vcc-badge');
+          if (badge) { badge.dataset.st = s; badge.textContent = s; }
+        }
+        saveCred(acc);
+      });
     });
 
-    acc.querySelector('.vcc-btn-del-vq')?.addEventListener('click', e => {
+    acc.querySelector('.vcc-btn-del-cr')?.addEventListener('click', e => {
       e.stopPropagation();
-      if (!confirm('Delete this qualification and all its evidence documents? This cannot be undone.')) return;
-      fetch('/vcc/vocquals/' + acc.dataset.id + '/delete', {method: 'POST'})
+      if (!confirm('Delete this credential and all its evidence documents? This cannot be undone.')) return;
+      fetch('/vcc/credentials/' + acc.dataset.id + '/delete', {method: 'POST'})
         .then(r => { if (r.ok) acc.remove(); });
     });
 
     acc.querySelectorAll('.vcc-doc-del').forEach(btn => {
       const row = btn.closest('.vcc-doc-row');
       btn.addEventListener('click', () => {
-        fetch('/vcc/vocquals/' + acc.dataset.id + '/docs/' + row.dataset.docId + '/delete', {method:'POST'})
+        fetch('/vcc/credentials/' + acc.dataset.id + '/docs/' + row.dataset.docId + '/delete', {method:'POST'})
           .then(r => { if (r.ok) row.remove(); });
       });
     });
@@ -374,7 +423,7 @@
         fd.append('title', title);
         fd.append('external_url', urlInp.value.trim());
         if (fileInp.files[0]) fd.append('file', fileInp.files[0]);
-        const res = await fetch('/vcc/vocquals/' + acc.dataset.id + '/docs', {method:'POST', body: fd});
+        const res = await fetch('/vcc/credentials/' + acc.dataset.id + '/docs', {method:'POST', body: fd});
         if (!res.ok) { errEl.textContent = 'Error saving'; return; }
         const d = await res.json();
         appendDocRow(acc, d);
@@ -387,81 +436,111 @@
     });
   }
 
-  document.querySelectorAll('#vq-list .vcc-acc').forEach(acc => attachVQHandlers(acc));
+  document.querySelectorAll('#cr-list .vcc-acc').forEach(acc => attachCredHandlers(acc));
 
-  // ── Add qualification ──
-  const vqAddBar    = document.getElementById('vq-add-bar');
-  const vqAddBtn    = document.getElementById('vq-add-btn');
-  const vqAddSave   = document.getElementById('vq-add-save');
-  const vqAddCancel = document.getElementById('vq-add-cancel');
-  const vqAddErr    = document.getElementById('vq-add-err');
-  const vqList      = document.getElementById('vq-list');
+  // ── Add credential ──
+  const crAddBar    = document.getElementById('cr-add-bar');
+  const crAddBtn    = document.getElementById('cr-add-btn');
+  const crAddSave   = document.getElementById('cr-add-save');
+  const crAddCancel = document.getElementById('cr-add-cancel');
+  const crAddErr    = document.getElementById('cr-add-err');
+  const crList      = document.getElementById('cr-list');
 
-  vqAddBtn?.addEventListener('click', () => {
-    vqAddBar.style.display = '';
-    vqAddBtn.style.display = 'none';
-    document.getElementById('vq-add-code').focus();
+  crAddBtn?.addEventListener('click', () => {
+    crAddBar.style.display = '';
+    crAddBtn.style.display = 'none';
+    document.getElementById('cr-add-code').focus();
   });
-  vqAddCancel?.addEventListener('click', () => {
-    vqAddBar.style.display = 'none';
-    vqAddBtn.style.display = '';
-    document.getElementById('vq-add-code').value  = '';
-    document.getElementById('vq-add-title').value = '';
-    if (vqAddErr) vqAddErr.textContent = '';
+  function resetCredAddBar() {
+    document.getElementById('cr-add-code').value        = '';
+    document.getElementById('cr-add-title').value       = '';
+    document.getElementById('cr-add-institution').value = '';
+    document.getElementById('cr-add-year').value        = '';
+    document.getElementById('cr-add-month').value       = '0';
+    if (crAddErr) crAddErr.textContent = '';
+  }
+
+  crAddCancel?.addEventListener('click', () => {
+    crAddBar.style.display = 'none';
+    crAddBtn.style.display = '';
+    resetCredAddBar();
   });
-  vqAddSave?.addEventListener('click', async () => {
-    const code  = document.getElementById('vq-add-code').value.trim();
-    const title = document.getElementById('vq-add-title').value.trim();
-    if (!code || !title) { vqAddErr.textContent = 'Code and title required'; return; }
-    vqAddErr.textContent = '';
+  crAddSave?.addEventListener('click', async () => {
+    const code  = document.getElementById('cr-add-code').value.trim();
+    const title = document.getElementById('cr-add-title').value.trim();
+    if (!code || !title) { crAddErr.textContent = 'Code and title required'; return; }
+    crAddErr.textContent = '';
     try {
-      const res = await fetch('/vcc/vocquals', {
+      const res = await fetch('/vcc/credentials', {
         method: 'POST',
-        body: new URLSearchParams({qualification_code: code, qualification_title: title}),
+        body: new URLSearchParams({
+          credential_code:  code,
+          credential_title: title,
+          institution:      document.getElementById('cr-add-institution').value.trim(),
+          year:             document.getElementById('cr-add-year').value,
+          month:            document.getElementById('cr-add-month').value,
+        }),
       });
-      if (!res.ok) { vqAddErr.textContent = 'Error creating qualification'; return; }
-      const vq = await res.json();
-      document.getElementById('vq-empty-msg')?.remove();
-      const acc = buildVQAccordion(vq);
-      vqList.appendChild(acc);
-      attachVQHandlers(acc);
-      vqAddBar.style.display = 'none';
-      vqAddBtn.style.display = '';
-      document.getElementById('vq-add-code').value  = '';
-      document.getElementById('vq-add-title').value = '';
-    } catch { vqAddErr.textContent = 'Network error'; }
+      if (!res.ok) { crAddErr.textContent = 'Error creating credential'; return; }
+      const cred = await res.json();
+      document.getElementById('cr-empty-msg')?.remove();
+      const acc = buildCredAccordion(cred);
+      crList.appendChild(acc);
+      attachCredHandlers(acc);
+      crAddBar.style.display = 'none';
+      crAddBtn.style.display = '';
+      resetCredAddBar();
+    } catch { crAddErr.textContent = 'Network error'; }
   });
 
-  function buildVQAccordion(vq) {
+  function buildCredAccordion(cred) {
     const acc = document.createElement('div');
     acc.className = 'vcc-acc open';
-    acc.dataset.id = vq.id;
+    acc.dataset.id = cred.id;
     acc.innerHTML = `
       <div class="vcc-acc-hdr">
         <span class="vcc-chev">&#9654;</span>
-        <span class="vcc-acc-code">${esc(vq.code)}</span>
-        <span class="vcc-acc-title">${esc(vq.title)}</span>
+        <span class="vcc-acc-code">${esc(cred.code)}</span>
+        <span class="vcc-acc-title">${esc(cred.title)}</span>
         <span class="vcc-badge" data-st="Draft">Draft</span>
         <span class="sess-status vcc-ind"></span>
-        <button type="button" class="vcc-btn-del-vq" title="Delete qualification">&times;</button>
+        <button type="button" class="vcc-btn-del-cr" title="Delete credential">&times;</button>
       </div>
       <div class="vcc-acc-body">
         <div class="vcc-form-grid">
           <label class="vcc-field vcc-field-sm">
             <span>Code</span>
-            <input type="text" name="qualification_code" value="${esc(vq.code)}" maxlength="30" class="vcc-input mono">
+            <input type="text" name="credential_code" value="${esc(cred.code)}" maxlength="30" class="vcc-input mono">
           </label>
           <label class="vcc-field vcc-field-lg">
-            <span>Qualification Title</span>
-            <input type="text" name="qualification_title" value="${esc(vq.title)}" maxlength="200" class="vcc-input">
+            <span>Credential Title</span>
+            <input type="text" name="credential_title" value="${esc(cred.title)}" maxlength="200" class="vcc-input">
           </label>
           <label class="vcc-field vcc-field-md">
-            <span>Institution / RTO</span>
-            <input type="text" name="institution" value="" maxlength="200" class="vcc-input">
+            <span>Institution / Issuer</span>
+            <input type="text" name="institution" value="${esc(cred.institution||'')}" maxlength="200" class="vcc-input">
           </label>
           <label class="vcc-field vcc-field-xs">
             <span>Year</span>
-            <input type="number" name="year" value="" min="1900" max="2099" placeholder="e.g. 2019" class="vcc-input">
+            <input type="number" name="year" value="${cred.year||''}" min="1900" max="2099" placeholder="e.g. 2023" class="vcc-input">
+          </label>
+          <label class="vcc-field vcc-field-sm">
+            <span>Month</span>
+            <select name="month" class="vcc-input">
+              <option value="0" selected>—</option>
+              <option value="1">January</option>
+              <option value="2">February</option>
+              <option value="3">March</option>
+              <option value="4">April</option>
+              <option value="5">May</option>
+              <option value="6">June</option>
+              <option value="7">July</option>
+              <option value="8">August</option>
+              <option value="9">September</option>
+              <option value="10">October</option>
+              <option value="11">November</option>
+              <option value="12">December</option>
+            </select>
           </label>
           <label class="vcc-field vcc-field-sm">
             <span>AQF Level</span>
@@ -501,11 +580,11 @@
           <div class="vcc-docs-hdr"><span class="vcc-section-label">Evidence Documents</span></div>
           <div class="vcc-doc-list"></div>
           <div class="vcc-add-doc-bar" style="display:none">
-            <input type="text" class="vcc-input doc-title-inp" placeholder="Document name (e.g. CPC30220 Certificate)" maxlength="200">
+            <input type="text" class="vcc-input doc-title-inp" placeholder="Document name (e.g. AWS Certified Developer certificate)" maxlength="200">
             <div style="display:flex;align-items:center;gap:8px;margin-top:5px">
               <input type="file" class="doc-file-inp">
               <span style="color:#888;font-size:0.85em">or</span>
-              <input type="url" class="vcc-input doc-url-inp" placeholder="External URL (e.g. eQuals link)" maxlength="2048" style="flex:1">
+              <input type="url" class="vcc-input doc-url-inp" placeholder="External URL (e.g. Credly badge link)" maxlength="2048" style="flex:1">
             </div>
             <div class="vcc-add-doc-actions">
               <button type="button" class="vcc-btn-sm btn-doc-save">Add</button>
@@ -516,6 +595,7 @@
           <button type="button" class="vcc-btn-sm vcc-btn-ghost btn-add-doc">+ Add document</button>
         </div>
       </div>`;
+    if (cred.month) acc.querySelector('select[name=month]').value = cred.month;
     return acc;
   }
 
@@ -523,5 +603,4 @@
 </script>
 
   </div>
-</body>
-</html>{{end}}
+</body>{{end}}

@@ -161,6 +161,7 @@ func New(st *store.Store, sessions *auth.Sessions, stor *storage.Client) *Handle
 			"templates/vcc/vocational-evidence.html",
 			"templates/vcc/detail.html",
 			"templates/vcc/vocational-qualifications.html",
+			"templates/vcc/certifications.html",
 			"templates/admin/infra-menu.html",
 			"templates/admin/infra-orgs.html",
 			"templates/admin/infra-locations.html",
@@ -2824,12 +2825,13 @@ func (h *Handler) VCCPQUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	approvedAt := parseDateField(r.FormValue("approved_at"))
 	aqfLevel, _ := strconv.Atoi(r.FormValue("aqf_level"))
+	year, _ := strconv.Atoi(r.FormValue("year"))
 	if err := h.store.UpdateVCCPQ(r.Context(), user.PersonID, pqID,
 		code, title,
 		strings.TrimSpace(r.FormValue("institution")),
 		status, approvedAt,
 		strings.TrimSpace(r.FormValue("notes")),
-		aqfLevel,
+		aqfLevel, year,
 	); err != nil {
 		log.Printf("UpdateVCCPQ(%d,%d): %v", user.PersonID, pqID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
@@ -2851,15 +2853,40 @@ func (h *Handler) VCCPQCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"code and title required"}`, http.StatusBadRequest)
 		return
 	}
+	year, _ := strconv.Atoi(r.FormValue("year"))
+	aqfLevel, _ := strconv.Atoi(r.FormValue("aqf_level"))
 	pq, err := h.store.CreateVCCPQ(r.Context(), user.PersonID, code, title,
-		strings.TrimSpace(r.FormValue("institution")))
+		strings.TrimSpace(r.FormValue("institution")), year, aqfLevel)
 	if err != nil {
 		log.Printf("CreateVCCPQ(%d): %v", user.PersonID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"id":%d,"code":%q,"title":%q,"status":%q}`, pq.ID, pq.Code, pq.Title, pq.Status)
+	fmt.Fprintf(w, `{"id":%d,"code":%q,"title":%q,"institution":%q,"year":%d,"aqf_level":%d,"status":%q}`,
+		pq.ID, pq.Code, pq.Title, pq.Institution, pq.Year, pq.AQFLevel, pq.Status)
+}
+
+func (h *Handler) VCCPQDelete(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	pqID, err := strconv.ParseInt(r.PathValue("pid"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	keys, err := h.store.DeleteVCCPQ(r.Context(), user.PersonID, pqID)
+	if err != nil {
+		log.Printf("DeleteVCCPQ(%d,%d): %v", user.PersonID, pqID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	for _, key := range keys {
+		if derr := h.storage.Delete(r.Context(), key); derr != nil {
+			log.Printf("VCCPQDelete MinIO delete(%s): %v", key, derr)
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
 func (h *Handler) VCCVocQuals(w http.ResponseWriter, r *http.Request) {
@@ -2877,6 +2904,28 @@ func (h *Handler) VCCVocQuals(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "vcc-vocquals", map[string]any{
 		"VCC": vcc, "User": user, "ItemStatuses": validVCCItemStatuses,
 	})
+}
+
+func (h *Handler) VCCVocQualDelete(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	vqID, err := strconv.ParseInt(r.PathValue("pid"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	keys, err := h.store.DeleteVCCVocQual(r.Context(), user.PersonID, vqID)
+	if err != nil {
+		log.Printf("DeleteVCCVocQual(%d,%d): %v", user.PersonID, vqID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	for _, key := range keys {
+		if derr := h.storage.Delete(r.Context(), key); derr != nil {
+			log.Printf("VCCVocQualDelete MinIO delete(%s): %v", key, derr)
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
 func (h *Handler) VCCVocQualCreate(w http.ResponseWriter, r *http.Request) {
@@ -2922,12 +2971,13 @@ func (h *Handler) VCCVocQualUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	approvedAt := parseDateField(r.FormValue("approved_at"))
 	aqfLevel, _ := strconv.Atoi(r.FormValue("aqf_level"))
+	year, _ := strconv.Atoi(r.FormValue("year"))
 	if err := h.store.UpdateVCCVocQual(r.Context(), user.PersonID, vqID,
 		code, title,
 		strings.TrimSpace(r.FormValue("institution")),
 		status, approvedAt,
 		strings.TrimSpace(r.FormValue("notes")),
-		aqfLevel,
+		aqfLevel, year,
 	); err != nil {
 		log.Printf("UpdateVCCVocQual(%d,%d): %v", user.PersonID, vqID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
@@ -2944,24 +2994,45 @@ func (h *Handler) VCCVocQualAddDoc(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
-		return
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		_ = r.ParseForm()
 	}
 	title := strings.TrimSpace(r.FormValue("title"))
 	if title == "" {
 		http.Error(w, `{"error":"title required"}`, http.StatusBadRequest)
 		return
 	}
+	externalURL := strings.TrimSpace(r.FormValue("external_url"))
+
+	var fileName, objectKey string
+	if file, fh, ferr := r.FormFile("file"); ferr == nil {
+		defer file.Close()
+		fileName = fh.Filename
+		ct := fh.Header.Get("Content-Type")
+		if ct == "" {
+			ct = "application/octet-stream"
+		}
+		objectKey = fmt.Sprintf("teacher/%d/vocqual/%s_%s", user.PersonID, time.Now().Format("20060102150405"), fileName)
+		if err := h.storage.Upload(r.Context(), objectKey, file, fh.Size, ct); err != nil {
+			log.Printf("VCCVocQualAddDoc upload(%d): %v", user.PersonID, err)
+			http.Error(w, `{"error":"upload failed"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+
 	doc, err := h.store.CreateVocQualDocument(r.Context(), user.PersonID, vqID,
-		title, strings.TrimSpace(r.FormValue("external_url")))
+		title, fileName, objectKey, externalURL)
 	if err != nil {
+		if objectKey != "" {
+			_ = h.storage.Delete(r.Context(), objectKey)
+		}
 		log.Printf("CreateVocQualDocument(%d,%d): %v", user.PersonID, vqID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"id":%d,"title":%q,"external_url":%q}`, doc.ID, doc.Title, doc.ExternalURL)
+	fmt.Fprintf(w, `{"id":%d,"title":%q,"external_url":%q,"has_file":%v}`,
+		doc.ID, doc.Title, doc.ExternalURL, objectKey != "")
 }
 
 func (h *Handler) VCCVocQualDeleteDoc(w http.ResponseWriter, r *http.Request) {
@@ -2970,6 +3041,11 @@ func (h *Handler) VCCVocQualDeleteDoc(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.NotFound(w, r)
 		return
+	}
+	if objectKey, kerr := h.store.GetTeacherDocumentObjectKey(r.Context(), user.PersonID, docID); kerr == nil && objectKey != "" {
+		if derr := h.storage.Delete(r.Context(), objectKey); derr != nil {
+			log.Printf("VCCVocQualDeleteDoc MinIO delete(%s): %v", objectKey, derr)
+		}
 	}
 	if err := h.store.DeletePQDocument(r.Context(), user.PersonID, docID); err != nil {
 		log.Printf("DeleteVocQualDoc(%d,%d): %v", user.PersonID, docID, err)
@@ -2987,24 +3063,45 @@ func (h *Handler) VCCPQAddDoc(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
-		return
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		_ = r.ParseForm()
 	}
 	title := strings.TrimSpace(r.FormValue("title"))
 	if title == "" {
 		http.Error(w, `{"error":"title required"}`, http.StatusBadRequest)
 		return
 	}
+	externalURL := strings.TrimSpace(r.FormValue("external_url"))
+
+	var fileName, objectKey string
+	if file, fh, ferr := r.FormFile("file"); ferr == nil {
+		defer file.Close()
+		fileName = fh.Filename
+		ct := fh.Header.Get("Content-Type")
+		if ct == "" {
+			ct = "application/octet-stream"
+		}
+		objectKey = fmt.Sprintf("teacher/%d/pq/%s_%s", user.PersonID, time.Now().Format("20060102150405"), fileName)
+		if err := h.storage.Upload(r.Context(), objectKey, file, fh.Size, ct); err != nil {
+			log.Printf("VCCPQAddDoc upload(%d): %v", user.PersonID, err)
+			http.Error(w, `{"error":"upload failed"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+
 	doc, err := h.store.CreatePQDocument(r.Context(), user.PersonID, pqID,
-		title, strings.TrimSpace(r.FormValue("external_url")))
+		title, fileName, objectKey, externalURL)
 	if err != nil {
+		if objectKey != "" {
+			_ = h.storage.Delete(r.Context(), objectKey)
+		}
 		log.Printf("CreatePQDocument(%d,%d): %v", user.PersonID, pqID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"id":%d,"title":%q,"external_url":%q}`, doc.ID, doc.Title, doc.ExternalURL)
+	fmt.Fprintf(w, `{"id":%d,"title":%q,"external_url":%q,"has_file":%v}`,
+		doc.ID, doc.Title, doc.ExternalURL, objectKey != "")
 }
 
 func (h *Handler) VCCPQDeleteDoc(w http.ResponseWriter, r *http.Request) {
@@ -3014,8 +3111,184 @@ func (h *Handler) VCCPQDeleteDoc(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if objectKey, kerr := h.store.GetTeacherDocumentObjectKey(r.Context(), user.PersonID, docID); kerr == nil && objectKey != "" {
+		if derr := h.storage.Delete(r.Context(), objectKey); derr != nil {
+			log.Printf("VCCPQDeleteDoc MinIO delete(%s): %v", objectKey, derr)
+		}
+	}
 	if err := h.store.DeletePQDocument(r.Context(), user.PersonID, docID); err != nil {
 		log.Printf("DeletePQDocument(%d,%d): %v", user.PersonID, docID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) VCCCredentials(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	vcc, err := h.store.GetLatestVCCForTeacher(r.Context(), user.PersonID)
+	if err == pgx.ErrNoRows {
+		h.render(w, "vcc-certifications", map[string]any{"VCC": nil, "User": user, "ItemStatuses": validVCCItemStatuses})
+		return
+	}
+	if err != nil {
+		log.Printf("GetLatestVCCForTeacher(%d): %v", user.PersonID, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	h.render(w, "vcc-certifications", map[string]any{
+		"VCC": vcc, "User": user, "ItemStatuses": validVCCItemStatuses,
+	})
+}
+
+func (h *Handler) VCCCredentialCreate(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	code := strings.TrimSpace(r.FormValue("credential_code"))
+	title := strings.TrimSpace(r.FormValue("credential_title"))
+	if code == "" || title == "" {
+		http.Error(w, `{"error":"code and title required"}`, http.StatusBadRequest)
+		return
+	}
+	year, _ := strconv.Atoi(r.FormValue("year"))
+	month, _ := strconv.Atoi(r.FormValue("month"))
+	cred, err := h.store.CreateVCCCredential(r.Context(), user.PersonID, code, title,
+		strings.TrimSpace(r.FormValue("institution")), year, month)
+	if err != nil {
+		log.Printf("CreateVCCCredential(%d): %v", user.PersonID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"id":%d,"code":%q,"title":%q,"institution":%q,"year":%d,"month":%d,"status":%q}`,
+		cred.ID, cred.Code, cred.Title, cred.Institution, cred.Year, cred.Month, cred.Status)
+}
+
+func (h *Handler) VCCCredentialUpdate(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	credID, err := strconv.ParseInt(r.PathValue("cid"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	code := strings.TrimSpace(r.FormValue("credential_code"))
+	title := strings.TrimSpace(r.FormValue("credential_title"))
+	status := r.FormValue("status")
+	if code == "" || title == "" || !containsStr(validVCCItemStatuses, status) {
+		http.Error(w, `{"error":"missing required fields"}`, http.StatusBadRequest)
+		return
+	}
+	approvedAt := parseDateField(r.FormValue("approved_at"))
+	aqfLevel, _ := strconv.Atoi(r.FormValue("aqf_level"))
+	year, _ := strconv.Atoi(r.FormValue("year"))
+	month, _ := strconv.Atoi(r.FormValue("month"))
+	if err := h.store.UpdateVCCCredential(r.Context(), user.PersonID, credID,
+		code, title,
+		strings.TrimSpace(r.FormValue("institution")),
+		status, approvedAt,
+		strings.TrimSpace(r.FormValue("notes")),
+		aqfLevel, year, month,
+	); err != nil {
+		log.Printf("UpdateVCCCredential(%d,%d): %v", user.PersonID, credID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) VCCCredentialDelete(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	credID, err := strconv.ParseInt(r.PathValue("cid"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	keys, err := h.store.DeleteVCCCredential(r.Context(), user.PersonID, credID)
+	if err != nil {
+		log.Printf("DeleteVCCCredential(%d,%d): %v", user.PersonID, credID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	for _, key := range keys {
+		if derr := h.storage.Delete(r.Context(), key); derr != nil {
+			log.Printf("VCCCredentialDelete MinIO delete(%s): %v", key, derr)
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) VCCCredentialAddDoc(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	credID, err := strconv.ParseInt(r.PathValue("cid"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		_ = r.ParseForm()
+	}
+	title := strings.TrimSpace(r.FormValue("title"))
+	if title == "" {
+		http.Error(w, `{"error":"title required"}`, http.StatusBadRequest)
+		return
+	}
+	externalURL := strings.TrimSpace(r.FormValue("external_url"))
+
+	var fileName, objectKey string
+	if file, fh, ferr := r.FormFile("file"); ferr == nil {
+		defer file.Close()
+		fileName = fh.Filename
+		ct := fh.Header.Get("Content-Type")
+		if ct == "" {
+			ct = "application/octet-stream"
+		}
+		objectKey = fmt.Sprintf("teacher/%d/credential/%s_%s", user.PersonID, time.Now().Format("20060102150405"), fileName)
+		if err := h.storage.Upload(r.Context(), objectKey, file, fh.Size, ct); err != nil {
+			log.Printf("VCCCredentialAddDoc upload(%d): %v", user.PersonID, err)
+			http.Error(w, `{"error":"upload failed"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+
+	doc, err := h.store.CreateCredentialDocument(r.Context(), user.PersonID, credID,
+		title, fileName, objectKey, externalURL)
+	if err != nil {
+		if objectKey != "" {
+			_ = h.storage.Delete(r.Context(), objectKey)
+		}
+		log.Printf("CreateCredentialDocument(%d,%d): %v", user.PersonID, credID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"id":%d,"title":%q,"external_url":%q,"has_file":%v}`,
+		doc.ID, doc.Title, doc.ExternalURL, objectKey != "")
+}
+
+func (h *Handler) VCCCredentialDeleteDoc(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	docID, err := strconv.ParseInt(r.PathValue("did"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if objectKey, kerr := h.store.GetTeacherDocumentObjectKey(r.Context(), user.PersonID, docID); kerr == nil && objectKey != "" {
+		if derr := h.storage.Delete(r.Context(), objectKey); derr != nil {
+			log.Printf("VCCCredentialDeleteDoc MinIO delete(%s): %v", objectKey, derr)
+		}
+	}
+	if err := h.store.DeletePQDocument(r.Context(), user.PersonID, docID); err != nil {
+		log.Printf("DeleteCredentialDoc(%d,%d): %v", user.PersonID, docID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}

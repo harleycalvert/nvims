@@ -1,7 +1,20 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.36, 2026-06-15
+-- AVETMISS-compliant SMS schema  --  version 0.40, 2026-06-15
 -- =========================================================================
--- Changes from v0.35:
+-- Changes from v0.40:
+--   1.  teacher_vcc_credentials: new table for Certifications & Micro-Credentials.
+--       Columns: credential_code, credential_title, institution, year, month (1–12),
+--       aqf_level, status, approved_at, notes. FK → teacher_vccs.
+--   2.  teacher_document_connections: added vcc_credential_id bigint NULL FK →
+--       teacher_vcc_credentials(id) ON DELETE CASCADE; updated num_nonnulls check.
+-- Changes from v0.39:
+--   1.  teacher_vcc_professional_qualifications: replaced date_of_completion
+--       with year smallint NULL (year the qualification was awarded).
+--   2.  teacher_vcc_vocational_qualifications: same — replaced date_of_completion
+--       with year smallint NULL.
+-- Changes from v0.37:
+--   3.  teacher_currency_activities: added external_url varchar(2048) NULL.
+-- Changes from v0.36:
 --   1.  class_sessions: added building_id bigint NULL FK → buildings(id)
 --       ON DELETE SET NULL. Allows a session to be assigned directly to a
 --       building without requiring a room (e.g. Building W at Frankston).
@@ -2614,6 +2627,7 @@ CREATE TABLE IF NOT EXISTS public.teacher_vcc_professional_qualifications (
     qualification_code   varchar(30)  NOT NULL,
     qualification_title  varchar(200) NOT NULL,
     institution          varchar(200) NULL,
+    year                 smallint     NULL,
     aqf_level            smallint     NULL,
     status               varchar(20)  NOT NULL DEFAULT 'Draft',
     approved_at          date         NULL,
@@ -2632,6 +2646,7 @@ CREATE TABLE IF NOT EXISTS public.teacher_vcc_vocational_qualifications (
     qualification_code   varchar(30)  NOT NULL,
     qualification_title  varchar(200) NOT NULL,
     institution          varchar(200) NULL,
+    year                 smallint     NULL,
     aqf_level            smallint     NULL,
     status               varchar(20)  NOT NULL DEFAULT 'Draft',
     approved_at          date         NULL,
@@ -2641,6 +2656,27 @@ CREATE TABLE IF NOT EXISTS public.teacher_vcc_vocational_qualifications (
     CONSTRAINT fk_vcc_vocqual_vcc    FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE,
     CONSTRAINT chk_vcc_vocqual_status CHECK (status IN ('Draft','Pending','Approved','Rejected')),
     CONSTRAINT chk_vcc_vocqual_aqf    CHECK (aqf_level BETWEEN 1 AND 10)
+);
+
+-- Certifications, micro-credentials and short courses declared in a VCC.
+CREATE TABLE IF NOT EXISTS public.teacher_vcc_credentials (
+    id               bigserial    NOT NULL,
+    vcc_id           bigint       NOT NULL,
+    credential_code  varchar(30)  NOT NULL,
+    credential_title varchar(200) NOT NULL,
+    institution      varchar(200) NULL,       -- issuing body (e.g. AWS, Google)
+    year             smallint     NULL,
+    month            smallint     NULL,        -- 1–12; NULL = month not recorded
+    aqf_level        smallint     NULL,
+    status           varchar(20)  NOT NULL DEFAULT 'Draft',
+    approved_at      date         NULL,
+    notes            text         NULL,
+    created_at       timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_vcc_cred_vcc     FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE,
+    CONSTRAINT chk_vcc_cred_status CHECK (status IN ('Draft','Pending','Approved','Rejected')),
+    CONSTRAINT chk_vcc_cred_aqf    CHECK (aqf_level BETWEEN 1 AND 10),
+    CONSTRAINT chk_vcc_cred_month  CHECK (month BETWEEN 1 AND 12)
 );
 
 -- Courses (qualifications) the teacher is mapped to deliver in this VCC.
@@ -2746,13 +2782,15 @@ CREATE TABLE IF NOT EXISTS public.teacher_document_connections (
     vcc_unit_id              bigint    NULL,
     vcc_currency_activity_id bigint    NULL,
     vcc_unit_element_id      bigint    NULL,
+    vcc_credential_id        bigint    NULL,
     PRIMARY KEY (id),
     CONSTRAINT fk_tdc_document    FOREIGN KEY (document_id)              REFERENCES public.teacher_documents(id)                        ON DELETE CASCADE,
     CONSTRAINT fk_tdc_pq          FOREIGN KEY (vcc_professional_qual_id) REFERENCES public.teacher_vcc_professional_qualifications(id)   ON DELETE CASCADE,
     CONSTRAINT fk_tdc_vocqual     FOREIGN KEY (vcc_vocational_qual_id)   REFERENCES public.teacher_vcc_vocational_qualifications(id)     ON DELETE CASCADE,
     CONSTRAINT fk_tdc_unit        FOREIGN KEY (vcc_unit_id)              REFERENCES public.teacher_vcc_units(id)                        ON DELETE CASCADE,
     CONSTRAINT fk_tdc_unit_element FOREIGN KEY (vcc_unit_element_id)     REFERENCES public.teacher_vcc_unit_elements(id)                ON DELETE CASCADE,
-    CONSTRAINT chk_tdc_target     CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id, vcc_unit_element_id) = 1)
+    CONSTRAINT fk_tdc_credential  FOREIGN KEY (vcc_credential_id)        REFERENCES public.teacher_vcc_credentials(id)                  ON DELETE CASCADE,
+    CONSTRAINT chk_tdc_target     CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id, vcc_unit_element_id, vcc_credential_id) = 1)
 );
 
 -- =========================================================================
@@ -2781,6 +2819,7 @@ CREATE TABLE IF NOT EXISTS public.teacher_currency_activities (
     program_date             date         NULL,
     workshop_count           smallint     NULL,
     program_summary          text         NULL,
+    external_url             varchar(2048) NULL,
     created_at               timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at               timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -2794,6 +2833,21 @@ CREATE TABLE IF NOT EXISTS public.teacher_currency_activities (
 ALTER TABLE public.teacher_document_connections
     ADD CONSTRAINT fk_tdc_currency FOREIGN KEY (vcc_currency_activity_id)
     REFERENCES public.teacher_currency_activities(id) ON DELETE CASCADE;
+
+-- v0.40 live-migration: add vcc_credential_id to existing teacher_document_connections tables.
+ALTER TABLE public.teacher_document_connections
+    ADD COLUMN IF NOT EXISTS vcc_credential_id bigint NULL;
+ALTER TABLE public.teacher_document_connections
+    DROP CONSTRAINT IF EXISTS chk_tdc_target;
+ALTER TABLE public.teacher_document_connections
+    ADD CONSTRAINT chk_tdc_target
+        CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id, vcc_unit_element_id, vcc_credential_id) = 1);
+DO $$ BEGIN
+    ALTER TABLE public.teacher_document_connections
+        ADD CONSTRAINT fk_tdc_credential FOREIGN KEY (vcc_credential_id)
+        REFERENCES public.teacher_vcc_credentials(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE OR REPLACE TRIGGER trg_touch_teacher_currency_activities
     BEFORE UPDATE ON public.teacher_currency_activities
@@ -2857,6 +2911,9 @@ CREATE INDEX IF NOT EXISTS idx_teacher_vccs_year
 
 CREATE INDEX IF NOT EXISTS idx_vcc_pq_vcc
     ON public.teacher_vcc_professional_qualifications(vcc_id);
+
+CREATE INDEX IF NOT EXISTS idx_vcc_cred_vcc
+    ON public.teacher_vcc_credentials(vcc_id);
 
 CREATE INDEX IF NOT EXISTS idx_vcc_courses_vcc
     ON public.teacher_vcc_courses(vcc_id);
