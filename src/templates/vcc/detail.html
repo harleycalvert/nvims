@@ -184,172 +184,43 @@
       <button type="button" id="pq-add-btn" class="vcc-btn-add">+ Add qualification</button>
     </div>
 
-    {{/* ── Programs I Teach panel ── */}}
+    {{/* ── My TCCP panel ── */}}
     <div class="vcc-panel hidden" id="panel-programs">
       <div class="vcc-panel-header">
-        <h2>Programs I Teach</h2>
-        <p class="vcc-panel-desc">Units of competency and currency evidence by program (ASQA Standard 3.3)</p>
+        <h2>My Trainer Competency &amp; Currency Profile</h2>
+        <p class="vcc-panel-desc">Map your VCC evidence to the subjects you deliver (ASQA Standard 3.3)</p>
       </div>
-      {{if not $vcc.Courses}}
-        <p class="vcc-empty">No programs recorded.</p>
+
+      {{if not $.Faculties}}
+        <p class="vcc-empty">No faculties configured. Contact your administrator.</p>
       {{else}}
-      <div id="course-list">
-        {{range $vcc.Courses}}
-        <div class="vcc-course-acc" data-id="{{.ID}}">
-          <div class="vcc-course-hdr">
-            <span class="vcc-chev">&#9654;</span>
-            <span class="vcc-acc-code">{{.CourseCode}}</span>
-            <span class="vcc-acc-title">{{.CourseTitle}}</span>
-            <span class="vcc-unit-count">{{len .Units}} unit{{if ne (len .Units) 1}}s{{end}}</span>
-          </div>
-          <div class="vcc-course-body hidden">
-            {{if not .Units}}
-              <p class="vcc-empty vcc-empty--indent">No units for this course.</p>
-            {{else}}
-            <div class="vcc-acc-list vcc-unit-list">
-              {{range .Units}}
-              <div class="vcc-acc vcc-unit-acc" data-id="{{.ID}}">
-                <input type="hidden" name="unit_code" value="{{.UnitCode}}">
-                <input type="hidden" name="unit_title" value="{{.UnitTitle}}">
-                <div class="vcc-acc-hdr">
-                  <span class="vcc-chev">&#9654;</span>
-                  <span class="vcc-acc-code">{{.UnitCode}}</span>
-                  <span class="vcc-acc-title">{{.UnitTitle}}</span>
-                  <span class="vcc-method-chip">{{.CompetencyMethod}}</span>
-                  <span class="vcc-badge" data-st="{{.Status}}">{{.Status}}</span>
-                  <span class="sess-status vcc-ind"></span>
-                </div>
-                <div class="vcc-acc-body hidden">
 
-                  <div class="vcc-method-radios">
-                    <span class="vcc-field-label">Competency Method</span>
-                    <div class="vcc-radios">
-                      {{$unitID := .ID}}
-                      {{$cm := .CompetencyMethod}}
-                      {{range $.VCCMethods}}
-                      <label class="vcc-radio-lbl">
-                        <input type="radio" name="competency_method_{{$unitID}}" value="{{.}}"{{if eq . $cm}} checked{{end}}>
-                        {{.}}
-                      </label>
-                      {{end}}
-                    </div>
-                  </div>
-
-                  <div class="vcc-superseded-section">
-                    <div class="vcc-section-divider">Superseded Unit Details</div>
-                    <div class="vcc-form-grid">
-                      <label class="vcc-field vcc-field-sm">
-                        <span>Superseded Code</span>
-                        <input type="text" name="superseded_unit_code" value="{{.SupersededUnitCode}}" maxlength="20" class="vcc-input mono" placeholder="e.g. ICTICT201">
-                      </label>
-                      <label class="vcc-field vcc-field-lg">
-                        <span>Superseded Title</span>
-                        <input type="text" name="superseded_unit_title" value="{{.SupersededUnitTitle}}" maxlength="200" class="vcc-input">
-                      </label>
-                    </div>
-                  </div>
-
-                  <div class="vcc-form-grid vcc-form-grid--mt">
-                    <label class="vcc-field vcc-field-full">
-                      <span>Description</span>
-                      <input type="text" name="description" value="{{.Description}}" maxlength="500" class="vcc-input">
-                    </label>
-                    <label class="vcc-field vcc-field-sm">
-                      <span>Status</span>
-                      <select name="status" class="vcc-input">
-                        {{$s := .Status}}
-                        {{range $.ItemStatuses}}<option value="{{.}}"{{if eq . $s}} selected{{end}}>{{.}}</option>{{end}}
-                      </select>
-                    </label>
-                    <label class="vcc-field vcc-field-sm">
-                      <span>Approved Date</span>
-                      <input type="date" name="approved_at" value="{{if not .ApprovedAt.IsZero}}{{.ApprovedAt | dateISO}}{{end}}" class="vcc-input">
-                    </label>
-                  </div>
-
-                  <div class="vcc-elements-section">
-                    <div class="vcc-section-divider">Elements</div>
-                    <div class="vcc-element-list" data-unit-id="{{.ID}}">
-                      {{range .Elements}}
-                      <div class="vcc-element-row" data-id="{{.ID}}">
-                        <div class="vcc-form-grid">
-                          <label class="vcc-field vcc-field-full">
-                            <span>Element</span>
-                            <input type="text" name="element" value="{{.Element}}" class="vcc-input">
-                          </label>
-                          <label class="vcc-field vcc-field-full">
-                            <span>Justification</span>
-                            <input type="text" name="justification" value="{{.Justification}}" class="vcc-input">
-                          </label>
-                        </div>
-                        <div class="vcc-docs-section elem-docs-section">
-                          <div class="vcc-docs-hdr"><span class="vcc-section-label">Evidence Documents</span></div>
-                          <div class="vcc-doc-list">
-                            {{range .Documents}}
-                            <div class="vcc-doc-row" data-doc-id="{{.ID}}">
-                              {{if .ExternalURL}}<a href="{{.ExternalURL}}" target="_blank" rel="noopener" class="vcc-doc-link">{{.Title}}</a>
-                              {{else}}<span class="vcc-doc-name">{{.Title}}</span>{{end}}
-                              <button type="button" class="vcc-doc-del" title="Remove">&times;</button>
-                            </div>
-                            {{end}}
-                          </div>
-                          <div class="vcc-add-doc-bar hidden">
-                            <input type="text" class="vcc-input doc-title-inp" placeholder="Document name" maxlength="200">
-                            <input type="url" class="vcc-input doc-url-inp doc-url-inp--mt" placeholder="External URL (optional)" maxlength="2048">
-                            <div class="vcc-add-doc-actions">
-                              <button type="button" class="vcc-btn-sm btn-doc-save">Add</button>
-                              <button type="button" class="vcc-btn-sm vcc-btn-ghost btn-doc-cancel">Cancel</button>
-                              <span class="vcc-err-msg"></span>
-                            </div>
-                          </div>
-                          <button type="button" class="vcc-btn-sm vcc-btn-ghost btn-add-doc">+ Add document</button>
-                        </div>
-                        <div class="vcc-element-actions">
-                          <span class="sess-status vcc-ind"></span>
-                          <button class="btn-danger-sm elem-delete" type="button" title="Delete element">✕</button>
-                        </div>
-                      </div>
-                      {{end}}
-                    </div>
-                    <div class="sess-add-bar sess-add-bar--mt">
-                      <button class="btn-primary btn-sm btn-add-element" type="button">+ Add Element</button>
-                    </div>
-                  </div>
-
-                  <div class="vcc-ratings"
-                       data-unit-id="{{.ID}}"
-                       data-enthusiasm="{{if .EnthusiasmRating.Valid}}{{.EnthusiasmRating.Int16}}{{else}}0{{end}}"
-                       data-confidence="{{if .ConfidenceRating.Valid}}{{.ConfidenceRating.Int16}}{{else}}0{{end}}">
-                    <div class="vcc-rating-row">
-                      <span class="vcc-rating-prompt">How enthusiastic are you about teaching this unit?</span>
-                      <div class="vcc-stars" data-field="enthusiasm_rating"></div>
-                      <span class="vcc-rating-ind"></span>
-                    </div>
-                    <div class="vcc-rating-row">
-                      <span class="vcc-rating-prompt">How confident are you in the subject matter?</span>
-                      <div class="vcc-stars" data-field="confidence_rating"></div>
-                      <span class="vcc-rating-ind"></span>
-                    </div>
-                    <p class="vcc-rating-note">These ratings are used to assist with staff scheduling. You may update these ratings at any time without it affecting your approval status.</p>
-                  </div>
-
-                  {{if .Documents}}
-                  <div class="vcc-docs">
-                    <span class="vcc-docs-label">Documents</span>
-                    {{range .Documents}}<span class="vcc-doc-chip">{{.Title}}{{if .Year}} ({{.Year}}){{end}}</span>{{end}}
-                  </div>
-                  {{end}}
-
-                </div>
-              </div>
-              {{end}}
-            </div>
-            {{end}}
-          </div>
-        </div>
-        {{end}}
+      <div class="pit-faculty-bar">
+        <label class="pit-faculty-label" for="pit-faculty-sel">Faculty</label>
+        <select class="vcc-input pit-faculty-sel" id="pit-faculty-sel">
+          <option value="">— Select faculty —</option>
+          {{range $.Faculties}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+        </select>
+        <button class="btn-primary btn-sm pit-publish-btn hidden" id="pit-publish-btn" type="button">Publish TCCP as PDF</button>
+        <span class="sess-status vcc-ind" id="pit-publish-ind"></span>
       </div>
+
+      <div id="pit-programs">
+        <p class="vcc-empty pit-select-prompt">Select a faculty above to view programs.</p>
+      </div>
+
       {{end}}
+    </div>
+
+    {{/* ── VCC History panel ── */}}
+    <div class="vcc-panel hidden" id="panel-history">
+      <div class="vcc-panel-header">
+        <h2>VCC History</h2>
+        <p class="vcc-panel-desc">Published Trainer Competency &amp; Currency Profile snapshots</p>
+      </div>
+      <div id="history-list">
+        <p class="vcc-empty">Loading…</p>
+      </div>
     </div>
 
   {{end}}
@@ -916,6 +787,379 @@
     if (pq.aqf_level) acc.querySelector('select[name=aqf_level]').value = pq.aqf_level;
     return acc;
   }
+
+  // ── Programs I Teach ─────────────────────────────────────────────────────
+
+  {{if .VCC}}
+  const pitVocEvidence  = {{.VCC.VocEvidence  | toJSON}};
+  const pitProfEvidence = {{.VCC.ProfEvidence | toJSON}};
+  const pitIndEvidence  = {{.VCC.IndEvidence  | toJSON}};
+  const pitFaculties    = {{.Faculties        | toJSON}};
+  {{else}}
+  const pitVocEvidence = [], pitProfEvidence = [], pitIndEvidence = [], pitFaculties = [];
+  {{end}}
+
+  function pitSetInd(el, state) {
+    if (!el) return;
+    el.className = 'sess-status vcc-ind' + (state ? ' sess-status-' + state : '');
+    el.textContent = state === 'saving' ? '…' : state === 'saved' ? '✓' : state === 'error' ? '!' : '';
+    if (state === 'saved') setTimeout(() => { el.textContent = ''; el.className = 'sess-status vcc-ind'; }, 1500);
+  }
+
+  function pitStatusIcon(hasAny, hasApproved, letter, label) {
+    if (!hasAny) return `<span class="pit-icon pit-icon--none" title="${label}">–</span>`;
+    const cls = hasApproved ? 'pit-icon--ok' : 'pit-icon--pending';
+    return `<span class="pit-icon ${cls}" title="${label}">${letter}</span>`;
+  }
+
+  function pitRenderLink(l) {
+    const typeLabel = l.evidenceType === 'professional' ? 'VET Currency'
+      : l.evidenceType === 'vocational' ? 'Vocational' : 'Industry';
+    const codeHtml = l.evidenceCode
+      ? `<span class="pit-link-code mono">${l.evidenceCode}</span>` : '';
+    return `<div class="pit-link-row" data-link-id="${l.id}">
+      <span class="pit-link-type pit-type-${l.evidenceType}">${typeLabel}</span>
+      ${codeHtml}
+      <span class="pit-link-title">${l.evidenceTitle}</span>
+      <span class="pit-link-status" data-st="${l.status}">${l.status}</span>
+      <div class="pit-link-notes-wrap">
+        <textarea class="vcc-input pit-link-notes" rows="1" data-link-id="${l.id}">${l.notes || ''}</textarea>
+        <span class="sess-status vcc-ind pit-link-ind"></span>
+      </div>
+      <button class="btn-danger-sm pit-link-del" type="button" data-link-id="${l.id}" title="Remove">✕</button>
+    </div>`;
+  }
+
+  function pitRenderSubjectRows(s) {
+    const icons = [
+      pitStatusIcon(s.hasProf, s.hasProfApproved, 'P', 'VET Currency (Professional Evidence)'),
+      pitStatusIcon(s.hasVoc,  s.hasVocApproved,  'V', 'Vocational Competency'),
+      pitStatusIcon(s.hasInd,  s.hasIndApproved,  'I', 'Industry Currency'),
+    ].join('');
+    const linksHtml = (s.links && s.links.length)
+      ? s.links.map(pitRenderLink).join('')
+      : '<p class="pit-no-links">No evidence linked yet.</p>';
+    return `<tr class="pit-subj-row" data-subject-id="${s.subjectId}">
+        <td class="pit-col-code mono">${s.subjectCode}</td>
+        <td class="pit-col-name">${s.subjectName}</td>
+        <td class="pit-col-icons">${icons}</td>
+        <td class="pit-col-btn">
+          <button class="vcc-btn-sm vcc-btn-ghost pit-expand-btn" type="button">Evidence</button>
+        </td>
+      </tr>
+      <tr class="pit-ev-row hidden" data-subject-id="${s.subjectId}">
+        <td colspan="4" class="pit-ev-cell">
+          <div class="pit-ev-panel">
+            <div class="pit-ev-links" id="pit-links-${s.subjectId}">${linksHtml}</div>
+            <div class="pit-ev-add">
+              <div class="pit-ev-add-row">
+                <select class="vcc-input pit-ev-type-sel">
+                  <option value="">— Evidence type —</option>
+                  <option value="professional">VET Currency (Professional Evidence)</option>
+                  <option value="vocational">Vocational Competency</option>
+                  <option value="industry">Industry Currency</option>
+                </select>
+                <select class="vcc-input pit-ev-item-sel" disabled>
+                  <option value="">— Select item —</option>
+                </select>
+              </div>
+              <textarea class="vcc-input pit-ev-notes" placeholder="Notes — why this evidence applies to this subject…" rows="2"></textarea>
+              <div class="pit-ev-add-actions">
+                <button class="btn-primary btn-sm pit-ev-add-btn" type="button" disabled>Link Evidence</button>
+                <span class="sess-status vcc-ind pit-ev-ind"></span>
+              </div>
+            </div>
+          </div>
+        </td>
+      </tr>`;
+  }
+
+  function pitRenderProgram(p) {
+    const rows = (p.subjects && p.subjects.length)
+      ? p.subjects.map(pitRenderSubjectRows).join('')
+      : '<tr><td colspan="4" class="pit-no-subjects">No subjects for this program.</td></tr>';
+    return `<div class="pit-program" data-program-id="${p.programId}">
+      <div class="pit-program-hdr">
+        <span class="vcc-chev">&#9654;</span>
+        <span class="vcc-acc-code">${p.programCode}</span>
+        <span class="vcc-acc-title">${p.programName}</span>
+        <span class="vcc-unit-count">${p.subjects ? p.subjects.length : 0} subject${p.subjects && p.subjects.length !== 1 ? 's' : ''}</span>
+      </div>
+      <div class="pit-program-body hidden">
+        <table class="pit-subject-table">
+          <thead>
+            <tr>
+              <th class="pit-col-code">Code</th>
+              <th class="pit-col-name">Subject</th>
+              <th class="pit-col-icons" title="VET Currency (P) · Vocational Competency (V) · Industry Currency (I)">P V I</th>
+              <th class="pit-col-btn"></th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }
+
+  function pitAttachProgramHandlers(el) {
+    // program accordion
+    el.querySelector('.pit-program-hdr').addEventListener('click', () => {
+      const body = el.querySelector('.pit-program-body');
+      body.classList.toggle('hidden');
+      el.classList.toggle('open', !body.classList.contains('hidden'));
+    });
+
+    // subject row expand
+    el.querySelectorAll('.pit-expand-btn').forEach(btn => {
+      const subjRow = btn.closest('.pit-subj-row');
+      const evRow   = subjRow.nextElementSibling;
+      btn.addEventListener('click', () => {
+        evRow.classList.toggle('hidden');
+        btn.textContent = evRow.classList.contains('hidden') ? 'Evidence' : 'Close';
+      });
+    });
+
+    // evidence type selector → populate item dropdown
+    el.querySelectorAll('.pit-ev-type-sel').forEach(typeSel => {
+      const evRow  = typeSel.closest('.pit-ev-row');
+      const itemSel = evRow.querySelector('.pit-ev-item-sel');
+      const addBtn  = evRow.querySelector('.pit-ev-add-btn');
+      typeSel.addEventListener('change', () => {
+        const type = typeSel.value;
+        const items = type === 'professional' ? pitProfEvidence
+          : type === 'vocational' ? pitVocEvidence
+          : type === 'industry'   ? pitIndEvidence : [];
+        itemSel.innerHTML = '<option value="">— Select item —</option>' +
+          items.map(e => `<option value="${e.ID}">${e.Code ? e.Code + ' — ' : ''}${e.Title}</option>`).join('');
+        itemSel.disabled = !type;
+        addBtn.disabled  = true;
+        itemSel.addEventListener('change', () => {
+          addBtn.disabled = !itemSel.value;
+        }, {once: false});
+      });
+    });
+
+    // add evidence link
+    el.querySelectorAll('.pit-ev-add-btn').forEach(addBtn => {
+      addBtn.addEventListener('click', async () => {
+        const evRow    = addBtn.closest('.pit-ev-row');
+        const subjectId = evRow.dataset.subjectId;
+        const typeSel  = evRow.querySelector('.pit-ev-type-sel');
+        const itemSel  = evRow.querySelector('.pit-ev-item-sel');
+        const notesTa  = evRow.querySelector('.pit-ev-notes');
+        const ind      = evRow.querySelector('.pit-ev-ind');
+        if (!typeSel.value || !itemSel.value) return;
+        pitSetInd(ind, 'saving');
+        try {
+          const res = await fetch('/vcc/subject-evidence', {
+            method: 'POST',
+            body: new URLSearchParams({
+              subject_id:    subjectId,
+              evidence_type: typeSel.value,
+              evidence_id:   itemSel.value,
+              notes:         notesTa.value.trim(),
+            }),
+          });
+          if (!res.ok) { pitSetInd(ind, 'error'); return; }
+          const data = await res.json();
+          // rebuild subject row by re-fetching programs
+          const selectedOption = itemSel.options[itemSel.selectedIndex];
+          const link = {
+            id: data.id,
+            evidenceType: typeSel.value,
+            evidenceId: parseInt(itemSel.value),
+            evidenceCode: selectedOption.text.includes(' — ') ? selectedOption.text.split(' — ')[0] : '',
+            evidenceTitle: selectedOption.text.includes(' — ') ? selectedOption.text.split(' — ').slice(1).join(' — ') : selectedOption.text,
+            status: 'Draft',
+            notes: notesTa.value.trim(),
+          };
+          const linksDiv = document.getElementById('pit-links-' + subjectId);
+          const noLinks  = linksDiv.querySelector('.pit-no-links');
+          if (noLinks) noLinks.remove();
+          linksDiv.insertAdjacentHTML('beforeend', pitRenderLink(link));
+          pitAttachLinkHandlers(linksDiv.lastElementChild, subjectId);
+          // update icons in the subject row
+          pitRefreshIcons(subjectId);
+          // reset add form
+          typeSel.value    = '';
+          itemSel.innerHTML = '<option value="">— Select item —</option>';
+          itemSel.disabled = true;
+          addBtn.disabled  = true;
+          notesTa.value    = '';
+          pitSetInd(ind, 'saved');
+        } catch { pitSetInd(ind, 'error'); }
+      });
+    });
+
+    // attach handlers to pre-rendered link rows
+    el.querySelectorAll('.pit-link-row').forEach(row => {
+      const evRow = row.closest('.pit-ev-row');
+      const subjectId = evRow ? evRow.dataset.subjectId : null;
+      pitAttachLinkHandlers(row, subjectId);
+    });
+  }
+
+  function pitAttachLinkHandlers(row, subjectId) {
+    const notesTa = row.querySelector('.pit-link-notes');
+    const ind     = row.querySelector('.pit-link-ind');
+    const delBtn  = row.querySelector('.pit-link-del');
+    const linkId  = row.dataset.linkId;
+
+    notesTa?.addEventListener('blur', async () => {
+      pitSetInd(ind, 'saving');
+      try {
+        const res = await fetch(`/vcc/subject-evidence/${linkId}/notes`, {
+          method: 'POST',
+          body: new URLSearchParams({notes: notesTa.value.trim()}),
+        });
+        pitSetInd(ind, res.ok ? 'saved' : 'error');
+      } catch { pitSetInd(ind, 'error'); }
+    });
+
+    delBtn?.addEventListener('click', async () => {
+      if (!confirm('Remove this evidence link?')) return;
+      pitSetInd(ind, 'saving');
+      try {
+        const res = await fetch(`/vcc/subject-evidence/${linkId}/delete`, {method: 'POST'});
+        if (!res.ok) { pitSetInd(ind, 'error'); return; }
+        row.remove();
+        if (subjectId) pitRefreshIcons(subjectId);
+      } catch { pitSetInd(ind, 'error'); }
+    });
+  }
+
+  function pitRefreshIcons(subjectId) {
+    // Recompute icons from the current link rows in the DOM
+    const linksDiv = document.getElementById('pit-links-' + subjectId);
+    if (!linksDiv) return;
+    const links = [...linksDiv.querySelectorAll('.pit-link-row')];
+    let hasProf = false, hasProfApproved = false;
+    let hasVoc  = false, hasVocApproved  = false;
+    let hasInd  = false, hasIndApproved  = false;
+    links.forEach(r => {
+      const type   = r.querySelector('.pit-link-type')?.className.replace(/.*pit-type-/, '').split(' ')[0];
+      const status = r.querySelector('.pit-link-status')?.dataset.st || '';
+      if (type === 'professional') { hasProf = true; if (status === 'Approved') hasProfApproved = true; }
+      if (type === 'vocational')   { hasVoc  = true; if (status === 'Approved') hasVocApproved  = true; }
+      if (type === 'industry')     { hasInd  = true; if (status === 'Approved') hasIndApproved  = true; }
+    });
+    const iconCell = document.querySelector(`.pit-subj-row[data-subject-id="${subjectId}"] .pit-col-icons`);
+    if (iconCell) {
+      iconCell.innerHTML = [
+        pitStatusIcon(hasProf, hasProfApproved, 'P', 'VET Currency (Professional Evidence)'),
+        pitStatusIcon(hasVoc,  hasVocApproved,  'V', 'Vocational Competency'),
+        pitStatusIcon(hasInd,  hasIndApproved,  'I', 'Industry Currency'),
+      ].join('');
+    }
+  }
+
+  async function pitLoadPrograms(facultyId) {
+    const container = document.getElementById('pit-programs');
+    container.innerHTML = '<p class="vcc-empty">Loading…</p>';
+    try {
+      const res = await fetch(`/vcc/programs?faculty_id=${facultyId}`);
+      if (!res.ok) { container.innerHTML = '<p class="vcc-empty">Error loading programs.</p>'; return; }
+      const programs = await res.json();
+      if (!programs || programs.length === 0) {
+        container.innerHTML = '<p class="vcc-empty">No programs found for this faculty.</p>';
+        return;
+      }
+      container.innerHTML = programs.map(pitRenderProgram).join('');
+      container.querySelectorAll('.pit-program').forEach(pitAttachProgramHandlers);
+    } catch { container.innerHTML = '<p class="vcc-empty">Network error.</p>'; }
+  }
+
+  const pitFacultySel  = document.getElementById('pit-faculty-sel');
+  const pitPublishBtn  = document.getElementById('pit-publish-btn');
+  const pitPublishInd  = document.getElementById('pit-publish-ind');
+
+  function pitShowPublishBtn(show) {
+    pitPublishBtn?.classList.toggle('hidden', !show);
+  }
+
+  if (pitFacultySel) {
+    pitFacultySel.addEventListener('change', () => {
+      const id = pitFacultySel.value;
+      if (id) { pitLoadPrograms(id); pitShowPublishBtn(true); }
+      else {
+        document.getElementById('pit-programs').innerHTML =
+          '<p class="vcc-empty pit-select-prompt">Select a faculty above to view programs.</p>';
+        pitShowPublishBtn(false);
+      }
+    });
+    // Auto-select if exactly one faculty
+    if (pitFaculties && pitFaculties.length === 1) {
+      pitFacultySel.value = pitFaculties[0].id;
+      pitFacultySel.closest('.pit-faculty-bar')?.classList.add('hidden');
+      pitLoadPrograms(pitFaculties[0].id);
+      pitShowPublishBtn(true);
+    }
+  }
+
+  pitPublishBtn?.addEventListener('click', async () => {
+    const facultyId = pitFacultySel?.value;
+    if (!facultyId) return;
+    pitSetInd(pitPublishInd, 'saving');
+    pitPublishBtn.disabled = true;
+    try {
+      const res = await fetch('/vcc/tccp/publish', {
+        method: 'POST',
+        body: new URLSearchParams({ faculty_id: facultyId }),
+      });
+      if (!res.ok) { pitSetInd(pitPublishInd, 'error'); pitPublishBtn.disabled = false; return; }
+      const data = await res.json();
+      pitSetInd(pitPublishInd, 'saved');
+      pitPublishBtn.disabled = false;
+      // Refresh history list if the panel exists
+      historyLoad();
+    } catch { pitSetInd(pitPublishInd, 'error'); pitPublishBtn.disabled = false; }
+  });
+
+  // ── VCC History panel ─────────────────────────────────────────────────────
+  function historyRenderRow(p) {
+    return `<div class="pit-pub-row" data-pub-id="${p.id}">
+      <div class="pit-pub-info">
+        <span class="pit-pub-date">${p.publishedAt}</span>
+        <span class="pit-pub-faculty">${p.facultyName}</span>
+        <span class="pit-pub-file">${p.fileName}</span>
+      </div>
+      <div class="pit-pub-actions">
+        <a class="vcc-btn-sm" href="/vcc/publications/${p.id}/download" target="_blank" rel="noopener">Download</a>
+        <button class="btn-danger-sm pit-pub-del" type="button" data-pub-id="${p.id}" title="Delete">✕</button>
+      </div>
+    </div>`;
+  }
+
+  async function historyLoad() {
+    const list = document.getElementById('history-list');
+    if (!list) return;
+    try {
+      const res  = await fetch('/vcc/publications');
+      const pubs = await res.json();
+      if (!pubs || pubs.length === 0) {
+        list.innerHTML = '<p class="vcc-empty">No published TCCPs yet.</p>';
+        return;
+      }
+      list.innerHTML = pubs.map(historyRenderRow).join('');
+      list.querySelectorAll('.pit-pub-del').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Delete this published TCCP?')) return;
+          const id  = btn.dataset.pubId;
+          const res = await fetch(`/vcc/publications/${id}/delete`, {method:'POST'});
+          if (res.ok) btn.closest('.pit-pub-row').remove();
+        });
+      });
+    } catch { if (list) list.innerHTML = '<p class="vcc-empty">Error loading history.</p>'; }
+  }
+
+  // Load history when its panel becomes visible
+  const origShowPanel = window.__nvimsShowPanel;
+  function showPanelWithHistory(hash) {
+    const name = hash.slice(1) || 'teaching-quals';
+    if (name === 'history') historyLoad();
+  }
+  window.addEventListener('hashchange', () => showPanelWithHistory(location.hash));
+  if (location.hash === '#history') historyLoad();
 
 })();
 </script>

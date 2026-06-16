@@ -3083,4 +3083,59 @@ CREATE TABLE IF NOT EXISTS public.system_settings (
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
 );
 
+-- v0.44: published TCCP snapshots (VCC History).
+-- Stores each time a teacher publishes their Trainer Competency & Currency
+-- Profile as a PDF. object_key is the MinIO path; faculty_name is snapshotted
+-- at publication time so the record survives faculty renames/deletions.
+CREATE TABLE IF NOT EXISTS public.teacher_vcc_publications (
+    id           bigserial     NOT NULL,
+    vcc_id       bigint        NOT NULL,
+    faculty_id   bigint        NULL,
+    faculty_name varchar(100)  NULL,
+    object_key   varchar(500)  NOT NULL,
+    file_name    varchar(255)  NOT NULL,
+    published_at timestamptz   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    notes        text          NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_vcp_vcc     FOREIGN KEY (vcc_id)     REFERENCES public.teacher_vccs(id) ON DELETE CASCADE,
+    CONSTRAINT fk_vcp_faculty FOREIGN KEY (faculty_id) REFERENCES public.faculties(id)    ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_vcp_vcc_id
+    ON public.teacher_vcc_publications(vcc_id);
+
+-- v0.43: subject-level evidence links for "Programs I Teach".
+-- Links one piece of VCC evidence (vocational, professional, or industry) to a
+-- curriculum subject, with notes explaining how the evidence applies.
+CREATE TABLE IF NOT EXISTS public.teacher_vcc_subject_evidence (
+    id                       bigserial    NOT NULL,
+    vcc_id                   bigint       NOT NULL,
+    subject_id               bigint       NOT NULL,
+    vocational_evidence_id   bigint       NULL,
+    professional_evidence_id bigint       NULL,
+    industry_evidence_id     bigint       NULL,
+    notes                    text         NULL,
+    created_at               timestamptz  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_vse_vcc      FOREIGN KEY (vcc_id)                   REFERENCES public.teacher_vccs(id)                    ON DELETE CASCADE,
+    CONSTRAINT fk_vse_subject  FOREIGN KEY (subject_id)               REFERENCES public.subjects(id)                        ON DELETE CASCADE,
+    CONSTRAINT fk_vse_voc_ev   FOREIGN KEY (vocational_evidence_id)   REFERENCES public.teacher_vcc_vocational_evidence(id)  ON DELETE CASCADE,
+    CONSTRAINT fk_vse_prof_ev  FOREIGN KEY (professional_evidence_id) REFERENCES public.teacher_vcc_professional_evidence(id) ON DELETE CASCADE,
+    CONSTRAINT fk_vse_ind_ev   FOREIGN KEY (industry_evidence_id)     REFERENCES public.teacher_vcc_industry_evidence(id)   ON DELETE CASCADE,
+    CONSTRAINT chk_vse_one_ev  CHECK (num_nonnulls(vocational_evidence_id, professional_evidence_id, industry_evidence_id) = 1)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vse_vcc_id
+    ON public.teacher_vcc_subject_evidence(vcc_id);
+CREATE INDEX IF NOT EXISTS idx_vse_subject_id
+    ON public.teacher_vcc_subject_evidence(subject_id);
+
+-- live migration (idempotent)
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'teacher_vcc_subject_evidence') THEN
+        -- already created above via CREATE TABLE IF NOT EXISTS; nothing extra needed
+        NULL;
+    END IF;
+END $$;
+
 COMMIT;

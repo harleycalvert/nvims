@@ -24,174 +24,222 @@
       <span class="sidebar-item-label">Home</span>
     </a>
 
-    <div class="sidebar-section">Content</div>
+    <button class="sidebar-section" type="button" data-section="content">
+      <span>Content</span>
+      <svg class="sidebar-section-arrow" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 6l4 4 4-4"/>
+      </svg>
+    </button>
+    <div class="sidebar-section-body" id="section-content">
 
-    <a class="sidebar-item" href="/timetable" data-path="/timetable" data-label="Timetable">
-      <span class="sidebar-icon">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="2" y="3" width="12" height="11" rx="1"/>
-          <path d="M5 1v3M11 1v3M2 7h12"/>
-        </svg>
+      <a class="sidebar-item" href="/timetable" data-path="/timetable" data-label="Timetable">
+        <span class="sidebar-icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="3" width="12" height="11" rx="1"/>
+            <path d="M5 1v3M11 1v3M2 7h12"/>
+          </svg>
+        </span>
+        <span class="sidebar-item-label">Timetable</span>
+      </a>
+
+      <a class="sidebar-item" href="/register" data-path="/register" data-label="Attendance Register">
+        <span class="sidebar-icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="2" width="10" height="12" rx="1"/>
+            <path d="M6 2a1 1 0 000 2h4a1 1 0 000-2H6z"/>
+            <path d="M5 9l2 2 4-4"/>
+          </svg>
+        </span>
+        <span class="sidebar-item-label">Attendance Register</span>
+      </a>
+
+      {{if .LMSURL}}
+      <a class="sidebar-item" href="{{.LMSURL}}" target="_blank" rel="noopener" data-label="{{if .LMSName}}{{.LMSName}}{{else}}LMS{{end}}">
+        <span class="sidebar-icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="1" y="3" width="14" height="10" rx="1.5"/>
+            <path d="M5 7h6M5 10h4"/>
+          </svg>
+        </span>
+        <span class="sidebar-item-label">{{if .LMSName}}{{.LMSName}}{{else}}LMS{{end}}</span>
+      </a>
+      {{else}}
+      <span class="sidebar-item sidebar-disabled">
+        <span class="sidebar-icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="1" y="3" width="14" height="10" rx="1.5"/>
+            <path d="M5 7h6M5 10h4"/>
+          </svg>
+        </span>
+        <span class="sidebar-item-label">{{if .LMSName}}{{.LMSName}}{{else}}LMS{{end}}</span>
       </span>
-      <span class="sidebar-item-label">Timetable</span>
-    </a>
+      {{end}}
 
-    <a class="sidebar-item" href="/register" data-path="/register" data-label="Attendance Register">
-      <span class="sidebar-icon">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="2" width="10" height="12" rx="1"/>
-          <path d="M6 2a1 1 0 000 2h4a1 1 0 000-2H6z"/>
-          <path d="M5 9l2 2 4-4"/>
-        </svg>
-      </span>
-      <span class="sidebar-item-label">Attendance Register</span>
-    </a>
-
-    {{if .LMSURL}}
-    <a class="sidebar-item" href="{{.LMSURL}}" target="_blank" rel="noopener" data-label="{{if .LMSName}}{{.LMSName}}{{else}}LMS{{end}}">
-      <span class="sidebar-icon">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="1" y="3" width="14" height="10" rx="1.5"/>
-          <path d="M5 7h6M5 10h4"/>
-        </svg>
-      </span>
-      <span class="sidebar-item-label">{{if .LMSName}}{{.LMSName}}{{else}}LMS{{end}}</span>
-    </a>
-    {{else}}
-    <span class="sidebar-item sidebar-disabled">
-      <span class="sidebar-icon">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="1" y="3" width="14" height="10" rx="1.5"/>
-          <path d="M5 7h6M5 10h4"/>
-        </svg>
-      </span>
-      <span class="sidebar-item-label">{{if .LMSName}}{{.LMSName}}{{else}}LMS{{end}}</span>
-    </span>
-    {{end}}
-
-    <div class="sidebar-section">VCC</div>
-
-    <a class="sidebar-item" href="/vcc" data-path="/vcc" data-exact="true" data-label="VCC">
-      <span class="sidebar-icon">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M8 4L1 7.5 8 11l7-3.5z"/>
-          <path d="M4 9.5V13c0 .8 1.8 1.5 4 1.5s4-.7 4-1.5V9.5"/>
-        </svg>
-      </span>
-      <span class="sidebar-item-label">VCC Overview</span>
-    </a>
-
-    <div class="sidebar-subnav" id="subnav-vcc">
-      <a class="sidebar-item sidebar-subitem" href="/vcc/understand" data-path="/vcc/understand">Understand</a>
-      <a class="sidebar-item sidebar-subitem" href="/vcc/professional-evidence" data-path="/vcc/professional-evidence">Professional Evidence</a>
-      <a class="sidebar-item sidebar-subitem" href="/vcc/vocational-evidence" data-path="/vcc/vocational-evidence">Vocational Evidence</a>
-      <a class="sidebar-item sidebar-subitem" href="/vcc/industry-currency" data-path="/vcc/industry-currency">Industry Currency</a>
-      <a class="sidebar-item sidebar-subitem" href="/vcc/detail#programs" data-path="/vcc/detail#programs" data-exact="true">Programs I Teach</a>
-      <span class="sidebar-item sidebar-subitem sidebar-disabled">VCC History</span>
-      <a class="sidebar-item sidebar-subitem" href="/vcc/documents" data-path="/vcc/documents">Document Library</a>
     </div>
 
-    <div class="sidebar-section">Workplan</div>
+    <button class="sidebar-section" type="button" data-section="vcc">
+      <span>VCC</span>
+      <svg class="sidebar-section-arrow" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 6l4 4 4-4"/>
+      </svg>
+    </button>
+    <div class="sidebar-section-body" id="section-vcc">
 
-    <a class="sidebar-item" href="/workplan" data-path="/workplan" data-exact="true" data-label="Workplan">
-      <span class="sidebar-icon">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="2" y="2" width="12" height="12" rx="1"/>
-          <path d="M5 6h6M5 9h6M5 12h3"/>
-        </svg>
-      </span>
-      <span class="sidebar-item-label">Workplan</span>
-    </a>
+      <a class="sidebar-item" href="/vcc" data-path="/vcc" data-exact="true" data-label="VCC">
+        <span class="sidebar-icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 4L1 7.5 8 11l7-3.5z"/>
+            <path d="M4 9.5V13c0 .8 1.8 1.5 4 1.5s4-.7 4-1.5V9.5"/>
+          </svg>
+        </span>
+        <span class="sidebar-item-label">VCC</span>
+      </a>
 
-    <div class="sidebar-subnav" id="subnav-workplan">
-      <span class="sidebar-item sidebar-subitem sidebar-disabled">Overview</span>
-      <span class="sidebar-item sidebar-subitem sidebar-disabled">Teaching Delivery</span>
-      <span class="sidebar-item sidebar-subitem sidebar-disabled">Assessment &amp; Compliance</span>
-      <span class="sidebar-item sidebar-subitem sidebar-disabled">Education-Related Duties</span>
-      <span class="sidebar-item sidebar-subitem sidebar-disabled">Professional Development</span>
-      <span class="sidebar-item sidebar-subitem sidebar-disabled">Projects &amp; Initiatives</span>
-      <a class="sidebar-item sidebar-subitem" href="/workplan/availability" data-path="/workplan/availability">Leave &amp; Availability</a>
+      <div class="sidebar-subnav" id="subnav-vcc">
+        <a class="sidebar-item sidebar-subitem" href="/vcc/understand" data-path="/vcc/understand">Understand</a>
+        <a class="sidebar-item sidebar-subitem" href="/vcc/professional-evidence" data-path="/vcc/professional-evidence">Professional Evidence</a>
+        <a class="sidebar-item sidebar-subitem" href="/vcc/vocational-evidence" data-path="/vcc/vocational-evidence">Vocational Evidence</a>
+        <a class="sidebar-item sidebar-subitem" href="/vcc/industry-currency" data-path="/vcc/industry-currency">Industry Currency</a>
+        <a class="sidebar-item sidebar-subitem" href="/vcc/detail#programs" data-path="/vcc/detail#programs" data-exact="true">My TCCP</a>
+        <a class="sidebar-item sidebar-subitem" href="/vcc/detail#history" data-path="/vcc/detail#history" data-exact="true">VCC History</a>
+        <a class="sidebar-item sidebar-subitem" href="/vcc/documents" data-path="/vcc/documents">Document Library</a>
+      </div>
+
     </div>
 
-    <div class="sidebar-section">Administration</div>
+    <button class="sidebar-section" type="button" data-section="workplan">
+      <span>Workplan</span>
+      <svg class="sidebar-section-arrow" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 6l4 4 4-4"/>
+      </svg>
+    </button>
+    <div class="sidebar-section-body" id="section-workplan">
 
-    <a class="sidebar-item" href="/admin" data-path="/admin" data-exact="true" data-label="Administration">
-      <span class="sidebar-icon">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="8" cy="8" r="2.5"/>
-          <path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.1 3.1l1.1 1.1M11.8 11.8l1.1 1.1M3.1 12.9l1.1-1.1M11.8 4.2l1.1-1.1"/>
-        </svg>
-      </span>
-      <span class="sidebar-item-label">Administration</span>
-    </a>
+      <a class="sidebar-item" href="/workplan" data-path="/workplan" data-exact="true" data-label="Workplan">
+        <span class="sidebar-icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="2" width="12" height="12" rx="1"/>
+            <path d="M5 6h6M5 9h6M5 12h3"/>
+          </svg>
+        </span>
+        <span class="sidebar-item-label">Workplan</span>
+      </a>
 
-    <div class="sidebar-subnav" id="subnav-admin">
-      <a class="sidebar-item sidebar-subitem" href="/admin/people" data-path="/admin/people">People</a>
-      <a class="sidebar-item sidebar-subitem" href="/admin/periods" data-path="/admin/periods">Periods</a>
-      <a class="sidebar-item sidebar-subitem" href="/admin/programs" data-path="/admin/programs">Programs &amp; Delivery</a>
-      <a class="sidebar-item sidebar-subitem" href="/admin/subjects" data-path="/admin/subjects">Subjects</a>
-      <a class="sidebar-item sidebar-subitem" href="/admin/intake-groups" data-path="/admin/intake-groups">Intake Groups</a>
-      <a class="sidebar-item sidebar-subitem" href="/admin/enrollments" data-path="/admin/enrollments">Enrolments</a>
-      <a class="sidebar-item sidebar-subitem" href="/admin/classes" data-path="/admin/classes">Classes</a>
-      <a class="sidebar-item sidebar-subitem" href="/admin/sessions" data-path="/admin/sessions">Sessions</a>
+      <div class="sidebar-subnav" id="subnav-workplan">
+        <span class="sidebar-item sidebar-subitem sidebar-disabled">Overview</span>
+        <span class="sidebar-item sidebar-subitem sidebar-disabled">Teaching Delivery</span>
+        <span class="sidebar-item sidebar-subitem sidebar-disabled">Assessment &amp; Compliance</span>
+        <span class="sidebar-item sidebar-subitem sidebar-disabled">Education-Related Duties</span>
+        <span class="sidebar-item sidebar-subitem sidebar-disabled">Professional Development</span>
+        <span class="sidebar-item sidebar-subitem sidebar-disabled">Projects &amp; Initiatives</span>
+        <a class="sidebar-item sidebar-subitem" href="/workplan/availability" data-path="/workplan/availability">Leave &amp; Availability</a>
+      </div>
+
     </div>
 
-    <a class="sidebar-item" href="/admin/infrastructure" data-path="/admin/infrastructure" data-exact="true" data-label="Infrastructure">
-      <span class="sidebar-icon">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="1" y="9" width="5" height="6" rx="1"/>
-          <rect x="10" y="9" width="5" height="6" rx="1"/>
-          <rect x="5" y="4" width="6" height="5" rx="1"/>
-          <path d="M8 1v3M3.5 9V7a.5.5 0 01.5-.5h8a.5.5 0 01.5.5v2"/>
-        </svg>
-      </span>
-      <span class="sidebar-item-label">Infrastructure</span>
-    </a>
+    <button class="sidebar-section" type="button" data-section="admin">
+      <span>Administration</span>
+      <svg class="sidebar-section-arrow" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 6l4 4 4-4"/>
+      </svg>
+    </button>
+    <div class="sidebar-section-body" id="section-admin">
 
-    <div class="sidebar-subnav" id="subnav-infra">
-      <a class="sidebar-item sidebar-subitem" href="/admin/infrastructure/orgs" data-path="/admin/infrastructure/orgs">Training Organisations</a>
-      <a class="sidebar-item sidebar-subitem" href="/admin/faculties" data-path="/admin/faculties">Faculties</a>
-      <a class="sidebar-item sidebar-subitem" href="/admin/departments" data-path="/admin/departments">Departments</a>
-      <a class="sidebar-item sidebar-subitem" href="/admin/infrastructure/locations" data-path="/admin/infrastructure/locations">Delivery Locations</a>
-      <a class="sidebar-item sidebar-subitem" href="/admin/infrastructure/buildings" data-path="/admin/infrastructure/buildings">Buildings</a>
-      <a class="sidebar-item sidebar-subitem" href="/admin/infrastructure/rooms" data-path="/admin/infrastructure/rooms">Rooms</a>
+      <a class="sidebar-item" href="/admin" data-path="/admin" data-exact="true" data-label="Administration">
+        <span class="sidebar-icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="8" cy="8" r="2.5"/>
+            <path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.1 3.1l1.1 1.1M11.8 11.8l1.1 1.1M3.1 12.9l1.1-1.1M11.8 4.2l1.1-1.1"/>
+          </svg>
+        </span>
+        <span class="sidebar-item-label">Administration</span>
+      </a>
+
+      <div class="sidebar-subnav" id="subnav-admin">
+        <a class="sidebar-item sidebar-subitem" href="/admin/people" data-path="/admin/people">People</a>
+        <a class="sidebar-item sidebar-subitem" href="/admin/periods" data-path="/admin/periods">Periods</a>
+        <a class="sidebar-item sidebar-subitem" href="/admin/programs" data-path="/admin/programs">Programs &amp; Delivery</a>
+        <a class="sidebar-item sidebar-subitem" href="/admin/subjects" data-path="/admin/subjects">Subjects</a>
+        <a class="sidebar-item sidebar-subitem" href="/admin/intake-groups" data-path="/admin/intake-groups">Intake Groups</a>
+        <a class="sidebar-item sidebar-subitem" href="/admin/enrollments" data-path="/admin/enrollments">Enrolments</a>
+        <a class="sidebar-item sidebar-subitem" href="/admin/classes" data-path="/admin/classes">Classes</a>
+        <a class="sidebar-item sidebar-subitem" href="/admin/sessions" data-path="/admin/sessions">Sessions</a>
+      </div>
+
+      <a class="sidebar-item" href="/admin/infrastructure" data-path="/admin/infrastructure" data-exact="true" data-label="Infrastructure">
+        <span class="sidebar-icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="1" y="9" width="5" height="6" rx="1"/>
+            <rect x="10" y="9" width="5" height="6" rx="1"/>
+            <rect x="5" y="4" width="6" height="5" rx="1"/>
+            <path d="M8 1v3M3.5 9V7a.5.5 0 01.5-.5h8a.5.5 0 01.5.5v2"/>
+          </svg>
+        </span>
+        <span class="sidebar-item-label">Infrastructure</span>
+      </a>
+
+      <div class="sidebar-subnav" id="subnav-infra">
+        <a class="sidebar-item sidebar-subitem" href="/admin/infrastructure/orgs" data-path="/admin/infrastructure/orgs">Training Organisations</a>
+        <a class="sidebar-item sidebar-subitem" href="/admin/faculties" data-path="/admin/faculties">Faculties</a>
+        <a class="sidebar-item sidebar-subitem" href="/admin/departments" data-path="/admin/departments">Departments</a>
+        <a class="sidebar-item sidebar-subitem" href="/admin/infrastructure/locations" data-path="/admin/infrastructure/locations">Delivery Locations</a>
+        <a class="sidebar-item sidebar-subitem" href="/admin/infrastructure/buildings" data-path="/admin/infrastructure/buildings">Buildings</a>
+        <a class="sidebar-item sidebar-subitem" href="/admin/infrastructure/rooms" data-path="/admin/infrastructure/rooms">Rooms</a>
+      </div>
+
     </div>
 
-    <div class="sidebar-section">Assessment</div>
+    <button class="sidebar-section" type="button" data-section="assessment">
+      <span>Assessment</span>
+      <svg class="sidebar-section-arrow" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 6l4 4 4-4"/>
+      </svg>
+    </button>
+    <div class="sidebar-section-body" id="section-assessment">
 
-    <a class="sidebar-item" href="/assessment" data-path="/assessment" data-label="Assessment">
-      <span class="sidebar-icon">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="2" width="10" height="12" rx="1"/>
-          <path d="M6 2a1 1 0 000 2h4a1 1 0 000-2H6z"/>
-          <path d="M5 8h6M5 11h4"/>
-        </svg>
-      </span>
-      <span class="sidebar-item-label">Assessment</span>
-    </a>
+      <a class="sidebar-item" href="/assessment" data-path="/assessment" data-label="Assessment">
+        <span class="sidebar-icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="2" width="10" height="12" rx="1"/>
+            <path d="M6 2a1 1 0 000 2h4a1 1 0 000-2H6z"/>
+            <path d="M5 8h6M5 11h4"/>
+          </svg>
+        </span>
+        <span class="sidebar-item-label">Assessment</span>
+      </a>
 
-    <div class="sidebar-subnav" id="subnav-assessment">
-      <span class="sidebar-item sidebar-subitem sidebar-disabled">Creation</span>
-      <span class="sidebar-item sidebar-subitem sidebar-disabled">Maintenance</span>
+      <div class="sidebar-subnav" id="subnav-assessment">
+        <span class="sidebar-item sidebar-subitem sidebar-disabled">Creation</span>
+        <span class="sidebar-item sidebar-subitem sidebar-disabled">Maintenance</span>
+      </div>
+
     </div>
 
-    <div class="sidebar-section">System</div>
+    <button class="sidebar-section" type="button" data-section="system">
+      <span>System</span>
+      <svg class="sidebar-section-arrow" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 6l4 4 4-4"/>
+      </svg>
+    </button>
+    <div class="sidebar-section-body" id="section-system">
 
-    <a class="sidebar-item" href="/system" data-path="/system" data-exact="true" data-label="System">
-      <span class="sidebar-icon">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="2" y="2" width="12" height="12" rx="2"/>
-          <path d="M5 8h6M8 5v6"/>
-        </svg>
-      </span>
-      <span class="sidebar-item-label">System</span>
-    </a>
+      <a class="sidebar-item" href="/system" data-path="/system" data-exact="true" data-label="System">
+        <span class="sidebar-icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="2" width="12" height="12" rx="2"/>
+            <path d="M5 8h6M8 5v6"/>
+          </svg>
+        </span>
+        <span class="sidebar-item-label">System</span>
+      </a>
 
-    <div class="sidebar-subnav" id="subnav-system">
-      <span class="sidebar-item sidebar-subitem sidebar-disabled">System Users</span>
-      <span class="sidebar-item sidebar-subitem sidebar-disabled">File Storage</span>
-      <a class="sidebar-item sidebar-subitem" href="/system/lms" data-path="/system/lms">LMS Config</a>
-      <a class="sidebar-item sidebar-subitem" href="/backup" data-path="/backup">Database Backup</a>
+      <div class="sidebar-subnav" id="subnav-system">
+        <span class="sidebar-item sidebar-subitem sidebar-disabled">System Users</span>
+        <span class="sidebar-item sidebar-subitem sidebar-disabled">File Storage</span>
+        <a class="sidebar-item sidebar-subitem" href="/system/lms" data-path="/system/lms">LMS Config</a>
+        <a class="sidebar-item sidebar-subitem" href="/backup" data-path="/backup">Database Backup</a>
+      </div>
+
     </div>
 
   </div>
@@ -199,7 +247,8 @@
 
 <script>
 (function () {
-  const STORAGE_KEY = 'nvims-sidebar';
+  const SIDEBAR_KEY = 'nvims-sidebar';
+  const DISC_KEY    = 'nvims-sidebar-sections';
   const html   = document.documentElement;
   const toggle = document.getElementById('sidebar-toggle');
   const label  = toggle.querySelector('.sidebar-toggle-label');
@@ -207,7 +256,7 @@
   function setState(open) {
     html.dataset.sidebar = open ? 'open' : 'closed';
     label.textContent = open ? 'Collapse' : 'Expand';
-    localStorage.setItem(STORAGE_KEY, open ? 'open' : 'closed');
+    localStorage.setItem(SIDEBAR_KEY, open ? 'open' : 'closed');
   }
 
   toggle.addEventListener('click', () => setState(html.dataset.sidebar !== 'open'));
@@ -222,6 +271,43 @@
 
   // Keep label in sync with restored state (set in <head> before body)
   if (html.dataset.sidebar !== 'open') label.textContent = 'Expand';
+
+  // ── Disclosure triangles ──────────────────────────────────────────────────
+  function loadSections() { try { return JSON.parse(localStorage.getItem(DISC_KEY)) || {}; } catch { return {}; } }
+  function saveSections(s) { localStorage.setItem(DISC_KEY, JSON.stringify(s)); }
+
+  const secState = loadSections();
+
+  document.querySelectorAll('.sidebar-section[data-section]').forEach(btn => {
+    const id   = btn.dataset.section;
+    const body = document.getElementById('section-' + id);
+    if (!body) return;
+
+    const defaultOpen = id === 'content';
+    const collapsed = id in secState ? secState[id] === true : !defaultOpen;
+    btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    if (collapsed) body.classList.add('sidebar-collapsed');
+
+    btn.addEventListener('click', () => {
+      const isOpen = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+      body.classList.toggle('sidebar-collapsed', isOpen);
+      secState[id] = isOpen;
+      saveSections(secState);
+    });
+  });
+
+  // Auto-expand section containing the active item
+  document.querySelectorAll('.sidebar-item.active').forEach(item => {
+    const body = item.closest('.sidebar-section-body');
+    if (!body) return;
+    const id = body.id.replace('section-', '');
+    body.classList.remove('sidebar-collapsed');
+    const btn = document.querySelector(`.sidebar-section[data-section="${id}"]`);
+    if (btn) btn.setAttribute('aria-expanded', 'true');
+    secState[id] = false;
+    saveSections(secState);
+  });
 })();
 </script>
 {{end}}

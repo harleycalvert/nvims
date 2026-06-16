@@ -3938,3 +3938,340 @@ func (s *Store) DeclineLeaveRequest(ctx context.Context, approverID, requestID i
 	`, approverID, notes, requestID)
 	return err
 }
+
+// ── Programs I Teach ──────────────────────────────────────────────────────────
+
+type Faculty struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+type SubjectEvidenceLink struct {
+	ID            int64  `json:"id"`
+	EvidenceType  string `json:"evidenceType"`  // "vocational", "professional", "industry"
+	EvidenceID    int64  `json:"evidenceId"`
+	EvidenceCode  string `json:"evidenceCode"`  // credential_code; empty for industry
+	EvidenceTitle string `json:"evidenceTitle"` // credential_title or activity_title
+	Status        string `json:"status"`
+	Notes         string `json:"notes"`
+}
+
+type SubjectWithEvidence struct {
+	SubjectID       int64                 `json:"subjectId"`
+	SubjectCode     string                `json:"subjectCode"`
+	SubjectName     string                `json:"subjectName"`
+	Links           []SubjectEvidenceLink `json:"links"`
+	HasVoc          bool                  `json:"hasVoc"`
+	HasProf         bool                  `json:"hasProf"`
+	HasInd          bool                  `json:"hasInd"`
+	HasVocApproved  bool                  `json:"hasVocApproved"`
+	HasProfApproved bool                  `json:"hasProfApproved"`
+	HasIndApproved  bool                  `json:"hasIndApproved"`
+}
+
+type ProgramWithSubjects struct {
+	ProgramID   int64                 `json:"programId"`
+	ProgramCode string                `json:"programCode"`
+	ProgramName string                `json:"programName"`
+	Subjects    []SubjectWithEvidence `json:"subjects"`
+}
+
+// TeacherFaculties returns the faculties the teacher is associated with via
+// their department assignments.
+func (s *Store) TeacherFaculties(ctx context.Context, teacherID int64) ([]Faculty, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT DISTINCT f.id, f.faculty_name
+		FROM public.faculties f
+		JOIN public.departments d  ON d.faculty_id = f.id AND d.deleted_at IS NULL
+		JOIN public.person_departments pd ON pd.department_id = d.id
+		WHERE pd.person_id = $1
+		ORDER BY f.faculty_name
+	`, teacherID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Faculty
+	for rows.Next() {
+		var f Faculty
+		if err := rows.Scan(&f.ID, &f.Name); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
+// AllFaculties returns every faculty — fallback when the teacher has no department.
+func (s *Store) AllFaculties(ctx context.Context) ([]Faculty, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id, faculty_name FROM public.faculties ORDER BY faculty_name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Faculty
+	for rows.Next() {
+		var f Faculty
+		if err := rows.Scan(&f.ID, &f.Name); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
+// ProgramsWithSubjects returns all programs for a faculty with their subjects
+// and any VCC evidence links the teacher has recorded for each subject.
+func (s *Store) ProgramsWithSubjects(ctx context.Context, vccID, facultyID int64) ([]ProgramWithSubjects, error) {
+	progRows, err := s.pool.Query(ctx, `
+		SELECT id, program_code, program_name
+		FROM public.programs
+		WHERE faculty_id = $1
+		ORDER BY program_code
+	`, facultyID)
+	if err != nil {
+		return nil, err
+	}
+	defer progRows.Close()
+
+	var programs []ProgramWithSubjects
+	progIdx := map[int64]int{}
+	var programIDs []int64
+	for progRows.Next() {
+		var p ProgramWithSubjects
+		if err := progRows.Scan(&p.ProgramID, &p.ProgramCode, &p.ProgramName); err != nil {
+			return nil, err
+		}
+		progIdx[p.ProgramID] = len(programs)
+		programIDs = append(programIDs, p.ProgramID)
+		programs = append(programs, p)
+	}
+	if err := progRows.Err(); err != nil {
+		return nil, err
+	}
+	if len(programs) == 0 {
+		return programs, nil
+	}
+
+	subRows, err := s.pool.Query(ctx, `
+		SELECT sp.program_id, s.id, s.subject_code, s.subject_name
+		FROM public.subject_programs sp
+		JOIN public.subjects s ON s.id = sp.subject_id
+		WHERE sp.program_id = ANY($1)
+		ORDER BY sp.program_id, s.subject_code
+	`, programIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer subRows.Close()
+
+	var subjectIDs []int64
+	// subjectIdx: programID → subjectID → index in Subjects slice
+	subjectIdx := map[int64]map[int64]int{}
+	for subRows.Next() {
+		var programID, subjectID int64
+		var code, name string
+		if err := subRows.Scan(&programID, &subjectID, &code, &name); err != nil {
+			return nil, err
+		}
+		pi := progIdx[programID]
+		if subjectIdx[programID] == nil {
+			subjectIdx[programID] = map[int64]int{}
+		}
+		subjectIdx[programID][subjectID] = len(programs[pi].Subjects)
+		programs[pi].Subjects = append(programs[pi].Subjects, SubjectWithEvidence{
+			SubjectID:   subjectID,
+			SubjectCode: code,
+			SubjectName: name,
+			Links:       []SubjectEvidenceLink{},
+		})
+		subjectIDs = append(subjectIDs, subjectID)
+	}
+	if err := subRows.Err(); err != nil {
+		return nil, err
+	}
+	if len(subjectIDs) == 0 {
+		return programs, nil
+	}
+
+	linkRows, err := s.pool.Query(ctx, `
+		SELECT
+		    vse.id, vse.subject_id, COALESCE(vse.notes, ''),
+		    CASE
+		        WHEN vse.vocational_evidence_id   IS NOT NULL THEN 'vocational'
+		        WHEN vse.professional_evidence_id IS NOT NULL THEN 'professional'
+		        ELSE 'industry'
+		    END,
+		    COALESCE(vse.vocational_evidence_id, vse.professional_evidence_id, vse.industry_evidence_id),
+		    COALESCE(ve.credential_code,  pe.credential_code,  ''),
+		    COALESCE(ve.credential_title, pe.credential_title, ie.activity_title, ''),
+		    COALESCE(ve.status,           pe.status,           ie.status, '')
+		FROM public.teacher_vcc_subject_evidence vse
+		LEFT JOIN public.teacher_vcc_vocational_evidence   ve ON ve.id = vse.vocational_evidence_id
+		LEFT JOIN public.teacher_vcc_professional_evidence pe ON pe.id = vse.professional_evidence_id
+		LEFT JOIN public.teacher_vcc_industry_evidence     ie ON ie.id = vse.industry_evidence_id
+		WHERE vse.vcc_id = $1 AND vse.subject_id = ANY($2)
+		ORDER BY vse.subject_id, vse.id
+	`, vccID, subjectIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer linkRows.Close()
+
+	linksBySubject := map[int64][]SubjectEvidenceLink{}
+	for linkRows.Next() {
+		var link SubjectEvidenceLink
+		var subjectID int64
+		if err := linkRows.Scan(&link.ID, &subjectID, &link.Notes,
+			&link.EvidenceType, &link.EvidenceID, &link.EvidenceCode,
+			&link.EvidenceTitle, &link.Status); err != nil {
+			return nil, err
+		}
+		linksBySubject[subjectID] = append(linksBySubject[subjectID], link)
+	}
+	if err := linkRows.Err(); err != nil {
+		return nil, err
+	}
+
+	for pi := range programs {
+		for si := range programs[pi].Subjects {
+			sub := &programs[pi].Subjects[si]
+			if links, ok := linksBySubject[sub.SubjectID]; ok {
+				sub.Links = links
+			}
+			for _, l := range sub.Links {
+				switch l.EvidenceType {
+				case "vocational":
+					sub.HasVoc = true
+					if l.Status == "Approved" {
+						sub.HasVocApproved = true
+					}
+				case "professional":
+					sub.HasProf = true
+					if l.Status == "Approved" {
+						sub.HasProfApproved = true
+					}
+				case "industry":
+					sub.HasInd = true
+					if l.Status == "Approved" {
+						sub.HasIndApproved = true
+					}
+				}
+			}
+		}
+	}
+
+	return programs, nil
+}
+
+// AddSubjectEvidenceLink links one piece of evidence to a subject in the teacher's VCC.
+func (s *Store) AddSubjectEvidenceLink(ctx context.Context, vccID, subjectID int64, evidenceType string, evidenceID int64, notes string) (int64, error) {
+	var vocID, profID, indID *int64
+	switch evidenceType {
+	case "vocational":
+		vocID = &evidenceID
+	case "professional":
+		profID = &evidenceID
+	case "industry":
+		indID = &evidenceID
+	default:
+		return 0, fmt.Errorf("invalid evidence type: %q", evidenceType)
+	}
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO public.teacher_vcc_subject_evidence
+		    (vcc_id, subject_id, vocational_evidence_id, professional_evidence_id, industry_evidence_id, notes)
+		VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''))
+		RETURNING id
+	`, vccID, subjectID, vocID, profID, indID, notes).Scan(&id)
+	return id, err
+}
+
+// UpdateSubjectEvidenceNotes updates the notes on an existing evidence link.
+func (s *Store) UpdateSubjectEvidenceNotes(ctx context.Context, id, vccID int64, notes string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.teacher_vcc_subject_evidence
+		SET notes = NULLIF($1, '')
+		WHERE id = $2 AND vcc_id = $3
+	`, notes, id, vccID)
+	return err
+}
+
+// DeleteSubjectEvidenceLink removes an evidence-subject link.
+func (s *Store) DeleteSubjectEvidenceLink(ctx context.Context, id, vccID int64) error {
+	_, err := s.pool.Exec(ctx, `
+		DELETE FROM public.teacher_vcc_subject_evidence
+		WHERE id = $1 AND vcc_id = $2
+	`, id, vccID)
+	return err
+}
+
+// ── TCCP Publications (VCC History) ──────────────────────────────────────────
+
+type VCCPublication struct {
+	ID          int64
+	FacultyName string
+	FileName    string
+	ObjectKey   string
+	PublishedAt time.Time
+	Notes       string
+}
+
+// SaveVCCPublication records a newly published TCCP PDF.
+func (s *Store) SaveVCCPublication(ctx context.Context, vccID, facultyID int64, facultyName, objectKey, fileName string) (int64, error) {
+	var fid *int64
+	if facultyID != 0 {
+		fid = &facultyID
+	}
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO public.teacher_vcc_publications
+		    (vcc_id, faculty_id, faculty_name, object_key, file_name)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id
+	`, vccID, fid, facultyName, objectKey, fileName).Scan(&id)
+	return id, err
+}
+
+// ListVCCPublications returns all published TCCPs for a VCC, newest first.
+func (s *Store) ListVCCPublications(ctx context.Context, vccID int64) ([]VCCPublication, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, COALESCE(faculty_name,''), file_name, object_key, published_at, COALESCE(notes,'')
+		FROM public.teacher_vcc_publications
+		WHERE vcc_id = $1
+		ORDER BY published_at DESC
+	`, vccID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []VCCPublication
+	for rows.Next() {
+		var p VCCPublication
+		if err := rows.Scan(&p.ID, &p.FacultyName, &p.FileName, &p.ObjectKey, &p.PublishedAt, &p.Notes); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// GetVCCPublicationObjectKey returns the MinIO object key for a publication,
+// verifying it belongs to the given VCC.
+func (s *Store) GetVCCPublicationObjectKey(ctx context.Context, id, vccID int64) (string, error) {
+	var key string
+	err := s.pool.QueryRow(ctx, `
+		SELECT object_key FROM public.teacher_vcc_publications
+		WHERE id = $1 AND vcc_id = $2
+	`, id, vccID).Scan(&key)
+	return key, err
+}
+
+// DeleteVCCPublication removes a publication record.
+func (s *Store) DeleteVCCPublication(ctx context.Context, id, vccID int64) error {
+	_, err := s.pool.Exec(ctx, `
+		DELETE FROM public.teacher_vcc_publications
+		WHERE id = $1 AND vcc_id = $2
+	`, id, vccID)
+	return err
+}

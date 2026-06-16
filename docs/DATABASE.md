@@ -1,8 +1,8 @@
-# A National VET Information Management System (NVIMS), Student Management System (SMS) — Database Design v0.42, 2026-06-16
+# A National VET Information Management System (NVIMS), Student Management System (SMS) — Database Design v0.44, 2026-06-16
 
 PostgreSQL schema for a national, AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.42` (2026-06-16): its entities, relationships, business rules, and the
+describes the design of `v0.44` (2026-06-16): its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -44,7 +44,7 @@ mapping to the AVETMISS NAT reporting files.
   - Workplan: [`workplans`](#workplans) · [`workplan_approvals`](#workplan_approvals) · [`workplan_entries`](#workplan_entries) · [`leave_requests`](#leave_requests) · [`leave_request_dates`](#leave_request_dates)
   - Timesheet: [`pay_periods`](#pay_periods) · [`timesheets`](#timesheets) · [`timesheet_entries`](#timesheet_entries)
   - Employment services: [`student_employment_services`](#student_employment_services) · [`student_employment_registrations`](#student_employment_registrations)
-  - VCC: [`teacher_vccs`](#teacher_vccs) · [`teacher_vcc_professional_qualifications`](#teacher_vcc_professional_qualifications) · [`teacher_vcc_vocational_qualifications`](#teacher_vcc_vocational_qualifications) · [`teacher_vcc_vocational_evidence`](#teacher_vcc_vocational_evidence) · [`teacher_vcc_professional_evidence`](#teacher_vcc_professional_evidence) · [`teacher_vcc_industry_evidence`](#teacher_vcc_industry_evidence) · [`teacher_vcc_courses`](#teacher_vcc_courses) · [`teacher_vcc_units`](#teacher_vcc_units) · [`teacher_vcc_unit_elements`](#teacher_vcc_unit_elements) · [`teacher_documents`](#teacher_documents) · [`teacher_document_connections`](#teacher_document_connections) · [`teacher_currency_activities`](#teacher_currency_activities) · [`teacher_currency_unit_links`](#teacher_currency_unit_links) · [`teacher_vcc_profiling`](#teacher_vcc_profiling)
+  - VCC: [`teacher_vccs`](#teacher_vccs) · [`teacher_vcc_professional_qualifications`](#teacher_vcc_professional_qualifications) · [`teacher_vcc_vocational_qualifications`](#teacher_vcc_vocational_qualifications) · [`teacher_vcc_vocational_evidence`](#teacher_vcc_vocational_evidence) · [`teacher_vcc_professional_evidence`](#teacher_vcc_professional_evidence) · [`teacher_vcc_industry_evidence`](#teacher_vcc_industry_evidence) · [`teacher_vcc_subject_evidence`](#teacher_vcc_subject_evidence) · [`teacher_vcc_publications`](#teacher_vcc_publications) · [`teacher_vcc_courses`](#teacher_vcc_courses) · [`teacher_vcc_units`](#teacher_vcc_units) · [`teacher_vcc_unit_elements`](#teacher_vcc_unit_elements) · [`teacher_documents`](#teacher_documents) · [`teacher_document_connections`](#teacher_document_connections) · [`teacher_currency_activities`](#teacher_currency_activities) · [`teacher_currency_unit_links`](#teacher_currency_unit_links) · [`teacher_vcc_profiling`](#teacher_vcc_profiling)
   - System: [`system_settings`](#system_settings)
 - [Business rules & constraints](#business-rules--constraints)
 - [Functions & triggers](#functions--triggers)
@@ -56,6 +56,14 @@ mapping to the AVETMISS NAT reporting files.
 ---
 
 ## Changelog
+
+### v0.44 — 2026-06-16
+
+1. **New table `teacher_vcc_publications`.** Records each time a teacher publishes their Trainer Competency & Currency Profile (TCCP) as a PDF. The PDF is generated server-side and stored in MinIO object storage; `object_key` is the MinIO path. Columns: `vcc_id bigint NOT NULL`, `faculty_id bigint NULL`, `faculty_name varchar(100) NULL`, `object_key varchar(500) NOT NULL`, `file_name varchar(255) NOT NULL`, `published_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP`, `notes text NULL`. `faculty_name` is a snapshot of the faculty name at the time of publication (since `faculty_id` may become NULL if the faculty is deleted). FKs: `fk_vcp_vcc` → `teacher_vccs(id)` ON DELETE CASCADE; `fk_vcp_faculty` → `faculties(id)` ON DELETE SET NULL. Index: `idx_vcp_vcc_id (vcc_id)`. Published PDFs are listed under "VCC History" in the teacher's VCC page and can be downloaded via a presigned MinIO URL.
+
+### v0.43 — 2026-06-16
+
+1. **New table `teacher_vcc_subject_evidence`.** Links a curriculum subject to exactly one piece of evidence in a teacher's VCC — either a `teacher_vcc_vocational_evidence`, `teacher_vcc_professional_evidence`, or `teacher_vcc_industry_evidence` record. Columns: `vcc_id bigint NOT NULL`, `subject_id bigint NOT NULL`, `vocational_evidence_id bigint NULL`, `professional_evidence_id bigint NULL`, `industry_evidence_id bigint NULL`, `notes text NULL`, `created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP`. FKs: `fk_vse_vcc` → `teacher_vccs(id)` ON DELETE CASCADE, `fk_vse_subject` → `subjects(id)` ON DELETE CASCADE, `fk_vse_voc_ev` → `teacher_vcc_vocational_evidence(id)` ON DELETE CASCADE, `fk_vse_prof_ev` → `teacher_vcc_professional_evidence(id)` ON DELETE CASCADE, `fk_vse_ind_ev` → `teacher_vcc_industry_evidence(id)` ON DELETE CASCADE. Constraint: `chk_vse_one_ev CHECK (num_nonnulls(vocational_evidence_id, professional_evidence_id, industry_evidence_id) = 1)`. Indexes: `idx_vse_vcc_id (vcc_id)`, `idx_vse_subject_id (subject_id)`.
 
 ### v0.42 — 2026-06-16
 
@@ -709,6 +717,13 @@ erDiagram
     TEACHER_VCCS ||--o{ TEACHER_VCC_VOCATIONAL_EVIDENCE : "vocational evidence"
     TEACHER_VCCS ||--o{ TEACHER_VCC_PROFESSIONAL_EVIDENCE : "professional evidence"
     TEACHER_VCCS ||--o{ TEACHER_VCC_INDUSTRY_EVIDENCE : "industry evidence"
+    TEACHER_VCCS ||--o{ TEACHER_VCC_SUBJECT_EVIDENCE : "subject evidence links"
+    TEACHER_VCC_VOCATIONAL_EVIDENCE ||--o{ TEACHER_VCC_SUBJECT_EVIDENCE : "evidences subject (optional)"
+    TEACHER_VCC_PROFESSIONAL_EVIDENCE ||--o{ TEACHER_VCC_SUBJECT_EVIDENCE : "evidences subject (optional)"
+    TEACHER_VCC_INDUSTRY_EVIDENCE ||--o{ TEACHER_VCC_SUBJECT_EVIDENCE : "evidences subject (optional)"
+    SUBJECTS ||--o{ TEACHER_VCC_SUBJECT_EVIDENCE : "mapped via"
+    TEACHER_VCCS ||--o{ TEACHER_VCC_PUBLICATIONS : "published PDFs"
+    FACULTIES ||--o{ TEACHER_VCC_PUBLICATIONS : "faculty snapshot (optional)"
     TEACHER_VCCS ||--o{ TEACHER_VCC_COURSES : "maps courses"
     TEACHER_VCC_COURSES ||--o{ TEACHER_VCC_UNITS : "has units"
     TEACHER_VCCS ||--o{ TEACHER_VCC_UNITS : "standalone units"
@@ -734,6 +749,26 @@ erDiagram
         date approved_at "NULL"
         text notes "NULL"
         timestamptz created_at
+    }
+    TEACHER_VCC_SUBJECT_EVIDENCE {
+        bigserial id PK
+        bigint vcc_id FK
+        bigint subject_id FK
+        bigint vocational_evidence_id "NULL FK"
+        bigint professional_evidence_id "NULL FK"
+        bigint industry_evidence_id "NULL FK"
+        text notes "NULL"
+        timestamptz created_at
+    }
+    TEACHER_VCC_PUBLICATIONS {
+        bigserial id PK
+        bigint vcc_id FK
+        bigint faculty_id "NULL FK"
+        varchar faculty_name "NULL snapshot"
+        varchar object_key "MinIO path"
+        varchar file_name
+        timestamptz published_at
+        text notes "NULL"
     }
 ```
 
@@ -936,6 +971,8 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | `teacher_vcc_vocational_evidence` | Certifications and micro-credentials declared in a VCC as Vocational Evidence (e.g. AWS, Google, short-course certificates). Includes credential code/title, issuing organisation, year, optional month, and approval status. Renamed from `teacher_vcc_credentials` in v0.41. | → `teacher_vccs` |
 | `teacher_vcc_professional_evidence` | Professional evidence (VET Knowledge Currency) declared in a VCC. Identical schema to `teacher_vcc_vocational_evidence`. Added in v0.41. | → `teacher_vccs` |
 | `teacher_vcc_industry_evidence` | Industry engagement evidence declared in a VCC. Records an activity title, optional organisation, optional month/year, and the same Draft → Pending → Approved → Rejected workflow. Added in v0.42. | → `teacher_vccs` |
+| `teacher_vcc_subject_evidence` | Links a curriculum subject to exactly one piece of evidence (vocational, professional, or industry) in a teacher's VCC. Supports the "Programs I Teach" feature — teachers map their VCC evidence to the subjects they deliver, with optional notes justifying the connection. `chk_vse_one_ev` enforces that exactly one evidence FK is non-null per row. Added in v0.43. | → `teacher_vccs`, `subjects`, `teacher_vcc_vocational_evidence`, `teacher_vcc_professional_evidence`, `teacher_vcc_industry_evidence` |
+| `teacher_vcc_publications` | Records each time a teacher publishes their Trainer Competency & Currency Profile (TCCP) as a PDF. `object_key` is the MinIO storage path; `file_name` is the display filename. `faculty_name` is a snapshot of the faculty name at publication time (preserved if the faculty is later deleted). Published PDFs are listed under "VCC History" and downloadable via a presigned MinIO URL. Added in v0.44. | → `teacher_vccs` (CASCADE), `faculties` (SET NULL) |
 | `teacher_vcc_courses` | Courses the teacher is mapped to deliver in a VCC; optionally linked to `programs`. | → `teacher_vccs`, `programs` |
 | `teacher_vcc_units` | Units teacher has currency for, with competency method, description, and self-ratings. Multiple rows per unit allowed. | → `teacher_vccs`, `teacher_vcc_courses`, `subjects` |
 | `teacher_vcc_unit_elements` | Elements of a unit (components / performance criteria clusters). Each element carries a justification and may have evidence documents attached. | → `teacher_vcc_units` |
@@ -3054,6 +3091,76 @@ Industry engagement evidence declared in a VCC. Records activities that demonstr
 
 *Indexes:* `idx_vcc_indevid_vcc (vcc_id)`
 
+#### `teacher_vcc_subject_evidence`
+
+Links a curriculum subject to exactly one piece of evidence in a teacher's VCC — either a `teacher_vcc_vocational_evidence`, `teacher_vcc_professional_evidence`, or `teacher_vcc_industry_evidence` record. Supports the "Programs I Teach" feature where teachers map their VCC evidence to the subjects they deliver, with optional notes justifying the connection. The `chk_vse_one_ev` constraint enforces that exactly one of the three evidence FK columns is non-null per row. Cascade-deletes when its parent VCC or subject is deleted. Added in v0.43.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `vcc_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teacher_vccs |
+| `subject_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;subjects |
+| `vocational_evidence_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_vcc_vocational_evidence |
+| `professional_evidence_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_vcc_professional_evidence |
+| `industry_evidence_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_vcc_industry_evidence |
+| `notes` | `text` | yes |  |  |
+| `created_at` | `timestamp with time zone` | no | `CURRENT_TIMESTAMP` |  |
+
+**Column notes:**
+
+| Column | Notes |
+|---|---|
+| `vcc_id` | The VCC this subject–evidence link belongs to. Cascade-deletes when the VCC is removed. |
+| `subject_id` | The curriculum subject (unit of competency) being mapped. Cascade-deletes if the subject is removed. |
+| `vocational_evidence_id` | Set when the subject is evidenced by a `teacher_vcc_vocational_evidence` record. Exactly one of the three evidence columns must be non-null (`chk_vse_one_ev`). |
+| `professional_evidence_id` | Set when the subject is evidenced by a `teacher_vcc_professional_evidence` record. |
+| `industry_evidence_id` | Set when the subject is evidenced by a `teacher_vcc_industry_evidence` record. |
+| `notes` | Optional free-text justification of how the linked evidence demonstrates currency for this subject. |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_vse_vcc FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_vse_subject FOREIGN KEY (subject_id) REFERENCES public.subjects(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_vse_voc_ev FOREIGN KEY (vocational_evidence_id) REFERENCES public.teacher_vcc_vocational_evidence(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_vse_prof_ev FOREIGN KEY (professional_evidence_id) REFERENCES public.teacher_vcc_professional_evidence(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_vse_ind_ev FOREIGN KEY (industry_evidence_id) REFERENCES public.teacher_vcc_industry_evidence(id) ON DELETE CASCADE`
+- `CONSTRAINT chk_vse_one_ev CHECK (num_nonnulls(vocational_evidence_id, professional_evidence_id, industry_evidence_id) = 1)`
+
+*Indexes:* `idx_vse_vcc_id (vcc_id)`, `idx_vse_subject_id (subject_id)`
+
+#### `teacher_vcc_publications`
+
+Records each time a teacher publishes their Trainer Competency & Currency Profile (TCCP) as a PDF. The PDF is generated server-side and stored in MinIO object storage; `object_key` is the MinIO path used to retrieve or generate a presigned download URL. `faculty_name` is a denormalised snapshot of the faculty name at the time of publication — this value is preserved even if the referenced `faculty_id` is later deleted (ON DELETE SET NULL). Published PDFs are listed under "VCC History" in the teacher's VCC page. Cascade-deletes when its parent VCC is deleted. Added in v0.44.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `vcc_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teacher_vccs |
+| `faculty_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;faculties |
+| `faculty_name` | `varchar(100)` | yes |  |  |
+| `object_key` | `varchar(500)` | no |  |  |
+| `file_name` | `varchar(255)` | no |  |  |
+| `published_at` | `timestamp with time zone` | no | `CURRENT_TIMESTAMP` |  |
+| `notes` | `text` | yes |  |  |
+
+**Column notes:**
+
+| Column | Notes |
+|---|---|
+| `object_key` | MinIO storage path for the generated PDF (e.g. `vccs/2026/teacher-42/tccp-v1.pdf`). Used to construct a presigned download URL. |
+| `faculty_name` | Snapshot of the faculty name at the time of publication. Remains set even after `faculty_id` is nulled by a faculty deletion. |
+| `faculty_id` | FK to `faculties`; SET NULL on faculty deletion. Check `faculty_name` for the historical display value. |
+| `published_at` | Timestamp when the PDF was generated and stored. Defaults to `CURRENT_TIMESTAMP`. |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_vcp_vcc FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_vcp_faculty FOREIGN KEY (faculty_id) REFERENCES public.faculties(id) ON DELETE SET NULL`
+
+*Indexes:* `idx_vcp_vcc_id (vcc_id)`
+
 #### `teacher_vcc_courses`
 
 Courses the teacher is mapping to deliver in a VCC. Optionally linked to a `programs` record; stores the course code and title for display (allowing free-text where no matching program exists). Container for `teacher_vcc_units`. `sort_order` controls display sequence. References `teacher_vccs` and optionally `programs`.
@@ -3533,4 +3640,4 @@ periodically.
 
 ---
 
-*Generated from `v0.42` (2026-06-16).*
+*Generated from `v0.44` (2026-06-16).*

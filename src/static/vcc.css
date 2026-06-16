@@ -285,3 +285,90 @@
 .dl-btn-del       { font-size:12px; color:#dc2626; padding:4px 10px;
                     border:1px solid #fecaca; border-radius:4px; background:none; cursor:pointer; }
 .dl-btn-del:hover { background:#fef2f2; }
+
+/* ── Programs I Teach ─────────────────────────────────────────────────────── */
+.pit-faculty-bar    { display:flex; align-items:center; gap:10px; margin-bottom:16px; }
+.pit-faculty-bar.hidden { display:none; }
+.pit-faculty-label  { font-size:13px; font-weight:600; color:#475569; white-space:nowrap; }
+.pit-faculty-bar .vcc-input { max-width:340px; }
+
+.pit-select-prompt  { color:#94a3b8; font-size:14px; }
+
+.pit-program        { background:#fff; border:1px solid #e2e8f0; border-radius:8px;
+                      margin-bottom:8px; overflow:hidden; }
+.pit-program-hdr    { display:flex; align-items:center; gap:10px; padding:10px 14px;
+                      cursor:pointer; user-select:none; }
+.pit-program-hdr:hover { background:#f8fafc; }
+.pit-program.open .pit-program-hdr { background:#f8fafc; }
+.pit-program.open .vcc-chev { transform:rotate(90deg); }
+.pit-program-body   { border-top:1px solid #e2e8f0; }
+
+.pit-subject-table  { width:100%; border-collapse:collapse; font-size:13px; }
+.pit-subject-table thead th {
+  padding:7px 12px; text-align:left; font-size:11px; font-weight:700;
+  text-transform:uppercase; letter-spacing:.05em; color:#94a3b8;
+  background:#f8fafc; border-bottom:1px solid #e2e8f0; }
+.pit-subj-row td    { padding:8px 12px; border-bottom:1px solid #f1f5f9; vertical-align:middle; }
+.pit-subj-row:last-of-type td { border-bottom:none; }
+.pit-subj-row:hover td { background:#f8fafc; }
+.pit-no-subjects    { padding:10px 12px; color:#94a3b8; font-size:13px; text-align:center; }
+
+.pit-col-code       { width:120px; }
+.pit-col-name       { }
+.pit-col-icons      { width:80px; white-space:nowrap; }
+.pit-col-btn        { width:90px; text-align:right; }
+
+/* Status icons */
+.pit-icon           { display:inline-flex; align-items:center; justify-content:center;
+                      width:22px; height:22px; border-radius:4px; font-size:11px;
+                      font-weight:700; margin-right:2px; }
+.pit-icon--none     { background:#f1f5f9; color:#cbd5e1; }
+.pit-icon--pending  { background:#fff7ed; color:#c2410c; border:1px solid #fed7aa; }
+.pit-icon--ok       { background:#0369a1; color:#fff; }
+
+/* Evidence panel */
+.pit-ev-row td      { padding:0; }
+.pit-ev-cell        { background:#f8fafc; border-bottom:1px solid #e2e8f0; padding:12px 16px !important; }
+.pit-ev-panel       { display:flex; flex-direction:column; gap:12px; }
+
+.pit-ev-links       { display:flex; flex-direction:column; gap:6px; }
+.pit-no-links       { font-size:13px; color:#94a3b8; margin:0; }
+
+.pit-link-row       { display:flex; align-items:flex-start; gap:8px; flex-wrap:wrap;
+                      background:#fff; border:1px solid #e2e8f0; border-radius:6px;
+                      padding:8px 10px; }
+.pit-link-type      { font-size:11px; font-weight:700; text-transform:uppercase;
+                      letter-spacing:.04em; padding:2px 7px; border-radius:3px;
+                      white-space:nowrap; flex-shrink:0; align-self:center; }
+.pit-type-professional { background:#eff6ff; color:#1d4ed8; }
+.pit-type-vocational   { background:#fff7ed; color:#c2410c; }
+.pit-type-industry     { background:#f0fdf4; color:#166534; }
+.pit-link-code      { font-size:12px; font-family:monospace; color:#475569; align-self:center; }
+.pit-link-title     { font-size:13px; color:#1e293b; flex:1; align-self:center; min-width:140px; }
+.pit-link-status    { font-size:11px; align-self:center; }
+.pit-link-status[data-st="Approved"]  { color:#16a34a; font-weight:600; }
+.pit-link-status[data-st="Pending"]   { color:#d97706; font-weight:600; }
+.pit-link-status[data-st="Draft"]     { color:#94a3b8; }
+.pit-link-status[data-st="Rejected"]  { color:#dc2626; font-weight:600; }
+.pit-link-notes-wrap { display:flex; align-items:center; gap:6px; flex:2; min-width:200px; }
+.pit-link-notes     { flex:1; font-size:12px; resize:vertical; min-height:32px; padding:4px 8px; }
+
+/* Add evidence form */
+.pit-ev-add         { background:#fff; border:1px solid #e2e8f0; border-radius:6px; padding:10px 12px; }
+.pit-ev-add-row     { display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
+.pit-ev-add-row .vcc-input { flex:1; min-width:160px; }
+.pit-ev-notes       { width:100%; resize:vertical; min-height:48px;
+                      font-size:13px; margin-bottom:8px; }
+.pit-ev-add-actions { display:flex; align-items:center; gap:8px; }
+
+/* ── VCC History (publications) ─────────────────────────────────────────── */
+.pit-pub-row        { display:flex; align-items:center; justify-content:space-between;
+                      gap:12px; padding:10px 14px; background:#fff;
+                      border:1px solid #e2e8f0; border-radius:6px; margin-bottom:6px; }
+.pit-pub-info       { display:flex; align-items:center; gap:14px; flex:1; min-width:0; flex-wrap:wrap; }
+.pit-pub-date       { font-size:13px; font-weight:600; color:#1e293b; white-space:nowrap; }
+.pit-pub-faculty    { font-size:12px; color:#64748b; white-space:nowrap; }
+.pit-pub-file       { font-size:11px; color:#94a3b8; font-family:monospace;
+                      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pit-pub-actions    { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.pit-pub-actions .vcc-btn-sm { text-decoration:none; }

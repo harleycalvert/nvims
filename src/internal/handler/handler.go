@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"encoding/json"
@@ -115,6 +116,10 @@ func New(st *store.Store, sessions *auth.Sessions, stor *storage.Client) *Handle
 	}
 
 	funcs["dateISO"] = func(t time.Time) string { return t.Format("2006-01-02") }
+	funcs["toJSON"] = func(v any) (template.JS, error) {
+		b, err := json.Marshal(v)
+		return template.JS(b), err
+	}
 	funcs["dateDMY"] = func(t time.Time) string { return t.Format("02/01/2006") }
 	funcs["dateDayName"] = func(t time.Time) string { return t.Format("Mon") }
 	funcs["sub"] = func(a, b int) int { return a - b }
@@ -2658,12 +2663,262 @@ func (h *Handler) VCCIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "database error", http.StatusInternalServerError)
 		return
 	}
+
+	faculties, err := h.store.TeacherFaculties(r.Context(), user.PersonID)
+	if err != nil {
+		log.Printf("TeacherFaculties(%d): %v", user.PersonID, err)
+	}
+	if len(faculties) == 0 {
+		faculties, _ = h.store.AllFaculties(r.Context())
+	}
+
 	h.render(w, "vcc-detail", map[string]any{
 		"VCC": vcc, "User": user,
 		"VCCStatuses":  validVCCStatuses,
 		"ItemStatuses": validVCCItemStatuses,
 		"VCCMethods":   validVCCMethods,
+		"Faculties":    faculties,
 	})
+}
+
+// VCCPrograms returns programs + subjects + evidence links for a faculty as JSON.
+func (h *Handler) VCCPrograms(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	vcc, err := h.store.GetLatestVCCForTeacher(r.Context(), user.PersonID)
+	if err != nil {
+		http.Error(w, `{"error":"no VCC"}`, http.StatusNotFound)
+		return
+	}
+	facultyID, _ := strconv.ParseInt(r.URL.Query().Get("faculty_id"), 10, 64)
+	if facultyID == 0 {
+		http.Error(w, `{"error":"faculty_id required"}`, http.StatusBadRequest)
+		return
+	}
+	programs, err := h.store.ProgramsWithSubjects(r.Context(), vcc.ID, facultyID)
+	if err != nil {
+		log.Printf("ProgramsWithSubjects(%d,%d): %v", vcc.ID, facultyID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(programs)
+}
+
+// VCCAddSubjectEvidence links a piece of VCC evidence to a curriculum subject.
+func (h *Handler) VCCAddSubjectEvidence(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	vcc, err := h.store.GetLatestVCCForTeacher(r.Context(), user.PersonID)
+	if err != nil {
+		http.Error(w, `{"error":"no VCC"}`, http.StatusNotFound)
+		return
+	}
+	subjectID, _ := strconv.ParseInt(r.FormValue("subject_id"), 10, 64)
+	evidenceID, _ := strconv.ParseInt(r.FormValue("evidence_id"), 10, 64)
+	evidenceType := r.FormValue("evidence_type")
+	notes := r.FormValue("notes")
+	if subjectID == 0 || evidenceID == 0 || evidenceType == "" {
+		http.Error(w, `{"error":"missing fields"}`, http.StatusBadRequest)
+		return
+	}
+	id, err := h.store.AddSubjectEvidenceLink(r.Context(), vcc.ID, subjectID, evidenceType, evidenceID, notes)
+	if err != nil {
+		log.Printf("AddSubjectEvidenceLink: %v", err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"ok":true,"id":%d}`, id)
+}
+
+// VCCUpdateSubjectEvidence updates the notes on an evidence link.
+func (h *Handler) VCCUpdateSubjectEvidence(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	vcc, err := h.store.GetLatestVCCForTeacher(r.Context(), user.PersonID)
+	if err != nil {
+		http.Error(w, `{"error":"no VCC"}`, http.StatusNotFound)
+		return
+	}
+	id, _ := strconv.ParseInt(r.PathValue("lid"), 10, 64)
+	notes := r.FormValue("notes")
+	if err := h.store.UpdateSubjectEvidenceNotes(r.Context(), id, vcc.ID, notes); err != nil {
+		log.Printf("UpdateSubjectEvidenceNotes(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+// VCCPublishTCCP generates a TCCP PDF for the given faculty, uploads it to
+// MinIO and records it in teacher_vcc_publications.
+func (h *Handler) VCCPublishTCCP(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	vcc, err := h.store.GetLatestVCCForTeacher(r.Context(), user.PersonID)
+	if err != nil {
+		http.Error(w, `{"error":"no VCC"}`, http.StatusNotFound)
+		return
+	}
+	facultyID, _ := strconv.ParseInt(r.FormValue("faculty_id"), 10, 64)
+	if facultyID == 0 {
+		http.Error(w, `{"error":"faculty_id required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Resolve faculty name
+	faculties, _ := h.store.AllFaculties(r.Context())
+	facultyName := "Unknown Faculty"
+	for _, f := range faculties {
+		if f.ID == facultyID {
+			facultyName = f.Name
+			break
+		}
+	}
+
+	programs, err := h.store.ProgramsWithSubjects(r.Context(), vcc.ID, facultyID)
+	if err != nil {
+		log.Printf("ProgramsWithSubjects(%d,%d): %v", vcc.ID, facultyID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+
+	pdfBytes, err := generateTCCPDF(vcc.TeacherName, vcc.CalendarYear, facultyName, vcc.Status, programs)
+	if err != nil {
+		log.Printf("generateTCCPDF(%d): %v", vcc.ID, err)
+		http.Error(w, `{"error":"pdf generation failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	ts := time.Now().Format("20060102-150405")
+	fileName := fmt.Sprintf("TCCP-%d-%s.pdf", vcc.CalendarYear, ts)
+	objectKey := fmt.Sprintf("tccp/%d/%s", user.PersonID, fileName)
+
+	if err := h.storage.Upload(r.Context(), objectKey, bytes.NewReader(pdfBytes), int64(len(pdfBytes)), "application/pdf"); err != nil {
+		log.Printf("VCCPublishTCCP upload(%d): %v", user.PersonID, err)
+		http.Error(w, `{"error":"upload failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	pubID, err := h.store.SaveVCCPublication(r.Context(), vcc.ID, facultyID, facultyName, objectKey, fileName)
+	if err != nil {
+		_ = h.storage.Delete(r.Context(), objectKey)
+		log.Printf("SaveVCCPublication(%d): %v", vcc.ID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"ok":true,"id":%d,"fileName":%q}`, pubID, fileName)
+}
+
+// VCCListPublications returns all TCCP publications for the teacher's VCC as JSON.
+func (h *Handler) VCCListPublications(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	vcc, err := h.store.GetLatestVCCForTeacher(r.Context(), user.PersonID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("[]"))
+		return
+	}
+	pubs, err := h.store.ListVCCPublications(r.Context(), vcc.ID)
+	if err != nil {
+		log.Printf("ListVCCPublications(%d): %v", vcc.ID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	if pubs == nil {
+		pubs = []store.VCCPublication{}
+	}
+	type pubJSON struct {
+		ID          int64  `json:"id"`
+		FacultyName string `json:"facultyName"`
+		FileName    string `json:"fileName"`
+		PublishedAt string `json:"publishedAt"`
+	}
+	out := make([]pubJSON, len(pubs))
+	for i, p := range pubs {
+		out[i] = pubJSON{p.ID, p.FacultyName, p.FileName, p.PublishedAt.Format("2 Jan 2006, 15:04")}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// VCCDownloadPublication generates a presigned URL for a TCCP PDF.
+func (h *Handler) VCCDownloadPublication(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	vcc, err := h.store.GetLatestVCCForTeacher(r.Context(), user.PersonID)
+	if err != nil {
+		http.Error(w, `{"error":"no VCC"}`, http.StatusNotFound)
+		return
+	}
+	id, _ := strconv.ParseInt(r.PathValue("pid"), 10, 64)
+	objectKey, err := h.store.GetVCCPublicationObjectKey(r.Context(), id, vcc.ID)
+	if err != nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	url, err := h.storage.PresignedURL(r.Context(), objectKey)
+	if err != nil {
+		log.Printf("VCCDownloadPublication presign(%d): %v", id, err)
+		http.Error(w, `{"error":"presign failed"}`, http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, url, http.StatusFound)
+}
+
+// VCCDeletePublication deletes a TCCP publication and its MinIO object.
+func (h *Handler) VCCDeletePublication(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	vcc, err := h.store.GetLatestVCCForTeacher(r.Context(), user.PersonID)
+	if err != nil {
+		http.Error(w, `{"error":"no VCC"}`, http.StatusNotFound)
+		return
+	}
+	id, _ := strconv.ParseInt(r.PathValue("pid"), 10, 64)
+	objectKey, err := h.store.GetVCCPublicationObjectKey(r.Context(), id, vcc.ID)
+	if err != nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	if objectKey != "" {
+		_ = h.storage.Delete(r.Context(), objectKey)
+	}
+	if err := h.store.DeleteVCCPublication(r.Context(), id, vcc.ID); err != nil {
+		log.Printf("DeleteVCCPublication(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+// VCCDeleteSubjectEvidence removes an evidence-subject link.
+func (h *Handler) VCCDeleteSubjectEvidence(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	vcc, err := h.store.GetLatestVCCForTeacher(r.Context(), user.PersonID)
+	if err != nil {
+		http.Error(w, `{"error":"no VCC"}`, http.StatusNotFound)
+		return
+	}
+	id, _ := strconv.ParseInt(r.PathValue("lid"), 10, 64)
+	if err := h.store.DeleteSubjectEvidenceLink(r.Context(), id, vcc.ID); err != nil {
+		log.Printf("DeleteSubjectEvidenceLink(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
 func (h *Handler) VCCUpdateStatus(w http.ResponseWriter, r *http.Request) {
