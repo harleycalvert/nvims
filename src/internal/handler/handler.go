@@ -181,6 +181,7 @@ func New(st *store.Store, sessions *auth.Sessions, stor *storage.Client) *Handle
 			"templates/assessment/menu.html",
 			"templates/system/menu.html",
 			"templates/admin/departments.html",
+			"templates/admin/roles.html",
 		),
 	)
 	h := &Handler{store: st, sessions: sessions, storage: stor, tmpl: tmpl}
@@ -2200,8 +2201,7 @@ func (h *Handler) AdminRoleTypeCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	description := strings.TrimSpace(r.FormValue("description"))
-	sortOrder, _ := strconv.Atoi(r.FormValue("sort_order"))
-	id, err := h.store.CreateRoleType(r.Context(), name, description, sortOrder)
+	id, err := h.store.CreateRoleType(r.Context(), name, description)
 	if err != nil {
 		log.Printf("CreateRoleType: %v", err)
 		http.Error(w, `{"error":"could not save — name may already be in use"}`, http.StatusConflict)
@@ -2223,17 +2223,16 @@ func (h *Handler) AdminRoleTypeUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	isSystem := r.FormValue("is_system") == "true"
 	description := strings.TrimSpace(r.FormValue("description"))
-	sortOrder, _ := strconv.Atoi(r.FormValue("sort_order"))
 
 	if isSystem {
-		err = h.store.UpdateSystemRoleType(r.Context(), id, description, sortOrder)
+		err = h.store.UpdateSystemRoleType(r.Context(), id, description)
 	} else {
 		name := strings.TrimSpace(r.FormValue("role_name"))
 		if name == "" {
 			http.Error(w, `{"error":"role name is required"}`, http.StatusBadRequest)
 			return
 		}
-		err = h.store.UpdateRoleType(r.Context(), id, name, description, sortOrder)
+		err = h.store.UpdateRoleType(r.Context(), id, name, description)
 	}
 	if err != nil {
 		log.Printf("UpdateRoleType(%d): %v", id, err)

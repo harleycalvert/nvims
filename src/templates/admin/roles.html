@@ -39,7 +39,6 @@
           <tr>
             <th class="td-left">Role Name</th>
             <th class="td-left">Description</th>
-            <th class="roles-col-order">Order</th>
             <th></th>
           </tr>
         </thead>
@@ -57,8 +56,6 @@
             </td>
             <td><input class="sess-input role-input-desc" type="text" name="description"
                        value="{{.Description}}" maxlength="200" placeholder="Optional description"></td>
-            <td><input class="sess-input role-input-order" type="number" name="sort_order"
-                       value="{{.SortOrder}}" min="0" max="9999" step="10"></td>
             <td class="sess-actions">
               <span class="sess-status"></span>
               {{if not .IsSystem}}<button class="btn-danger-sm role-delete" type="button" title="Delete">✕</button>{{end}}
@@ -89,12 +86,11 @@
     const isSystem = tr.dataset.system === 'true';
     const name     = tr.querySelector('[name=role_name]')?.value?.trim() ?? '';
     const desc     = tr.querySelector('[name=description]').value.trim();
-    const order    = tr.querySelector('[name=sort_order]').value;
     if (!isSystem && !name) return;
 
     setStatus(tr, 'saving');
     const url  = id === 'new' ? '/admin/role-types/new' : `/admin/role-types/${id}`;
-    const body = new URLSearchParams({ role_name: name, description: desc, sort_order: order, is_system: isSystem });
+    const body = new URLSearchParams({ role_name: name, description: desc, is_system: isSystem });
     try {
       const res = await fetch(url, { method: 'POST', body });
       if (!res.ok) { setStatus(tr, 'error'); return; }
@@ -123,7 +119,6 @@
   function attachRowListeners(tr) {
     tr.querySelector('[name=description]')?.addEventListener('blur', () => saveRow(tr));
     tr.querySelector('[name=role_name]')?.addEventListener('blur', () => saveRow(tr));
-    tr.querySelector('[name=sort_order]')?.addEventListener('blur', () => saveRow(tr));
     tr.querySelector('.role-delete')?.addEventListener('click', () => deleteRow(tr));
   }
 
@@ -141,8 +136,6 @@
                  placeholder="Role name" maxlength="80"></td>
       <td><input class="sess-input role-input-desc" type="text" name="description"
                  placeholder="Optional description" maxlength="200"></td>
-      <td><input class="sess-input role-input-order" type="number" name="sort_order"
-                 value="0" min="0" max="9999" step="10"></td>
       <td class="sess-actions">
         <span class="sess-status"></span>
         <button class="btn-danger-sm role-delete" type="button" title="Remove">✕</button>

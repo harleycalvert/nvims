@@ -4307,31 +4307,31 @@ func (s *Store) ListRoleTypes(ctx context.Context) ([]RoleType, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) CreateRoleType(ctx context.Context, roleName, description string, sortOrder int) (int64, error) {
+func (s *Store) CreateRoleType(ctx context.Context, roleName, description string) (int64, error) {
 	var id int64
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO public.role_types (role_name, description, sort_order)
-		VALUES ($1, NULLIF($2,''), $3)
+		INSERT INTO public.role_types (role_name, description)
+		VALUES ($1, NULLIF($2,''))
 		RETURNING id
-	`, roleName, description, sortOrder).Scan(&id)
+	`, roleName, description).Scan(&id)
 	return id, err
 }
 
-func (s *Store) UpdateRoleType(ctx context.Context, id int64, roleName, description string, sortOrder int) error {
+func (s *Store) UpdateRoleType(ctx context.Context, id int64, roleName, description string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE public.role_types
-		SET role_name = $2, description = NULLIF($3,''), sort_order = $4
+		SET role_name = $2, description = NULLIF($3,'')
 		WHERE id = $1 AND is_system = FALSE
-	`, id, roleName, description, sortOrder)
+	`, id, roleName, description)
 	return err
 }
 
-func (s *Store) UpdateSystemRoleType(ctx context.Context, id int64, description string, sortOrder int) error {
+func (s *Store) UpdateSystemRoleType(ctx context.Context, id int64, description string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE public.role_types
-		SET description = NULLIF($2,''), sort_order = $3
+		SET description = NULLIF($2,'')
 		WHERE id = $1 AND is_system = TRUE
-	`, id, description, sortOrder)
+	`, id, description)
 	return err
 }
 
