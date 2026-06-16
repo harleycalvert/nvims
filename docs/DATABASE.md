@@ -1,8 +1,8 @@
-# A National VET Information Management System (NVIMS), Student Management System (SMS) — Database Design v0.44, 2026-06-16
+# A National VET Information Management System (NVIMS), Student Management System (SMS) — Database Design v0.45, 2026-06-16
 
 PostgreSQL schema for a national, AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.44` (2026-06-16): its entities, relationships, business rules, and the
+describes the design of `v0.45` (2026-06-16): its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -32,7 +32,7 @@ mapping to the AVETMISS NAT reporting files.
   - [14. Intakes & cohorts](#14-intakes--cohorts)
 - [Table reference](#table-reference)
 - [Data dictionary](#data-dictionary)
-  - Identity & reference: [`people`](#people) · [`students`](#students) · [`staff`](#staff) · [`staff_availability`](#staff_availability) · [`teachers`](#teachers) · [`teacher_availability`](#teacher_availability) · [`app_users`](#app_users) · [`app_user_roles`](#app_user_roles) · [`teacher_yearly_balances`](#teacher_yearly_balances) · [`teacher_period_allocations`](#teacher_period_allocations) · [`student_guardians`](#student_guardians) · [`student_disabilities`](#student_disabilities) · [`student_prior_achievements`](#student_prior_achievements) · [`australian_states`](#australian_states) · [`disability_types`](#disability_types) · [`prior_educational_achievements`](#prior_educational_achievements) · [`highest_school_levels`](#highest_school_levels) · [`secondary_schools`](#secondary_schools) · [`faculties`](#faculties) · [`departments`](#departments) · [`person_departments`](#person_departments)
+  - Identity & reference: [`people`](#people) · [`students`](#students) · [`staff`](#staff) · [`staff_availability`](#staff_availability) · [`teachers`](#teachers) · [`teacher_availability`](#teacher_availability) · [`app_users`](#app_users) · [`app_user_roles`](#app_user_roles) · [`teacher_yearly_balances`](#teacher_yearly_balances) · [`teacher_period_allocations`](#teacher_period_allocations) · [`student_guardians`](#student_guardians) · [`student_disabilities`](#student_disabilities) · [`student_prior_achievements`](#student_prior_achievements) · [`australian_states`](#australian_states) · [`disability_types`](#disability_types) · [`prior_educational_achievements`](#prior_educational_achievements) · [`highest_school_levels`](#highest_school_levels) · [`secondary_schools`](#secondary_schools) · [`faculties`](#faculties) · [`departments`](#departments) · [`person_departments`](#person_departments) · [`role_types`](#role_types) · [`staff_roles`](#staff_roles)
   - Curriculum: [`programs`](#programs) · [`subjects`](#subjects) · [`subject_programs`](#subject_programs)
   - Intakes & cohorts: [`program_intakes`](#program_intakes) · [`intake_groups`](#intake_groups)
   - Enrolment & extensions: [`student_course_enrollments`](#student_course_enrollments) · [`client_subject_enrolments`](#client_subject_enrolments) · [`apprenticeship_details`](#apprenticeship_details) · [`traineeship_details`](#traineeship_details) · [`training_plans`](#training_plans) · [`learning_access_plans`](#learning_access_plans) · [`vet_student_loans`](#vet_student_loans) · [`he_enrolment_details`](#he_enrolment_details) · [`enrollment_credit_claims`](#enrollment_credit_claims) · [`state_funding_details`](#state_funding_details)
@@ -56,6 +56,12 @@ mapping to the AVETMISS NAT reporting files.
 ---
 
 ## Changelog
+
+### v0.45 — 2026-06-16
+
+1. **New table `role_types`.** Configurable lookup of organisational staff roles. Columns: `id bigserial NOT NULL` (PK), `role_name text NOT NULL` (unique via `uq_role_types_name`), `is_system boolean NOT NULL DEFAULT FALSE`, `description text NULL`, `sort_order integer NOT NULL DEFAULT 0`. Seeded with three system rows (all `is_system = TRUE`): Teacher (`sort_order = 10`), Education Manager (`sort_order = 20`), Head of Department (`sort_order = 30`). System rows cannot be renamed or deleted via the UI; their `description` and `sort_order` remain editable. Custom (non-system) roles can be freely created, edited, and deleted provided no `staff_roles` rows reference them.
+
+2. **New table `staff_roles`.** Date-ranged assignment of an organisational role to a staff member. Columns: `id bigserial NOT NULL` (PK), `staff_id bigint NOT NULL` (FK → `staff(id)` ON DELETE CASCADE), `role_type_id bigint NOT NULL` (FK → `role_types(id)` ON DELETE RESTRICT), `started_on date NOT NULL`, `ended_on date NULL`. `ended_on IS NULL` means the role is currently held. There is deliberately no unique constraint on `(staff_id, role_type_id)` — the same role may be held twice over time (e.g. someone who was Head of Department, stepped down, then was reappointed). `started_on` is mandatory; `ended_on` is editable retrospectively. ON DELETE RESTRICT on `role_type_id` prevents deleting a role type that is in use by any staff member. ON DELETE CASCADE on `staff_id` removes the entire role history if the staff record is deleted. Constraint: `chk_sr_dates CHECK (ended_on IS NULL OR ended_on >= started_on)`. Indexes: `idx_sr_staff_id (staff_id)`, `idx_sr_role_type_id (role_type_id)`.
 
 ### v0.44 — 2026-06-16
 
@@ -322,6 +328,8 @@ erDiagram
     TEACHERS ||--o{ TEACHER_YEARLY_BALANCES : "accrues hours"
     TEACHERS ||--o{ TEACHER_PERIOD_ALLOCATIONS : "per-period cap"
     ACADEMIC_PERIODS ||--o{ TEACHER_PERIOD_ALLOCATIONS : ""
+    STAFF ||--o{ STAFF_ROLES : "holds (date-ranged)"
+    ROLE_TYPES ||--o{ STAFF_ROLES : "classifies"
 
     PEOPLE {
         bigserial id PK
@@ -365,6 +373,20 @@ erDiagram
         varchar role
         timestamptz granted_at
         timestamptz revoked_at "NULL = active"
+    }
+    ROLE_TYPES {
+        bigserial id PK
+        text role_name UK
+        boolean is_system "TRUE = protected"
+        text description "NULL"
+        integer sort_order
+    }
+    STAFF_ROLES {
+        bigserial id PK
+        bigint staff_id FK
+        bigint role_type_id FK
+        date started_on
+        date ended_on "NULL = current"
     }
 ```
 
@@ -843,6 +865,8 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | `disability_types`, `prior_educational_achievements`, `highest_school_levels`, `secondary_schools`, `faculties` | Classification & org reference data. | — |
 | `departments` | Second-level organisational units within a faculty. Soft-deletable. Referenced by `classes` and `programs`. | → `faculties` |
 | `person_departments` | Many-to-many assignment of people to departments. | → `people`, `departments` |
+| `role_types` | Lookup of organisational roles (Teacher, Education Manager, Head of Department, etc.). System rows (`is_system = TRUE`) are protected from rename/delete. `sort_order` controls display sequence. | — |
+| `staff_roles` | Date-ranged assignment of an organisational role to a staff member. `ended_on IS NULL` = currently holds the role. No unique constraint on `(staff_id, role_type_id)` — the same role may be held twice over time. `ON DELETE RESTRICT` on `role_type_id` prevents deletion of in-use role types. | → `staff`, `role_types` |
 
 ### Curriculum
 
@@ -1426,6 +1450,44 @@ Many-to-many assignment of people to departments. A person may belong to multipl
 - `PRIMARY KEY (person_id, department_id)`
 - `CONSTRAINT fk_pd_person FOREIGN KEY (person_id) REFERENCES public.people(id) ON DELETE CASCADE`
 - `CONSTRAINT fk_pd_department FOREIGN KEY (department_id) REFERENCES public.departments(id) ON DELETE CASCADE`
+
+#### `role_types`
+
+Configurable lookup table of organisational staff roles. Provides the controlled vocabulary used when assigning roles to staff members via `staff_roles`. Seeded with three system rows — Teacher (`sort_order = 10`), Education Manager (`sort_order = 20`), and Head of Department (`sort_order = 30`) — all with `is_system = TRUE`. System rows cannot be renamed or deleted through the UI (the application blocks these operations); their `description` and `sort_order` remain freely editable. Administrators may create, edit, and delete custom (non-system) roles, subject to the restriction that a role type cannot be deleted while it is referenced by any `staff_roles` row (enforced by ON DELETE RESTRICT on the FK in `staff_roles`). `sort_order` controls the display sequence in role-picker dropdowns and reports.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `role_name` | `text` | no |  | UK |
+| `is_system` | `boolean` | no | `FALSE` |  |
+| `description` | `text` | yes |  |  |
+| `sort_order` | `integer` | no | `0` |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT uq_role_types_name UNIQUE (role_name)`
+
+#### `staff_roles`
+
+Date-ranged assignment of an organisational role to a staff member. Each row records a period during which a staff member held a particular role type: `started_on` is mandatory, and `ended_on IS NULL` means the role is currently held. `ended_on` is editable retrospectively to correct historical records or to close out a role when the person steps down. There is deliberately no unique constraint on `(staff_id, role_type_id)` — the same role may be held twice over time (e.g. a person who was Head of Department, stepped down, and was later reappointed will have two rows for that role type with non-overlapping date ranges). ON DELETE RESTRICT on `role_type_id` prevents a role type from being deleted while any staff member holds or has held it. ON DELETE CASCADE on `staff_id` removes the full role history when the staff record itself is deleted. Indexed on both `staff_id` and `role_type_id` for efficient lookup by either dimension.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `staff_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;staff |
+| `role_type_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;role_types |
+| `started_on` | `date` | no |  |  |
+| `ended_on` | `date` | yes |  |  |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_sr_staff FOREIGN KEY (staff_id) REFERENCES public.staff(id) ON DELETE CASCADE`
+- `CONSTRAINT fk_sr_role_type FOREIGN KEY (role_type_id) REFERENCES public.role_types(id) ON DELETE RESTRICT`
+- `CONSTRAINT chk_sr_dates CHECK (ended_on IS NULL OR ended_on >= started_on)`
+- Index: `idx_sr_staff_id (staff_id)`
+- Index: `idx_sr_role_type_id (role_type_id)`
 
 ### Curriculum
 

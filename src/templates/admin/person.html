@@ -175,7 +175,7 @@
 
     {{if not .IsNew}}
     <div class="form-section form-section--spaced">
-      <h2 class="form-section-title">Roles</h2>
+      <h2 class="form-section-title">System Access Roles</h2>
       <div class="roles-grid">
 
         <div class="role-card{{if .Person.IsStudent}} role-card-active{{end}}">
@@ -219,6 +219,73 @@
 
       </div>
     </div>
+
+    {{if .Person.IsStaff}}
+    <div class="form-section form-section--spaced" id="org-roles-section">
+      <h2 class="form-section-title">Organisational Roles</h2>
+      <p class="form-hint">Roles this person holds or has held within the organisation. Both dates are editable after the fact.</p>
+
+      <div class="table-wrap">
+        <table class="sessions-table" id="org-roles-table">
+          <thead>
+            <tr>
+              <th class="td-left">Role</th>
+              <th class="orole-col-date">From</th>
+              <th class="orole-col-date">To</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="org-roles-tbody">
+            {{range .OrgRoles}}
+            <tr class="sess-row orole-row" data-id="{{.ID}}" data-staff-id="{{.StaffID}}">
+              <td class="orole-name">{{.RoleTypeName}}</td>
+              <td><input class="sess-input orole-date" type="date" name="started_on"
+                         value="{{.StartedOn.Format "2006-01-02"}}" readonly></td>
+              <td><input class="sess-input orole-date orole-ended" type="date" name="ended_on"
+                         value="{{if .EndedOn}}{{.EndedOn.Format "2006-01-02"}}{{end}}"
+                         placeholder="current"></td>
+              <td class="sess-actions">
+                <span class="sess-status"></span>
+                <button class="btn-danger-sm orole-delete" type="button" title="Delete">✕</button>
+              </td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="orole-add-bar">
+        <button class="btn-primary btn-sm" id="btn-add-orole" type="button">+ Add Role</button>
+      </div>
+
+      <div id="orole-add-form" class="hidden orole-add-form">
+        <div class="form-row">
+          <div class="form-group fg-220">
+            <label>Role <span class="req">*</span></label>
+            <select id="orole-type-select">
+              <option value="">— select —</option>
+              {{range .RoleTypes}}
+              <option value="{{.ID}}">{{.RoleName}}</option>
+              {{end}}
+            </select>
+          </div>
+          <div class="form-group fg-180">
+            <label>Start Date <span class="req">*</span></label>
+            <input type="date" id="orole-started-on">
+          </div>
+          <div class="form-group orole-add-actions">
+            <label>&nbsp;</label>
+            <div>
+              <button class="btn-primary btn-sm" id="btn-orole-save" type="button">Save</button>
+              <button class="btn-secondary btn-sm" id="btn-orole-cancel" type="button">Cancel</button>
+            </div>
+          </div>
+        </div>
+        <p id="orole-add-error" class="form-error hidden"></p>
+      </div>
+    </div>
+    {{end}}
+
     {{end}}
   </main>
 <script>
@@ -233,6 +300,97 @@
     });
   }
 </script>
+
+{{if .Person.IsStaff}}
+<script>
+(function () {
+  const personID = {{.Form.ID}};
+
+  function setStatus(tr, state) {
+    const el = tr.querySelector('.sess-status');
+    if (!el) return;
+    el.className = 'sess-status sess-status-' + state;
+    el.textContent = state === 'saving' ? '…' : state === 'saved' ? '✓' : state === 'error' ? '!' : '';
+    if (state === 'saved') setTimeout(() => { el.textContent = ''; el.className = 'sess-status'; }, 1500);
+  }
+
+  async function saveEndDate(tr) {
+    const id      = tr.dataset.id;
+    const endedOn = tr.querySelector('[name=ended_on]').value;
+    setStatus(tr, 'saving');
+    const body = new URLSearchParams({ ended_on: endedOn });
+    try {
+      const res = await fetch(`/admin/people/${personID}/org-roles/${id}`, { method: 'POST', body });
+      if (!res.ok) { setStatus(tr, 'error'); return; }
+      setStatus(tr, 'saved');
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  async function deleteRow(tr) {
+    const id = tr.dataset.id;
+    if (!confirm('Remove this role assignment?')) return;
+    setStatus(tr, 'saving');
+    try {
+      const res = await fetch(`/admin/people/${personID}/org-roles/${id}/delete`, { method: 'POST' });
+      if (!res.ok) { setStatus(tr, 'error'); return; }
+      tr.remove();
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  function attachRowListeners(tr) {
+    tr.querySelector('[name=ended_on]')?.addEventListener('blur', () => saveEndDate(tr));
+    tr.querySelector('.orole-delete')?.addEventListener('click', () => deleteRow(tr));
+  }
+
+  document.querySelectorAll('#org-roles-tbody .orole-row').forEach(attachRowListeners);
+
+  const addBtn    = document.getElementById('btn-add-orole');
+  const addForm   = document.getElementById('orole-add-form');
+  const saveBtn   = document.getElementById('btn-orole-save');
+  const cancelBtn = document.getElementById('btn-orole-cancel');
+  const errEl     = document.getElementById('orole-add-error');
+
+  addBtn?.addEventListener('click', () => {
+    addBtn.classList.add('hidden');
+    addForm.classList.remove('hidden');
+    document.getElementById('orole-started-on').value = new Date().toISOString().slice(0,10);
+    document.getElementById('orole-type-select').focus();
+  });
+
+  cancelBtn?.addEventListener('click', () => {
+    addForm.classList.add('hidden');
+    addBtn.classList.remove('hidden');
+    errEl.classList.add('hidden');
+  });
+
+  saveBtn?.addEventListener('click', async () => {
+    const roleTypeID = document.getElementById('orole-type-select').value;
+    const startedOn  = document.getElementById('orole-started-on').value;
+    errEl.classList.add('hidden');
+    if (!roleTypeID) { errEl.textContent = 'Please select a role.'; errEl.classList.remove('hidden'); return; }
+    if (!startedOn)  { errEl.textContent = 'Please enter a start date.'; errEl.classList.remove('hidden'); return; }
+
+    saveBtn.disabled = true;
+    const body = new URLSearchParams({ role_type_id: roleTypeID, started_on: startedOn });
+    try {
+      const res = await fetch(`/admin/people/${personID}/org-roles/new`, { method: 'POST', body });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        errEl.textContent = d.error || 'Could not save.';
+        errEl.classList.remove('hidden');
+        saveBtn.disabled = false;
+        return;
+      }
+      location.reload();
+    } catch {
+      errEl.textContent = 'Network error.';
+      errEl.classList.remove('hidden');
+      saveBtn.disabled = false;
+    }
+  });
+})();
+</script>
+{{end}}
   </div>
 </body>
 </html>{{end}}

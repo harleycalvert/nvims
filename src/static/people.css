@@ -307,6 +307,23 @@
   font-style: italic;
 }
 
+/* ── Organisational Roles (person detail) ───────────────────────────────── */
+.orole-col-date  { width: 9rem; }
+.orole-date      { width: 9rem; }
+.orole-name      { font-size: 13px; font-weight: 500; }
+.orole-add-bar   { margin-top: 10px; }
+.orole-add-form  { margin-top: 12px; padding: 14px 16px; background: #f8fafc; border: 1px solid #dde3ee; border-radius: 6px; }
+.orole-add-actions { justify-content: flex-end; }
+.orole-add-actions > div { display: flex; gap: 8px; }
+
+/* ── Roles admin page ────────────────────────────────────────────────────── */
+.roles-col-order   { width: 6rem; }
+.role-input-name   { min-width: 10rem; }
+.role-input-desc   { min-width: 14rem; }
+.role-input-order  { width: 5rem; }
+.role-system-name  { font-size: 13px; font-weight: 500; white-space: nowrap; }
+.role-system-lock  { font-size: 11px; opacity: 0.6; }
+
 .hint {
   font-size: 13px;
   color: #888;

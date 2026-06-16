@@ -981,11 +981,18 @@ func (h *Handler) AdminPersonView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, _ := auth.Current(r)
-	h.render(w, "admin-person", map[string]any{
+	data := map[string]any{
 		"IsNew": false, "Form": personFormFrom(person), "Person": person,
 		"Error": "", "Success": r.URL.Query().Get("saved") == "1",
 		"States": auStates, "User": user,
-	})
+	}
+	if person.IsStaff {
+		orgRoles, _ := h.store.ListStaffOrgRoles(r.Context(), id)
+		roleTypes, _ := h.store.ListRoleTypes(r.Context())
+		data["OrgRoles"] = orgRoles
+		data["RoleTypes"] = roleTypes
+	}
+	h.render(w, "admin-person", data)
 }
 
 func (h *Handler) AdminPersonUpdate(w http.ResponseWriter, r *http.Request) {
@@ -2164,6 +2171,175 @@ func parseFacultyID(s string) pgtype.Int8 {
 		return pgtype.Int8{Int64: v, Valid: true}
 	}
 	return pgtype.Int8{}
+}
+
+// ── Admin / Roles ─────────────────────────────────────────────────────────────
+
+func (h *Handler) AdminRoles(w http.ResponseWriter, r *http.Request) {
+	roleTypes, err := h.store.ListRoleTypes(r.Context())
+	if err != nil {
+		log.Printf("ListRoleTypes: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	user, _ := auth.Current(r)
+	h.render(w, "admin-roles", map[string]any{
+		"RoleTypes": roleTypes,
+		"User":      user,
+	})
+}
+
+func (h *Handler) AdminRoleTypeCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("role_name"))
+	if name == "" {
+		http.Error(w, `{"error":"role name is required"}`, http.StatusBadRequest)
+		return
+	}
+	description := strings.TrimSpace(r.FormValue("description"))
+	sortOrder, _ := strconv.Atoi(r.FormValue("sort_order"))
+	id, err := h.store.CreateRoleType(r.Context(), name, description, sortOrder)
+	if err != nil {
+		log.Printf("CreateRoleType: %v", err)
+		http.Error(w, `{"error":"could not save — name may already be in use"}`, http.StatusConflict)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"ok":true,"id":%d}`, id)
+}
+
+func (h *Handler) AdminRoleTypeUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	isSystem := r.FormValue("is_system") == "true"
+	description := strings.TrimSpace(r.FormValue("description"))
+	sortOrder, _ := strconv.Atoi(r.FormValue("sort_order"))
+
+	if isSystem {
+		err = h.store.UpdateSystemRoleType(r.Context(), id, description, sortOrder)
+	} else {
+		name := strings.TrimSpace(r.FormValue("role_name"))
+		if name == "" {
+			http.Error(w, `{"error":"role name is required"}`, http.StatusBadRequest)
+			return
+		}
+		err = h.store.UpdateRoleType(r.Context(), id, name, description, sortOrder)
+	}
+	if err != nil {
+		log.Printf("UpdateRoleType(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminRoleTypeDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.DeleteRoleType(r.Context(), id); err != nil {
+		log.Printf("DeleteRoleType(%d): %v", id, err)
+		http.Error(w, `{"error":"cannot delete — role may be in use or is a system role"}`, http.StatusConflict)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ── Admin / Staff Org Roles ───────────────────────────────────────────────────
+
+func (h *Handler) AdminOrgRoleAdd(w http.ResponseWriter, r *http.Request) {
+	personID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	roleTypeID, err := strconv.ParseInt(r.FormValue("role_type_id"), 10, 64)
+	if err != nil || roleTypeID == 0 {
+		http.Error(w, `{"error":"role type is required"}`, http.StatusBadRequest)
+		return
+	}
+	startedOn, err := time.Parse("2006-01-02", r.FormValue("started_on"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid start date"}`, http.StatusBadRequest)
+		return
+	}
+	id, err := h.store.AddStaffOrgRole(r.Context(), personID, roleTypeID, startedOn)
+	if err != nil {
+		log.Printf("AddStaffOrgRole(%d): %v", personID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"ok":true,"id":%d}`, id)
+}
+
+func (h *Handler) AdminOrgRoleUpdateEnd(w http.ResponseWriter, r *http.Request) {
+	personID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad person id"}`, http.StatusBadRequest)
+		return
+	}
+	roleID, err := strconv.ParseInt(r.PathValue("rid"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad role id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	var endedOn *time.Time
+	if s := r.FormValue("ended_on"); s != "" {
+		t, err := time.Parse("2006-01-02", s)
+		if err != nil {
+			http.Error(w, `{"error":"invalid end date"}`, http.StatusBadRequest)
+			return
+		}
+		endedOn = &t
+	}
+	if err := h.store.UpdateStaffOrgRoleEndDate(r.Context(), roleID, personID, endedOn); err != nil {
+		log.Printf("UpdateStaffOrgRoleEndDate(%d,%d): %v", roleID, personID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminOrgRoleDelete(w http.ResponseWriter, r *http.Request) {
+	personID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad person id"}`, http.StatusBadRequest)
+		return
+	}
+	roleID, err := strconv.ParseInt(r.PathValue("rid"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad role id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.DeleteStaffOrgRole(r.Context(), roleID, personID); err != nil {
+		log.Printf("DeleteStaffOrgRole(%d,%d): %v", roleID, personID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) AdminDepartments(w http.ResponseWriter, r *http.Request) {

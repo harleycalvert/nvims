@@ -2,6 +2,7 @@
 
 /* ── Admin nav colour bars ── */
 .admin-nav-bar-people     { background: #1a4480; }
+.admin-nav-bar-roles      { background: #5b21b6; }
 .admin-nav-bar-periods    { background: #0a7a7a; }
 .admin-nav-bar-programs   { background: #155724; }
 .admin-nav-bar-subjects   { background: #334155; }

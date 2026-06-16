@@ -4275,3 +4275,130 @@ func (s *Store) DeleteVCCPublication(ctx context.Context, id, vccID int64) error
 	`, id, vccID)
 	return err
 }
+
+// ── Role Types ────────────────────────────────────────────────────────────────
+
+type RoleType struct {
+	ID          int64
+	RoleName    string
+	IsSystem    bool
+	Description string
+	SortOrder   int
+}
+
+func (s *Store) ListRoleTypes(ctx context.Context) ([]RoleType, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, role_name, is_system, COALESCE(description,''), sort_order
+		FROM public.role_types
+		ORDER BY sort_order, role_name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RoleType
+	for rows.Next() {
+		var rt RoleType
+		if err := rows.Scan(&rt.ID, &rt.RoleName, &rt.IsSystem, &rt.Description, &rt.SortOrder); err != nil {
+			return nil, err
+		}
+		out = append(out, rt)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) CreateRoleType(ctx context.Context, roleName, description string, sortOrder int) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO public.role_types (role_name, description, sort_order)
+		VALUES ($1, NULLIF($2,''), $3)
+		RETURNING id
+	`, roleName, description, sortOrder).Scan(&id)
+	return id, err
+}
+
+func (s *Store) UpdateRoleType(ctx context.Context, id int64, roleName, description string, sortOrder int) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.role_types
+		SET role_name = $2, description = NULLIF($3,''), sort_order = $4
+		WHERE id = $1 AND is_system = FALSE
+	`, id, roleName, description, sortOrder)
+	return err
+}
+
+func (s *Store) UpdateSystemRoleType(ctx context.Context, id int64, description string, sortOrder int) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.role_types
+		SET description = NULLIF($2,''), sort_order = $3
+		WHERE id = $1 AND is_system = TRUE
+	`, id, description, sortOrder)
+	return err
+}
+
+func (s *Store) DeleteRoleType(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `
+		DELETE FROM public.role_types WHERE id = $1 AND is_system = FALSE
+	`, id)
+	return err
+}
+
+// ── Staff Organisational Roles ────────────────────────────────────────────────
+
+type StaffOrgRole struct {
+	ID           int64
+	StaffID      int64
+	RoleTypeID   int64
+	RoleTypeName string
+	IsSystem     bool
+	StartedOn    time.Time
+	EndedOn      *time.Time
+}
+
+func (s *Store) ListStaffOrgRoles(ctx context.Context, staffID int64) ([]StaffOrgRole, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT sr.id, sr.staff_id, sr.role_type_id, rt.role_name, rt.is_system,
+		       sr.started_on, sr.ended_on
+		FROM public.staff_roles sr
+		JOIN public.role_types rt ON rt.id = sr.role_type_id
+		WHERE sr.staff_id = $1
+		ORDER BY sr.started_on DESC, sr.id DESC
+	`, staffID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []StaffOrgRole
+	for rows.Next() {
+		var r StaffOrgRole
+		if err := rows.Scan(&r.ID, &r.StaffID, &r.RoleTypeID, &r.RoleTypeName, &r.IsSystem, &r.StartedOn, &r.EndedOn); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) AddStaffOrgRole(ctx context.Context, staffID, roleTypeID int64, startedOn time.Time) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO public.staff_roles (staff_id, role_type_id, started_on)
+		VALUES ($1, $2, $3)
+		RETURNING id
+	`, staffID, roleTypeID, startedOn).Scan(&id)
+	return id, err
+}
+
+func (s *Store) UpdateStaffOrgRoleEndDate(ctx context.Context, id, staffID int64, endedOn *time.Time) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.staff_roles SET ended_on = $3
+		WHERE id = $1 AND staff_id = $2
+	`, id, staffID, endedOn)
+	return err
+}
+
+func (s *Store) DeleteStaffOrgRole(ctx context.Context, id, staffID int64) error {
+	_, err := s.pool.Exec(ctx, `
+		DELETE FROM public.staff_roles WHERE id = $1 AND staff_id = $2
+	`, id, staffID)
+	return err
+}

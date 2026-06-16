@@ -1,0 +1,158 @@
+{{define "admin-roles"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS — Roles</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/sessions.css">
+  <link rel="stylesheet" href="/static/sidebar.css">
+  <link rel="stylesheet" href="/static/admin.css">
+  <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
+</head>
+<body>
+  {{template "sidebar" .}}
+  <div class="page-wrap">
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/admin">Admin</a>
+        <h1>Roles</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+
+  <main class="sessions-main">
+    {{template "admin-nav" .}}
+
+    <p class="page-desc">Organisational roles that can be assigned to staff members. System roles (marked with a lock) cannot be renamed or deleted. Use these to track who holds which role over time — date ranges are recorded on each person's staff record.</p>
+
+    <div class="table-wrap">
+      <table class="sessions-table" id="roles-table">
+        <thead>
+          <tr>
+            <th class="td-left">Role Name</th>
+            <th class="td-left">Description</th>
+            <th class="roles-col-order">Order</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="roles-tbody">
+          {{range .RoleTypes}}
+          <tr class="sess-row" data-id="{{.ID}}" data-system="{{.IsSystem}}">
+            <td>
+              {{if .IsSystem}}
+                <span class="role-system-name">{{.RoleName}} <span class="role-system-lock" title="System role — cannot be renamed">🔒</span></span>
+                <input type="hidden" name="role_name" value="{{.RoleName}}">
+              {{else}}
+                <input class="sess-input role-input-name" type="text" name="role_name"
+                       value="{{.RoleName}}" maxlength="80">
+              {{end}}
+            </td>
+            <td><input class="sess-input role-input-desc" type="text" name="description"
+                       value="{{.Description}}" maxlength="200" placeholder="Optional description"></td>
+            <td><input class="sess-input role-input-order" type="number" name="sort_order"
+                       value="{{.SortOrder}}" min="0" max="9999" step="10"></td>
+            <td class="sess-actions">
+              <span class="sess-status"></span>
+              {{if not .IsSystem}}<button class="btn-danger-sm role-delete" type="button" title="Delete">✕</button>{{end}}
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sess-add-bar">
+      <button class="btn-primary btn-sm" id="btn-add-role" type="button">+ Add Role</button>
+    </div>
+
+  </main>
+
+<script>
+(function () {
+  function setStatus(tr, state) {
+    const el = tr.querySelector('.sess-status');
+    el.className = 'sess-status sess-status-' + state;
+    el.textContent = state === 'saving' ? '…' : state === 'saved' ? '✓' : state === 'error' ? '!' : '';
+    if (state === 'saved') setTimeout(() => { el.textContent = ''; el.className = 'sess-status'; }, 1500);
+  }
+
+  async function saveRow(tr) {
+    const id       = tr.dataset.id;
+    const isSystem = tr.dataset.system === 'true';
+    const name     = tr.querySelector('[name=role_name]')?.value?.trim() ?? '';
+    const desc     = tr.querySelector('[name=description]').value.trim();
+    const order    = tr.querySelector('[name=sort_order]').value;
+    if (!isSystem && !name) return;
+
+    setStatus(tr, 'saving');
+    const url  = id === 'new' ? '/admin/role-types/new' : `/admin/role-types/${id}`;
+    const body = new URLSearchParams({ role_name: name, description: desc, sort_order: order, is_system: isSystem });
+    try {
+      const res = await fetch(url, { method: 'POST', body });
+      if (!res.ok) { setStatus(tr, 'error'); return; }
+      if (id === 'new') { location.reload(); return; }
+      setStatus(tr, 'saved');
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  async function deleteRow(tr) {
+    const id = tr.dataset.id;
+    if (id === 'new') { tr.remove(); return; }
+    if (!confirm('Delete this role type? This will fail if any staff currently hold this role.')) return;
+    setStatus(tr, 'saving');
+    try {
+      const res = await fetch(`/admin/role-types/${id}/delete`, { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Could not delete role.');
+        setStatus(tr, 'error');
+        return;
+      }
+      tr.remove();
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  function attachRowListeners(tr) {
+    tr.querySelector('[name=description]')?.addEventListener('blur', () => saveRow(tr));
+    tr.querySelector('[name=role_name]')?.addEventListener('blur', () => saveRow(tr));
+    tr.querySelector('[name=sort_order]')?.addEventListener('blur', () => saveRow(tr));
+    tr.querySelector('.role-delete')?.addEventListener('click', () => deleteRow(tr));
+  }
+
+  document.querySelectorAll('#roles-tbody .sess-row').forEach(attachRowListeners);
+
+  document.getElementById('btn-add-role')?.addEventListener('click', () => {
+    const tbody = document.getElementById('roles-tbody');
+    tbody.querySelector('.sess-new')?.remove();
+    const tr = document.createElement('tr');
+    tr.className = 'sess-row sess-new';
+    tr.dataset.id = 'new';
+    tr.dataset.system = 'false';
+    tr.innerHTML = `
+      <td><input class="sess-input role-input-name" type="text" name="role_name"
+                 placeholder="Role name" maxlength="80"></td>
+      <td><input class="sess-input role-input-desc" type="text" name="description"
+                 placeholder="Optional description" maxlength="200"></td>
+      <td><input class="sess-input role-input-order" type="number" name="sort_order"
+                 value="0" min="0" max="9999" step="10"></td>
+      <td class="sess-actions">
+        <span class="sess-status"></span>
+        <button class="btn-danger-sm role-delete" type="button" title="Remove">✕</button>
+      </td>`;
+    tbody.appendChild(tr);
+    attachRowListeners(tr);
+    tr.querySelector('[name=role_name]').focus();
+  });
+})();
+</script>
+  </div>
+</body>
+</html>{{end}}

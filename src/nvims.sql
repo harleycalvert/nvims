@@ -1,7 +1,13 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.42, 2026-06-16
+-- AVETMISS-compliant SMS schema  --  version 0.45, 2026-06-16
 -- =========================================================================
--- Changes from v0.42:
+-- Changes from v0.45:
+--   1.  role_types: lookup table for organisational staff roles
+--       (Teacher, Education Manager, Head of Department, …).
+--   2.  staff_roles: date-ranged assignment of a role_type to a staff member.
+--       ended_on NULL = current; no unique constraint to allow same role
+--       held twice over time.
+-- Changes from v0.44:
 --   1.  teacher_vcc_industry_evidence: new table for Industry Currency.
 --       Columns: activity_title, organisation, month, year, status, approved_at, notes.
 --   2.  teacher_document_connections: added vcc_industry_evidence_id bigint NULL FK →
@@ -3134,6 +3140,48 @@ CREATE INDEX IF NOT EXISTS idx_vse_subject_id
 DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'teacher_vcc_subject_evidence') THEN
         -- already created above via CREATE TABLE IF NOT EXISTS; nothing extra needed
+        NULL;
+    END IF;
+END $$;
+
+-- ── v0.45 — Organisational Staff Roles ───────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.role_types (
+    id          bigserial    NOT NULL,
+    role_name   text         NOT NULL,
+    is_system   boolean      NOT NULL DEFAULT FALSE,
+    description text         NULL,
+    sort_order  integer      NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    CONSTRAINT uq_role_types_name UNIQUE (role_name)
+);
+
+INSERT INTO public.role_types (role_name, is_system, sort_order) VALUES
+    ('Teacher',            TRUE, 10),
+    ('Education Manager',  TRUE, 20),
+    ('Head of Department', TRUE, 30)
+ON CONFLICT (role_name) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS public.staff_roles (
+    id           bigserial    NOT NULL,
+    staff_id     bigint       NOT NULL,
+    role_type_id bigint       NOT NULL,
+    started_on   date         NOT NULL,
+    ended_on     date         NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_sr_staff     FOREIGN KEY (staff_id)     REFERENCES public.staff(id)       ON DELETE CASCADE,
+    CONSTRAINT fk_sr_role_type FOREIGN KEY (role_type_id) REFERENCES public.role_types(id)  ON DELETE RESTRICT,
+    CONSTRAINT chk_sr_dates    CHECK (ended_on IS NULL OR ended_on >= started_on)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sr_staff_id
+    ON public.staff_roles(staff_id);
+CREATE INDEX IF NOT EXISTS idx_sr_role_type_id
+    ON public.staff_roles(role_type_id);
+
+-- live migration (idempotent)
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'role_types') THEN
         NULL;
     END IF;
 END $$;
