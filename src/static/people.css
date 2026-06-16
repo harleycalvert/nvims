@@ -79,6 +79,10 @@
   max-width: 860px;
 }
 
+.admin-form--narrow {
+  max-width: 480px;
+}
+
 .form-section {
   background: #fff;
   border: 1px solid #ddd;
@@ -145,6 +149,10 @@
   align-items: center;
   margin-top: 4px;
 }
+
+.form-actions--mt  { margin-top: 12px; }
+.form-actions--mt8 { margin-top: 8px; }
+.form-row--mt      { margin-top: 12px; }
 
 /* ── Buttons ──────────────────────────────────────────────── */
 .btn-primary {
@@ -325,7 +333,9 @@
 .fg-360 { max-width: 360px; }
 
 .checkbox-row { display: flex; gap: 16px; align-items: center; padding-top: 6px; }
-.checkbox-label { display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: normal; }
+.checkbox-label { display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: normal; font-size: 14px; }
+
+.backup-wrap { max-width: 640px; padding: 24px 24px 0; }
 
 .form-section--spaced { margin-top: 24px; }
 

@@ -1,0 +1,287 @@
+/* ── VCC shared styles ───────────────────────────────────────────────────── */
+
+/* ── Panel header ── */
+.vcc-panel-header { margin-bottom: 12px; }
+.vcc-panel-header h2 { font-size: 15px; font-weight: 700; color: #1e293b; margin: 0 0 3px; }
+.vcc-panel-desc { font-size: 12px; color: #94a3b8; margin: 0; }
+.vcc-empty { font-size: 13px; color: #9ca3af; padding: 8px 0; }
+
+/* ── Accordion ── */
+.vcc-acc-list { display: flex; flex-direction: column; gap: 4px; }
+.vcc-acc { background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; }
+.vcc-acc-hdr {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 13px; cursor: pointer; user-select: none;
+  border-radius: 6px; transition: background 0.1s;
+}
+.vcc-acc-hdr:hover { background: #f8fafc; }
+.vcc-acc.open > .vcc-acc-hdr { background: #f1f5f9; border-bottom: 1px solid #e2e8f0; border-radius: 6px 6px 0 0; }
+
+/* Per-page delete button variants */
+.vcc-btn-del-cr,
+.vcc-btn-del-vq,
+.vcc-btn-del-pe,
+.vcc-btn-del-ie,
+.vcc-btn-del-pq { margin-left: auto; background: none; border: none; color: #94a3b8; font-size: 1.2rem; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+.vcc-btn-del-cr:hover,
+.vcc-btn-del-vq:hover,
+.vcc-btn-del-pe:hover,
+.vcc-btn-del-ie:hover,
+.vcc-btn-del-pq:hover { background: #fee2e2; color: #dc2626; }
+
+.vcc-chev { font-size: 8px; color: #94a3b8; flex-shrink: 0; transition: transform 0.18s; display: inline-block; }
+.vcc-acc.open > .vcc-acc-hdr .vcc-chev { transform: rotate(90deg); }
+.vcc-acc-code { font-family: monospace; font-size: 12px; font-weight: 700; color: #2563eb; flex-shrink: 0; }
+.vcc-acc-title { font-size: 13px; color: #1e293b; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vcc-approved-date { font-size: 11px; color: #16a34a; flex-shrink: 0; white-space: nowrap; }
+.vcc-ind { flex-shrink: 0; }
+.vcc-acc-body { padding: 13px 15px; background: #fafafa; border-radius: 0 0 6px 6px; }
+
+/* ── Status badges ── */
+.vcc-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; flex-shrink: 0; }
+.vcc-badge[data-st="Draft"]      { background: #f3f4f6; color: #6b7280; }
+.vcc-badge[data-st="Pending"]    { background: #fef3c7; color: #d97706; }
+.vcc-badge[data-st="Approved"]   { background: #dcfce7; color: #15803d; }
+.vcc-badge[data-st="Rejected"]   { background: #fee2e2; color: #dc2626; }
+.vcc-badge[data-st="Submitted"]  { background: #dbeafe; color: #1d4ed8; }
+.vcc-badge[data-st="Current"]    { background: #dcfce7; color: #15803d; }
+.vcc-badge[data-st="Superseded"] { background: #fef3c7; color: #d97706; }
+
+/* ── Form grid ── */
+.vcc-form-grid { display: flex; flex-wrap: wrap; gap: 10px 14px; }
+.vcc-field { display: flex; flex-direction: column; gap: 4px; }
+.vcc-field > span, .vcc-field-label {
+  font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em;
+}
+.vcc-field-xs  { width: 100px; }
+.vcc-field-sm  { width: 140px; }
+.vcc-field-md  { width: 200px; }
+.vcc-field-lg  { flex: 1; min-width: 220px; }
+.vcc-field-full { flex: 0 0 100%; }
+.vcc-input {
+  font-size: 13px; padding: 5px 8px;
+  border: 1px solid #d1d5db; border-radius: 4px;
+  background: #fff; width: 100%; box-sizing: border-box;
+  transition: border-color 0.12s;
+}
+.vcc-input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 2px #bfdbfe55; }
+.vcc-input.mono { font-family: monospace; }
+
+/* Margin-bottom variant for add-bar form grids */
+.vcc-form-grid--mb { margin-bottom: 8px; }
+/* Margin-top variant */
+.vcc-form-grid--mt { margin-top: 12px; }
+/* Indented empty state (detail page) */
+.vcc-empty--indent { padding-left: 8px; }
+/* URL input margin-top (element doc bar) */
+.doc-url-inp--mt { margin-top: 5px; }
+/* Sess-add-bar top spacing */
+.sess-add-bar--mt { margin-top: 8px; }
+
+/* ── Add-bar id scoped styles ── */
+#cr-add-bar,
+#vq-add-bar,
+#pe-add-bar,
+#ie-add-bar,
+#pq-add-bar { margin-top: 8px; padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; }
+.vcc-add-actions { display: flex; gap: 8px; align-items: center; }
+
+/* ── Documents section ── */
+.vcc-docs-section { margin-top: 12px; padding-top: 10px; border-top: 1px solid #f0f0f0; }
+.vcc-docs-hdr { margin-bottom: 6px; }
+.vcc-section-label { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
+.vcc-doc-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+.vcc-doc-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 4px; background: #f8fafc; border: 1px solid #e2e8f0; }
+.vcc-doc-link { font-size: 12px; color: #2563eb; text-decoration: none; flex: 1; }
+.vcc-doc-link:hover { text-decoration: underline; }
+.vcc-doc-name { font-size: 12px; color: #374151; flex: 1; }
+.vcc-doc-del { border: none; background: none; cursor: pointer; color: #9ca3af; font-size: 15px; line-height: 1; padding: 0 2px; flex-shrink: 0; }
+.vcc-doc-del:hover { color: #ef4444; }
+.vcc-add-doc-bar { padding: 8px; background: #f1f5f9; border-radius: 5px; margin-bottom: 6px; }
+.vcc-add-doc-actions { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.vcc-err-msg { font-size: 12px; color: #ef4444; }
+
+/* doc URL row (replaces inline style="display:flex;align-items:center;gap:8px;margin-top:5px") */
+.doc-url-row { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
+/* "or" separator (replaces inline style="color:#888;font-size:0.85em") */
+.doc-url-sep { color: #888; font-size: 0.85em; }
+/* URL input takes remaining flex space (replaces inline style="flex:1") */
+.doc-url-inp { flex: 1; }
+
+/* ── Buttons ── */
+.vcc-btn-sm { font-size: 12px; padding: 4px 10px; border-radius: 4px; cursor: pointer; border: 1px solid #2563eb; background: #2563eb; color: #fff; white-space: nowrap; }
+.vcc-btn-sm:hover { background: #1d4ed8; border-color: #1d4ed8; }
+.vcc-btn-ghost { background: #fff; color: #374151; border-color: #d1d5db; }
+.vcc-btn-ghost:hover { background: #f1f5f9; }
+.vcc-btn-ghost:disabled { opacity: 0.45; cursor: not-allowed; }
+.vcc-btn-add { margin-top: 10px; font-size: 12px; padding: 6px 14px; border-radius: 5px; border: 1px dashed #93c5fd; background: #eff6ff; color: #2563eb; cursor: pointer; display: block; }
+.vcc-btn-add:hover { background: #dbeafe; border-color: #3b82f6; }
+
+/* ── Meta card (detail page) ── */
+.vcc-meta-card {
+  display: flex;
+  gap: 32px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 14px 18px;
+  margin-bottom: 18px;
+}
+.vcc-meta-info { display: flex; gap: 20px 32px; flex-wrap: wrap; align-items: center; flex: 1; }
+.vcc-meta-item { display: flex; gap: 8px; align-items: baseline; }
+.vcc-meta-label { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; }
+.vcc-meta-val { font-size: 13px; color: #1e293b; }
+.vcc-meta-status { flex-shrink: 0; }
+.vcc-sel { font-size: 13px; padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; background: #fff; }
+
+/* ── Tile switcher (detail page) ── */
+.vcc-tiles { display: flex; gap: 12px; margin-bottom: 18px; }
+.vcc-tile {
+  flex: 0 0 auto;
+  min-width: 200px;
+  padding: 12px 16px;
+  background: #fff;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+.vcc-tile:hover { border-color: #93c5fd; }
+.vcc-tile.active { border-color: #2563eb; background: #eff6ff; }
+.vcc-tile-icon { font-size: 18px; margin-bottom: 4px; }
+.vcc-tile-title { font-size: 13px; font-weight: 700; color: #1e293b; }
+.vcc-tile-sub { font-size: 11px; color: #6b7280; margin-top: 2px; }
+
+/* ── Course accordion (detail page) ── */
+.vcc-course-acc {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+.vcc-course-hdr {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 15px;
+  cursor: pointer;
+  user-select: none;
+  background: #f8fafc;
+  border-radius: 8px;
+  transition: background 0.1s;
+}
+.vcc-course-hdr:hover { background: #f1f5f9; }
+.vcc-course-acc.open > .vcc-course-hdr {
+  background: #eff6ff;
+  border-bottom: 1px solid #e2e8f0;
+  border-radius: 8px 8px 0 0;
+}
+.vcc-course-body { padding: 10px; }
+
+/* ── Unit list within course ── */
+.vcc-unit-list { gap: 3px; }
+.vcc-unit-acc > .vcc-acc-hdr { padding: 7px 11px; }
+.vcc-unit-acc > .vcc-acc-body { padding: 12px 14px; background: #fafafa; border-radius: 0 0 6px 6px; }
+
+/* Chevron rotation for course accordions */
+.vcc-course-acc.open > .vcc-course-hdr .vcc-chev { transform: rotate(90deg); }
+
+/* ── Header elements (detail page) ── */
+.vcc-unit-count {
+  font-size: 11px; color: #6b7280;
+  background: #f1f5f9; border: 1px solid #e2e8f0;
+  padding: 1px 7px; border-radius: 10px; flex-shrink: 0;
+}
+.vcc-method-chip {
+  font-size: 11px; color: #374151;
+  background: #f3f4f6; border: 1px solid #d1d5db;
+  padding: 1px 7px; border-radius: 10px;
+  flex-shrink: 0; white-space: nowrap; max-width: 160px;
+  overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ── Method radios ── */
+.vcc-method-radios { margin-bottom: 10px; }
+.vcc-radios { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 6px; }
+.vcc-radio-lbl { display: flex; align-items: center; gap: 5px; font-size: 13px; cursor: pointer; }
+.vcc-radio-lbl input[type=radio] { cursor: pointer; accent-color: #2563eb; }
+
+/* ── Superseded section ── */
+.vcc-superseded-section { margin-top: 10px; }
+.vcc-section-divider {
+  font-size: 11px; font-weight: 700; color: #94a3b8;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  margin-bottom: 8px; padding-bottom: 5px;
+  border-bottom: 1px solid #e9ecef;
+}
+
+/* ── Elements ── */
+.vcc-elements-section { margin-top: 14px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
+.vcc-element-row { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; }
+.vcc-element-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; justify-content: flex-end; }
+.vcc-element-row .vcc-docs-section,
+.elem-docs-section { margin-top: 10px; padding-top: 8px; border-top: 1px solid #e9ecef; }
+
+/* ── Ratings ── */
+.vcc-ratings { margin-top: 14px; padding-top: 12px; border-top: 1px solid #f0f0f0; display: flex; flex-direction: column; gap: 10px; }
+.vcc-rating-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.vcc-rating-prompt { font-size: 12px; color: #475569; min-width: 280px; }
+.vcc-stars { display: flex; gap: 3px; }
+.vcc-star { font-size: 22px; cursor: pointer; color: #d1d5db; line-height: 1; transition: color 0.1s; user-select: none; }
+.vcc-star.filled { color: #f59e0b; }
+.vcc-star:hover, .vcc-star.preview { color: #fbbf24; }
+.vcc-rating-ind { font-size: 11px; color: #94a3b8; min-width: 14px; }
+.vcc-rating-note { font-size: 11px; color: #94a3b8; font-style: italic; margin-top: 2px; }
+
+/* ── Documents (unit body) ── */
+.vcc-docs { margin-top: 12px; padding-top: 10px; border-top: 1px solid #f0f0f0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.vcc-docs-label { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-right: 4px; }
+
+/* ── Document library (dl-*) ── */
+.dl-header        { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
+.dl-title         { font-size:18px; font-weight:600; color:#1e293b; flex:1; }
+.dl-upload-panel  { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;
+                    padding:18px 20px; margin-bottom:24px; }
+.dl-upload-title  { font-size:13px; font-weight:600; color:#475569; text-transform:uppercase;
+                    letter-spacing:.04em; margin-bottom:12px; }
+.dl-upload-row    { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; }
+.dl-field         { display:flex; flex-direction:column; gap:4px; }
+.dl-field label   { font-size:12px; color:#64748b; font-weight:500; }
+.dl-field input,
+.dl-field select  { font-size:13px; padding:6px 9px; border:1px solid #cbd5e1;
+                    border-radius:5px; background:#fff; color:#1e293b; }
+.dl-field.grow    { flex:1; min-width:160px; }
+.dl-or            { font-size:12px; color:#94a3b8; align-self:center; padding-top:16px; }
+.dl-field-year    { width: 76px; }
+.dl-upload-btn    { padding:7px 16px; font-size:13px; font-weight:600;
+                    background:#2563eb; color:#fff; border:none; border-radius:5px;
+                    cursor:pointer; align-self:flex-end; }
+.dl-upload-btn:hover { background:#1d4ed8; }
+.dl-upload-err    { font-size:12px; color:#dc2626; margin-top:8px; display:none; }
+
+.dl-section       { margin-bottom:28px; }
+.dl-section-hdr   { font-size:11px; font-weight:700; color:#94a3b8; text-transform:uppercase;
+                    letter-spacing:.06em; padding:6px 0; border-bottom:1px solid #f1f5f9;
+                    margin-bottom:8px; }
+.dl-empty         { font-size:13px; color:#94a3b8; padding:12px 0; }
+
+.dl-grid          { display:flex; flex-direction:column; gap:6px; }
+.dl-card          { display:flex; align-items:center; gap:10px; padding:10px 12px;
+                    background:#fff; border:1px solid #e2e8f0; border-radius:6px; }
+.dl-icon          { width:32px; height:32px; border-radius:5px; background:#eff6ff;
+                    display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.dl-icon svg      { width:16px; height:16px; stroke:#2563eb; }
+.dl-info          { flex:1; min-width:0; }
+.dl-doc-title     { font-size:13px; font-weight:500; color:#1e293b;
+                    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dl-doc-meta      { font-size:11px; color:#94a3b8; margin-top:2px; }
+.dl-actions       { display:flex; gap:6px; flex-shrink:0; }
+.dl-btn-dl        { font-size:12px; color:#2563eb; text-decoration:none;
+                    padding:4px 10px; border:1px solid #bfdbfe; border-radius:4px; }
+.dl-btn-dl:hover  { background:#eff6ff; }
+.dl-btn-del       { font-size:12px; color:#dc2626; padding:4px 10px;
+                    border:1px solid #fecaca; border-radius:4px; background:none; cursor:pointer; }
+.dl-btn-del:hover { background:#fef2f2; }

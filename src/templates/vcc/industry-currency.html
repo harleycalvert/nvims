@@ -1,9 +1,9 @@
-{{define "vcc-vet-knowledge-currency"}}<!DOCTYPE html>
+{{define "vcc-industry-currency"}}<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>NVIMS — VET Knowledge Currency</title>
+  <title>NVIMS — Industry Currency</title>
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/people.css">
   <link rel="stylesheet" href="/static/sessions.css">
@@ -17,8 +17,8 @@
   <header>
     <div class="header-top">
       <div class="header-title-group">
-        <a class="header-home" href="/vcc/professional-evidence">Professional Evidence</a>
-        <h1>VET Knowledge Currency</h1>
+        <a class="header-home" href="/vcc">VCC</a>
+        <h1>Industry Currency</h1>
       </div>
       <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
     </div>
@@ -37,38 +37,33 @@
     {{$vcc := .VCC}}
 
     <div class="vcc-panel-header">
-      <h2>VET Knowledge Currency</h2>
-      <p class="vcc-panel-desc">Professional Development &amp; VET Sector Knowledge Evidence</p>
+      <h2>Industry Currency</h2>
+      <p class="vcc-panel-desc">Professional Development &amp; Industry Activities</p>
     </div>
 
-    <div class="vcc-acc-list" id="pe-list">
-      {{if not $vcc.ProfEvidence}}
-        <p class="vcc-empty" id="pe-empty-msg">No professional evidence recorded.</p>
+    <div class="vcc-acc-list" id="ie-list">
+      {{if not $vcc.IndEvidence}}
+        <p class="vcc-empty" id="ie-empty-msg">No industry currency activities recorded.</p>
       {{end}}
-      {{range $vcc.ProfEvidence}}
+      {{range $vcc.IndEvidence}}
       <div class="vcc-acc" data-id="{{.ID}}">
         <div class="vcc-acc-hdr">
           <span class="vcc-chev">&#9654;</span>
-          <span class="vcc-acc-code">{{.Code}}</span>
           <span class="vcc-acc-title">{{.Title}}</span>
           <span class="vcc-badge" data-st="{{.Status}}">{{.Status}}</span>
           {{if not .ApprovedAt.IsZero}}<span class="vcc-approved-date">&#10003; {{.ApprovedAt | dateISO}}</span>{{end}}
           <span class="sess-status vcc-ind"></span>
-          <button type="button" class="vcc-btn-del-pe" title="Delete entry">&times;</button>
+          <button type="button" class="vcc-btn-del-ie" title="Delete activity">&times;</button>
         </div>
         <div class="vcc-acc-body hidden">
           <div class="vcc-form-grid">
-            <label class="vcc-field vcc-field-sm">
-              <span>Code</span>
-              <input type="text" name="credential_code" value="{{.Code}}" maxlength="30" class="vcc-input mono">
-            </label>
             <label class="vcc-field vcc-field-lg">
-              <span>Title</span>
-              <input type="text" name="credential_title" value="{{.Title}}" maxlength="200" class="vcc-input">
+              <span>Activity Title</span>
+              <input type="text" name="activity_title" value="{{.Title}}" maxlength="200" class="vcc-input">
             </label>
             <label class="vcc-field vcc-field-md">
-              <span>Issuing Organisation</span>
-              <input type="text" name="issuing_organisation" value="{{.Institution}}" maxlength="200" class="vcc-input">
+              <span>Organisation</span>
+              <input type="text" name="organisation" value="{{.Institution}}" maxlength="200" class="vcc-input">
             </label>
             <label class="vcc-field vcc-field-sm">
               <span>Month</span>
@@ -141,23 +136,19 @@
       </div>
       {{end}}
     </div>
-    <div id="pe-add-bar" class="hidden">
+    <div id="ie-add-bar" class="hidden">
       <div class="vcc-form-grid vcc-form-grid--mb">
-        <label class="vcc-field vcc-field-sm">
-          <span>Code</span>
-          <input type="text" id="pe-add-code" placeholder="e.g. PD-2024" maxlength="30" class="vcc-input mono">
-        </label>
         <label class="vcc-field vcc-field-lg">
-          <span>Title</span>
-          <input type="text" id="pe-add-title" placeholder="e.g. Certificate IV in TAE" maxlength="200" class="vcc-input">
+          <span>Activity Title</span>
+          <input type="text" id="ie-add-title" placeholder="e.g. Industry visit to Bosch Automotive" maxlength="200" class="vcc-input">
         </label>
         <label class="vcc-field vcc-field-md">
-          <span>Issuing Organisation</span>
-          <input type="text" id="pe-add-org" placeholder="e.g. TAFE Victoria" maxlength="200" class="vcc-input">
+          <span>Organisation</span>
+          <input type="text" id="ie-add-org" placeholder="e.g. Bosch Automotive" maxlength="200" class="vcc-input">
         </label>
         <label class="vcc-field vcc-field-sm">
           <span>Month</span>
-          <select id="pe-add-month" class="vcc-input">
+          <select id="ie-add-month" class="vcc-input">
             <option value="0">—</option>
             <option value="1">January</option>
             <option value="2">February</option>
@@ -175,16 +166,16 @@
         </label>
         <label class="vcc-field vcc-field-xs">
           <span>Year</span>
-          <input type="number" id="pe-add-year" min="1900" max="2099" placeholder="e.g. 2024" class="vcc-input">
+          <input type="number" id="ie-add-year" min="1900" max="2099" placeholder="e.g. 2024" class="vcc-input">
         </label>
       </div>
       <div class="vcc-add-actions">
-        <button type="button" id="pe-add-save" class="vcc-btn-sm">Add entry</button>
-        <button type="button" id="pe-add-cancel" class="vcc-btn-sm vcc-btn-ghost">Cancel</button>
-        <span id="pe-add-err" class="vcc-err-msg"></span>
+        <button type="button" id="ie-add-save" class="vcc-btn-sm">Add activity</button>
+        <button type="button" id="ie-add-cancel" class="vcc-btn-sm vcc-btn-ghost">Cancel</button>
+        <span id="ie-add-err" class="vcc-err-msg"></span>
       </div>
     </div>
-    <button type="button" id="pe-add-btn" class="vcc-btn-add">+ Add entry</button>
+    <button type="button" id="ie-add-btn" class="vcc-btn-add">+ Add activity</button>
 
   {{end}}
   </main>
@@ -223,21 +214,20 @@
     acc.classList.toggle('open', !isOpen);
   });
 
-  function savePE(acc) {
+  function saveIE(acc) {
     const g = n => acc.querySelector(`[name="${n}"]`)?.value ?? '';
     const fields = {
-      credential_code:      g('credential_code').trim(),
-      credential_title:     g('credential_title').trim(),
-      issuing_organisation: g('issuing_organisation').trim(),
-      month:                g('month'),
-      year:                 g('year'),
-      status:               g('status'),
-      approved_at:          g('approved_at'),
-      notes:                g('notes').trim(),
+      activity_title: g('activity_title').trim(),
+      organisation:   g('organisation').trim(),
+      month:          g('month'),
+      year:           g('year'),
+      status:         g('status'),
+      approved_at:    g('approved_at'),
+      notes:          g('notes').trim(),
     };
-    if (!fields.credential_code || !fields.credential_title) return;
+    if (!fields.activity_title) return;
     const ind = acc.querySelector('.vcc-ind');
-    postSave('/vcc/prof-evidence/' + acc.dataset.id, fields, ind);
+    postSave('/vcc/ind-evidence/' + acc.dataset.id, fields, ind);
   }
 
   function autoRevertToDraft(acc) {
@@ -264,15 +254,15 @@
     }
     row.innerHTML = linkHtml + `<button type="button" class="vcc-doc-del" title="Remove">&times;</button>`;
     row.querySelector('.vcc-doc-del').addEventListener('click', () => {
-      fetch('/vcc/prof-evidence/' + acc.dataset.id + '/docs/' + d.id + '/delete', {method:'POST'})
+      fetch('/vcc/ind-evidence/' + acc.dataset.id + '/docs/' + d.id + '/delete', {method:'POST'})
         .then(r => { if (r.ok) row.remove(); });
     });
     list.appendChild(row);
   }
 
-  function attachPEHandlers(acc) {
+  function attachIEHandlers(acc) {
     acc.querySelectorAll('input[type=text], input[type=date], input[type=number]').forEach(el =>
-      el.addEventListener('blur', () => { autoRevertToDraft(acc); savePE(acc); }));
+      el.addEventListener('blur', () => { autoRevertToDraft(acc); saveIE(acc); }));
 
     acc.querySelectorAll('select[name=status], select[name=month]').forEach(sel => {
       sel.addEventListener('change', () => {
@@ -281,21 +271,21 @@
           const badge = acc.querySelector('.vcc-badge');
           if (badge) { badge.dataset.st = s; badge.textContent = s; }
         }
-        savePE(acc);
+        saveIE(acc);
       });
     });
 
-    acc.querySelector('.vcc-btn-del-pe')?.addEventListener('click', e => {
+    acc.querySelector('.vcc-btn-del-ie')?.addEventListener('click', e => {
       e.stopPropagation();
-      if (!confirm('Delete this entry and all its evidence documents? This cannot be undone.')) return;
-      fetch('/vcc/prof-evidence/' + acc.dataset.id + '/delete', {method: 'POST'})
+      if (!confirm('Delete this activity and all its evidence documents? This cannot be undone.')) return;
+      fetch('/vcc/ind-evidence/' + acc.dataset.id + '/delete', {method: 'POST'})
         .then(r => { if (r.ok) acc.remove(); });
     });
 
     acc.querySelectorAll('.vcc-doc-del').forEach(btn => {
       const row = btn.closest('.vcc-doc-row');
       btn.addEventListener('click', () => {
-        fetch('/vcc/prof-evidence/' + acc.dataset.id + '/docs/' + row.dataset.docId + '/delete', {method:'POST'})
+        fetch('/vcc/ind-evidence/' + acc.dataset.id + '/docs/' + row.dataset.docId + '/delete', {method:'POST'})
           .then(r => { if (r.ok) row.remove(); });
       });
     });
@@ -328,7 +318,7 @@
         fd.append('title', title);
         fd.append('external_url', urlInp.value.trim());
         if (fileInp.files[0]) fd.append('file', fileInp.files[0]);
-        const res = await fetch('/vcc/prof-evidence/' + acc.dataset.id + '/docs', {method:'POST', body: fd});
+        const res = await fetch('/vcc/ind-evidence/' + acc.dataset.id + '/docs', {method:'POST', body: fd});
         if (!res.ok) { errEl.textContent = 'Error saving'; return; }
         const d = await res.json();
         appendDocRow(acc, d);
@@ -341,88 +331,80 @@
     });
   }
 
-  document.querySelectorAll('#pe-list .vcc-acc').forEach(acc => attachPEHandlers(acc));
+  document.querySelectorAll('#ie-list .vcc-acc').forEach(acc => attachIEHandlers(acc));
 
-  const peAddBar    = document.getElementById('pe-add-bar');
-  const peAddBtn    = document.getElementById('pe-add-btn');
-  const peAddSave   = document.getElementById('pe-add-save');
-  const peAddCancel = document.getElementById('pe-add-cancel');
-  const peAddErr    = document.getElementById('pe-add-err');
-  const peList      = document.getElementById('pe-list');
+  const ieAddBar    = document.getElementById('ie-add-bar');
+  const ieAddBtn    = document.getElementById('ie-add-btn');
+  const ieAddSave   = document.getElementById('ie-add-save');
+  const ieAddCancel = document.getElementById('ie-add-cancel');
+  const ieAddErr    = document.getElementById('ie-add-err');
+  const ieList      = document.getElementById('ie-list');
 
-  peAddBtn?.addEventListener('click', () => {
-    peAddBar.classList.remove('hidden');
-    peAddBtn.classList.add('hidden');
-    document.getElementById('pe-add-code').focus();
+  ieAddBtn?.addEventListener('click', () => {
+    ieAddBar.classList.remove('hidden');
+    ieAddBtn.classList.add('hidden');
+    document.getElementById('ie-add-title').focus();
   });
-  function resetPEAddBar() {
-    document.getElementById('pe-add-code').value  = '';
-    document.getElementById('pe-add-title').value = '';
-    document.getElementById('pe-add-org').value   = '';
-    document.getElementById('pe-add-month').value = '0';
-    document.getElementById('pe-add-year').value  = '';
-    if (peAddErr) peAddErr.textContent = '';
+  function resetIEAddBar() {
+    document.getElementById('ie-add-title').value = '';
+    document.getElementById('ie-add-org').value   = '';
+    document.getElementById('ie-add-month').value = '0';
+    document.getElementById('ie-add-year').value  = '';
+    if (ieAddErr) ieAddErr.textContent = '';
   }
 
-  peAddCancel?.addEventListener('click', () => {
-    peAddBar.classList.add('hidden');
-    peAddBtn.classList.remove('hidden');
-    resetPEAddBar();
+  ieAddCancel?.addEventListener('click', () => {
+    ieAddBar.classList.add('hidden');
+    ieAddBtn.classList.remove('hidden');
+    resetIEAddBar();
   });
-  peAddSave?.addEventListener('click', async () => {
-    const code  = document.getElementById('pe-add-code').value.trim();
-    const title = document.getElementById('pe-add-title').value.trim();
-    if (!code || !title) { peAddErr.textContent = 'Code and title required'; return; }
-    peAddErr.textContent = '';
+  ieAddSave?.addEventListener('click', async () => {
+    const title = document.getElementById('ie-add-title').value.trim();
+    if (!title) { ieAddErr.textContent = 'Activity title required'; return; }
+    ieAddErr.textContent = '';
     try {
-      const res = await fetch('/vcc/prof-evidence', {
+      const res = await fetch('/vcc/ind-evidence', {
         method: 'POST',
         body: new URLSearchParams({
-          credential_code:      code,
-          credential_title:     title,
-          issuing_organisation: document.getElementById('pe-add-org').value.trim(),
-          month:                document.getElementById('pe-add-month').value,
-          year:                 document.getElementById('pe-add-year').value,
+          activity_title: title,
+          organisation:   document.getElementById('ie-add-org').value.trim(),
+          month:          document.getElementById('ie-add-month').value,
+          year:           document.getElementById('ie-add-year').value,
         }),
       });
-      if (!res.ok) { peAddErr.textContent = 'Error creating entry'; return; }
-      const pe = await res.json();
-      document.getElementById('pe-empty-msg')?.remove();
-      const acc = buildPEAccordion(pe);
-      peList.appendChild(acc);
-      attachPEHandlers(acc);
-      peAddBar.classList.add('hidden');
-      peAddBtn.classList.remove('hidden');
-      resetPEAddBar();
-    } catch { peAddErr.textContent = 'Network error'; }
+      if (!res.ok) { ieAddErr.textContent = 'Error creating activity'; return; }
+      const ie = await res.json();
+      document.getElementById('ie-empty-msg')?.remove();
+      const acc = buildIEAccordion(ie);
+      ieList.appendChild(acc);
+      attachIEHandlers(acc);
+      ieAddBar.classList.add('hidden');
+      ieAddBtn.classList.remove('hidden');
+      resetIEAddBar();
+    } catch { ieAddErr.textContent = 'Network error'; }
   });
 
-  function buildPEAccordion(pe) {
+  function buildIEAccordion(ie) {
     const acc = document.createElement('div');
     acc.className = 'vcc-acc open';
-    acc.dataset.id = pe.id;
+    acc.dataset.id = ie.id;
     acc.innerHTML = `
       <div class="vcc-acc-hdr">
         <span class="vcc-chev">&#9654;</span>
-        <span class="vcc-acc-code">${esc(pe.code)}</span>
-        <span class="vcc-acc-title">${esc(pe.title)}</span>
+        <span class="vcc-acc-title">${esc(ie.title)}</span>
         <span class="vcc-badge" data-st="Draft">Draft</span>
         <span class="sess-status vcc-ind"></span>
-        <button type="button" class="vcc-btn-del-pe" title="Delete entry">&times;</button>
+        <button type="button" class="vcc-btn-del-ie" title="Delete activity">&times;</button>
       </div>
       <div class="vcc-acc-body">
         <div class="vcc-form-grid">
-          <label class="vcc-field vcc-field-sm">
-            <span>Code</span>
-            <input type="text" name="credential_code" value="${esc(pe.code)}" maxlength="30" class="vcc-input mono">
-          </label>
           <label class="vcc-field vcc-field-lg">
-            <span>Title</span>
-            <input type="text" name="credential_title" value="${esc(pe.title)}" maxlength="200" class="vcc-input">
+            <span>Activity Title</span>
+            <input type="text" name="activity_title" value="${esc(ie.title)}" maxlength="200" class="vcc-input">
           </label>
           <label class="vcc-field vcc-field-md">
-            <span>Issuing Organisation</span>
-            <input type="text" name="issuing_organisation" value="${esc(pe.issuing_organisation||'')}" maxlength="200" class="vcc-input">
+            <span>Organisation</span>
+            <input type="text" name="organisation" value="${esc(ie.organisation||'')}" maxlength="200" class="vcc-input">
           </label>
           <label class="vcc-field vcc-field-sm">
             <span>Month</span>
@@ -444,7 +426,7 @@
           </label>
           <label class="vcc-field vcc-field-xs">
             <span>Year</span>
-            <input type="number" name="year" value="${pe.year||''}" min="1900" max="2099" placeholder="e.g. 2023" class="vcc-input">
+            <input type="number" name="year" value="${ie.year||''}" min="1900" max="2099" placeholder="e.g. 2023" class="vcc-input">
           </label>
           <label class="vcc-field vcc-field-sm">
             <span>Status</span>
@@ -483,7 +465,7 @@
           <button type="button" class="vcc-btn-sm vcc-btn-ghost btn-add-doc">+ Add document</button>
         </div>
       </div>`;
-    if (pe.month) acc.querySelector('select[name=month]').value = pe.month;
+    if (ie.month) acc.querySelector('select[name=month]').value = ie.month;
     return acc;
   }
 

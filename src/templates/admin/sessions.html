@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/static/people.css">
   <link rel="stylesheet" href="/static/sessions.css">
   <link rel="stylesheet" href="/static/sidebar.css">
+  <link rel="stylesheet" href="/static/admin.css">
   <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
 </head>
 <body>
@@ -106,11 +107,11 @@
 
     {{/* ── Sessions table ── */}}
     {{if not .EntityID}}
-      <p class="hint" style="margin-top:20px">Select a teacher or intake group and a period above.</p>
+      <p class="hint">Select a teacher or intake group and a period above.</p>
     {{else if not .PeriodID}}
-      <p class="hint" style="margin-top:20px">Select an academic period above.</p>
+      <p class="hint">Select an academic period above.</p>
     {{else if not .Sessions}}
-      <p class="hint" style="margin-top:20px">No sessions found for this selection.</p>
+      <p class="hint">No sessions found for this selection.</p>
     {{end}}
 
     {{if and .EntityID .PeriodID}}

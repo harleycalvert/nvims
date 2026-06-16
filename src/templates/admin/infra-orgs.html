@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/people.css">
   <link rel="stylesheet" href="/static/sessions.css">
+  <link rel="stylesheet" href="/static/admin.css">
   <link rel="stylesheet" href="/static/sidebar.css">
   <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
 </head>
@@ -43,27 +44,27 @@
             <th class="td-left">Contact</th>
             <th class="td-left">Phone</th>
             <th class="td-left">Email</th>
-            <th style="width:50px"></th>
+            <th class="col-actions-sm"></th>
           </tr>
         </thead>
         <tbody id="orgs-tbody">
           {{range .Orgs}}
           <tr class="sess-row" data-id="{{.ID}}">
-            <td><input class="sess-input" type="text" name="org_code"     value="{{.Code}}"        maxlength="30"  style="width:80px;font-family:monospace"></td>
-            <td><input class="sess-input" type="text" name="org_name"     value="{{.Name}}"        maxlength="100" style="width:200px"></td>
-            <td><input class="sess-input" type="text" name="org_type"     value="{{.OrgType}}"     maxlength="2"   style="width:42px;text-align:center"></td>
-            <td><input class="sess-input" type="text" name="address"      value="{{.Address}}"     maxlength="50"  style="width:180px"></td>
-            <td><input class="sess-input" type="text" name="suburb"       value="{{.Suburb}}"      maxlength="50"  style="width:110px"></td>
+            <td><input class="sess-input org-col-code"    type="text" name="org_code"     value="{{.Code}}"        maxlength="30"></td>
+            <td><input class="sess-input org-col-name"    type="text" name="org_name"     value="{{.Name}}"        maxlength="100"></td>
+            <td><input class="sess-input org-col-type"    type="text" name="org_type"     value="{{.OrgType}}"     maxlength="2"></td>
+            <td><input class="sess-input org-col-addr"    type="text" name="address"      value="{{.Address}}"     maxlength="50"></td>
+            <td><input class="sess-input org-col-suburb"  type="text" name="suburb"       value="{{.Suburb}}"      maxlength="50"></td>
             <td>
-              <select class="sess-input" name="state_code" style="width:62px">
+              <select class="sess-input org-col-state" name="state_code">
                 {{$sc := .StateCode}}
                 {{range $.States}}<option value="{{.}}"{{if eq . $sc}} selected{{end}}>{{.}}</option>{{end}}
               </select>
             </td>
-            <td><input class="sess-input" type="text" name="postcode"     value="{{.Postcode}}"    maxlength="4"   style="width:52px"></td>
-            <td><input class="sess-input" type="text" name="contact_name" value="{{.ContactName}}" maxlength="100" style="width:140px"></td>
-            <td><input class="sess-input" type="text" name="telephone"    value="{{.Telephone}}"   maxlength="20"  style="width:110px"></td>
-            <td><input class="sess-input" type="text" name="email"        value="{{.Email}}"       maxlength="100" style="width:180px"></td>
+            <td><input class="sess-input org-col-post"    type="text" name="postcode"     value="{{.Postcode}}"    maxlength="4"></td>
+            <td><input class="sess-input org-col-contact" type="text" name="contact_name" value="{{.ContactName}}" maxlength="100"></td>
+            <td><input class="sess-input org-col-phone"   type="text" name="telephone"    value="{{.Telephone}}"   maxlength="20"></td>
+            <td><input class="sess-input org-col-email"   type="text" name="email"        value="{{.Email}}"       maxlength="100"></td>
             <td class="sess-actions">
               <span class="sess-status"></span>
               <button class="btn-danger-sm" type="button" data-delete title="Delete">✕</button>
@@ -137,16 +138,16 @@
     const tr = document.createElement('tr');
     tr.className = 'sess-row sess-new'; tr.dataset.id = 'new';
     tr.innerHTML = `
-      <td><input class="sess-input" type="text" name="org_code"     placeholder="e.g. 3077"          maxlength="30"  style="width:80px;font-family:monospace"></td>
-      <td><input class="sess-input" type="text" name="org_name"     placeholder="Organisation name"   maxlength="100" style="width:200px"></td>
-      <td><input class="sess-input" type="text" name="org_type"     placeholder="70"                  maxlength="2"   style="width:42px;text-align:center"></td>
-      <td><input class="sess-input" type="text" name="address"      placeholder="Street address"      maxlength="50"  style="width:180px"></td>
-      <td><input class="sess-input" type="text" name="suburb"       placeholder="Suburb"              maxlength="50"  style="width:110px"></td>
-      <td><select class="sess-input" name="state_code" style="width:62px">${stateOpts}</select></td>
-      <td><input class="sess-input" type="text" name="postcode"     placeholder="3000"                maxlength="4"   style="width:52px"></td>
-      <td><input class="sess-input" type="text" name="contact_name" placeholder="Contact name"        maxlength="100" style="width:140px"></td>
-      <td><input class="sess-input" type="text" name="telephone"    placeholder="Phone"               maxlength="20"  style="width:110px"></td>
-      <td><input class="sess-input" type="text" name="email"        placeholder="Email"               maxlength="100" style="width:180px"></td>
+      <td><input class="sess-input org-col-code"    type="text" name="org_code"     placeholder="e.g. 3077"        maxlength="30"></td>
+      <td><input class="sess-input org-col-name"    type="text" name="org_name"     placeholder="Organisation name" maxlength="100"></td>
+      <td><input class="sess-input org-col-type"    type="text" name="org_type"     placeholder="70"               maxlength="2"></td>
+      <td><input class="sess-input org-col-addr"    type="text" name="address"      placeholder="Street address"   maxlength="50"></td>
+      <td><input class="sess-input org-col-suburb"  type="text" name="suburb"       placeholder="Suburb"           maxlength="50"></td>
+      <td><select class="sess-input org-col-state"  name="state_code">${stateOpts}</select></td>
+      <td><input class="sess-input org-col-post"    type="text" name="postcode"     placeholder="3000"             maxlength="4"></td>
+      <td><input class="sess-input org-col-contact" type="text" name="contact_name" placeholder="Contact name"    maxlength="100"></td>
+      <td><input class="sess-input org-col-phone"   type="text" name="telephone"    placeholder="Phone"            maxlength="20"></td>
+      <td><input class="sess-input org-col-email"   type="text" name="email"        placeholder="Email"            maxlength="100"></td>
       <td class="sess-actions"><span class="sess-status"></span>
         <button class="btn-danger-sm" type="button" data-delete title="Remove">✕</button></td>`;
     tbody.appendChild(tr);

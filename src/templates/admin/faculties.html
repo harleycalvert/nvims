@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/static/people.css">
   <link rel="stylesheet" href="/static/sessions.css">
   <link rel="stylesheet" href="/static/sidebar.css">
+  <link rel="stylesheet" href="/static/admin.css">
   <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
 </head>
 <body>
@@ -42,8 +43,8 @@
         <tbody id="faculties-tbody">
           {{range .Faculties}}
           <tr class="sess-row" data-id="{{.ID}}">
-            <td><input class="sess-input" type="text" name="faculty_name"
-                       value="{{.Name}}" maxlength="100" style="width:100%;min-width:240px"></td>
+            <td><input class="sess-input fac-input-name" type="text" name="faculty_name"
+                       value="{{.Name}}" maxlength="100"></td>
             <td class="sess-actions">
               <span class="sess-status"></span>
               <button class="btn-danger-sm fac-delete" type="button" title="Delete">✕</button>
@@ -112,9 +113,8 @@
     tr.className = 'sess-row sess-new';
     tr.dataset.id = 'new';
     tr.innerHTML = `
-      <td><input class="sess-input" type="text" name="faculty_name"
-                 placeholder="Faculty name" maxlength="100"
-                 style="width:100%;min-width:240px"></td>
+      <td><input class="sess-input fac-input-name" type="text" name="faculty_name"
+                 placeholder="Faculty name" maxlength="100"></td>
       <td class="sess-actions">
         <span class="sess-status"></span>
         <button class="btn-danger-sm fac-delete" type="button" title="Remove">✕</button>

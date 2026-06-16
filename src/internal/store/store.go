@@ -2278,6 +2278,7 @@ type VCCDetail struct {
 	VocQuals     []VCCPQ // Vocational qualifications
 	VocEvidence  []VCCPQ // Certifications & micro-credentials (vocational evidence)
 	ProfEvidence []VCCPQ // VET Knowledge Currency (professional evidence)
+	IndEvidence  []VCCPQ // Industry Currency (industry evidence)
 	Courses      []VCCCourse
 }
 
@@ -2541,6 +2542,67 @@ func (s *Store) GetVCC(ctx context.Context, id int64) (*VCCDetail, error) {
 			}
 		}
 		if err := pdRows.Err(); err != nil {
+			return nil, err
+		}
+	}
+
+	// Industry Evidence (Industry Currency)
+	ieRows, err := s.pool.Query(ctx, `
+		SELECT id, activity_title, COALESCE(organisation,''),
+		       COALESCE(year, 0), COALESCE(month, 0), status, approved_at, COALESCE(notes,'')
+		FROM teacher_vcc_industry_evidence
+		WHERE vcc_id = $1 ORDER BY id
+	`, id)
+	if err != nil {
+		return nil, err
+	}
+	ieMap := map[int64]int{}
+	for ieRows.Next() {
+		var ie VCCPQ
+		var at pgtype.Date
+		if err := ieRows.Scan(&ie.ID, &ie.Title, &ie.Institution, &ie.Year, &ie.Month, &ie.Status, &at, &ie.Notes); err != nil {
+			ieRows.Close()
+			return nil, err
+		}
+		if at.Valid {
+			ie.ApprovedAt = at.Time
+		}
+		ieMap[ie.ID] = len(v.IndEvidence)
+		v.IndEvidence = append(v.IndEvidence, ie)
+	}
+	if err := ieRows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Industry Evidence documents
+	if len(v.IndEvidence) > 0 {
+		ieIDs := make([]int64, len(v.IndEvidence))
+		for i, ie := range v.IndEvidence {
+			ieIDs[i] = ie.ID
+		}
+		idRows, err := s.pool.Query(ctx, `
+			SELECT tdc.vcc_industry_evidence_id, td.id, td.title, td.file_category,
+			       COALESCE(td.year_of_document, 0), COALESCE(td.document_url, ''), COALESCE(td.external_url, '')
+			FROM teacher_document_connections tdc
+			JOIN teacher_documents td ON td.id = tdc.document_id
+			WHERE tdc.vcc_industry_evidence_id = ANY($1)
+			ORDER BY tdc.vcc_industry_evidence_id, td.id
+		`, ieIDs)
+		if err != nil {
+			return nil, err
+		}
+		for idRows.Next() {
+			var ieID int64
+			var d VCCDocument
+			if err := idRows.Scan(&ieID, &d.ID, &d.Title, &d.Category, &d.Year, &d.URL, &d.ExternalURL); err != nil {
+				idRows.Close()
+				return nil, err
+			}
+			if idx, ok := ieMap[ieID]; ok {
+				v.IndEvidence[idx].Documents = append(v.IndEvidence[idx].Documents, d)
+			}
+		}
+		if err := idRows.Err(); err != nil {
 			return nil, err
 		}
 	}
@@ -3275,6 +3337,123 @@ func (s *Store) CreateProfEvidenceDocument(ctx context.Context, teacherID, peID 
 		INSERT INTO teacher_document_connections (document_id, vcc_professional_evidence_id)
 		VALUES ($1, $2)
 	`, d.ID, peID)
+	return d, err
+}
+
+func (s *Store) CreateVCCIndEvidence(ctx context.Context, teacherID int64, title, organisation string, year, month int) (VCCPQ, error) {
+	var yr pgtype.Int2
+	if year > 0 {
+		yr = pgtype.Int2{Int16: int16(year), Valid: true}
+	}
+	var mo pgtype.Int2
+	if month > 0 {
+		mo = pgtype.Int2{Int16: int16(month), Valid: true}
+	}
+	var ie VCCPQ
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO teacher_vcc_industry_evidence
+		       (vcc_id, activity_title, organisation, year, month, status)
+		SELECT id, $2, NULLIF($3,''), $4, $5, 'Draft'
+		FROM teacher_vccs WHERE teacher_id = $1
+		ORDER BY calendar_year DESC, version DESC LIMIT 1
+		RETURNING id, activity_title, COALESCE(organisation,''),
+		          COALESCE(year,0), COALESCE(month,0), status
+	`, teacherID, title, organisation, yr, mo).Scan(
+		&ie.ID, &ie.Title, &ie.Institution, &ie.Year, &ie.Month, &ie.Status)
+	return ie, err
+}
+
+func (s *Store) UpdateVCCIndEvidence(ctx context.Context, teacherID, ieID int64,
+	title, organisation, status string, approvedAt pgtype.Date, notes string, year, month int,
+) error {
+	var yr pgtype.Int2
+	if year > 0 {
+		yr = pgtype.Int2{Int16: int16(year), Valid: true}
+	}
+	var mo pgtype.Int2
+	if month > 0 {
+		mo = pgtype.Int2{Int16: int16(month), Valid: true}
+	}
+	_, err := s.pool.Exec(ctx, `
+		UPDATE teacher_vcc_industry_evidence
+		SET activity_title = $1,
+		    organisation   = NULLIF($2, ''),
+		    status         = $3,
+		    approved_at    = $4,
+		    notes          = NULLIF($5, ''),
+		    year           = $8,
+		    month          = $9
+		WHERE id = $6
+		  AND vcc_id IN (SELECT id FROM teacher_vccs WHERE teacher_id = $7)
+	`, title, organisation, status, approvedAt, notes, ieID, teacherID, yr, mo)
+	return err
+}
+
+func (s *Store) DeleteVCCIndEvidence(ctx context.Context, teacherID, ieID int64) (objectKeys []string, err error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT COALESCE(td.document_url, '')
+		FROM teacher_document_connections tdc
+		JOIN teacher_documents td ON td.id = tdc.document_id
+		WHERE tdc.vcc_industry_evidence_id = $1
+		  AND td.teacher_id = $2
+		  AND td.document_url IS NOT NULL
+	`, ieID, teacherID)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if key != "" {
+			objectKeys = append(objectKeys, key)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	_, err = s.pool.Exec(ctx, `
+		DELETE FROM teacher_documents
+		WHERE id IN (
+			SELECT document_id FROM teacher_document_connections
+			WHERE vcc_industry_evidence_id = $1
+		) AND teacher_id = $2
+	`, ieID, teacherID)
+	if err != nil {
+		return objectKeys, err
+	}
+	_, err = s.pool.Exec(ctx, `
+		DELETE FROM teacher_vcc_industry_evidence
+		WHERE id = $1
+		  AND vcc_id IN (SELECT id FROM teacher_vccs WHERE teacher_id = $2)
+	`, ieID, teacherID)
+	return objectKeys, err
+}
+
+func (s *Store) CreateIndEvidenceDocument(ctx context.Context, teacherID, ieID int64, title, fileName, objectKey, externalURL string) (VCCDocument, error) {
+	var d VCCDocument
+	d.Title = title
+	d.ExternalURL = externalURL
+	d.URL = objectKey
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO teacher_documents (teacher_id, title, file_category, file_name, document_url, external_url)
+		SELECT $1, $2, 'Other', NULLIF($3,''), NULLIF($4,''), NULLIF($5,'')
+		WHERE EXISTS (
+			SELECT 1 FROM teacher_vcc_industry_evidence ie
+			JOIN teacher_vccs tv ON tv.id = ie.vcc_id
+			WHERE ie.id = $6 AND tv.teacher_id = $1
+		)
+		RETURNING id
+	`, teacherID, title, fileName, objectKey, externalURL, ieID).Scan(&d.ID)
+	if err != nil {
+		return VCCDocument{}, err
+	}
+	_, err = s.pool.Exec(ctx, `
+		INSERT INTO teacher_document_connections (document_id, vcc_industry_evidence_id)
+		VALUES ($1, $2)
+	`, d.ID, ieID)
 	return d, err
 }
 

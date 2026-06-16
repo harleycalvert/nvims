@@ -1,8 +1,8 @@
-# A National VET Information Management System (NVIMS), Student Management System (SMS) — Database Design v0.41, 2026-06-15
+# A National VET Information Management System (NVIMS), Student Management System (SMS) — Database Design v0.42, 2026-06-16
 
 PostgreSQL schema for a national, AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.41` (2026-06-15): its entities, relationships, business rules, and the
+describes the design of `v0.42` (2026-06-16): its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -44,7 +44,7 @@ mapping to the AVETMISS NAT reporting files.
   - Workplan: [`workplans`](#workplans) · [`workplan_approvals`](#workplan_approvals) · [`workplan_entries`](#workplan_entries) · [`leave_requests`](#leave_requests) · [`leave_request_dates`](#leave_request_dates)
   - Timesheet: [`pay_periods`](#pay_periods) · [`timesheets`](#timesheets) · [`timesheet_entries`](#timesheet_entries)
   - Employment services: [`student_employment_services`](#student_employment_services) · [`student_employment_registrations`](#student_employment_registrations)
-  - VCC: [`teacher_vccs`](#teacher_vccs) · [`teacher_vcc_professional_qualifications`](#teacher_vcc_professional_qualifications) · [`teacher_vcc_vocational_qualifications`](#teacher_vcc_vocational_qualifications) · [`teacher_vcc_vocational_evidence`](#teacher_vcc_vocational_evidence) · [`teacher_vcc_professional_evidence`](#teacher_vcc_professional_evidence) · [`teacher_vcc_courses`](#teacher_vcc_courses) · [`teacher_vcc_units`](#teacher_vcc_units) · [`teacher_vcc_unit_elements`](#teacher_vcc_unit_elements) · [`teacher_documents`](#teacher_documents) · [`teacher_document_connections`](#teacher_document_connections) · [`teacher_currency_activities`](#teacher_currency_activities) · [`teacher_currency_unit_links`](#teacher_currency_unit_links) · [`teacher_vcc_profiling`](#teacher_vcc_profiling)
+  - VCC: [`teacher_vccs`](#teacher_vccs) · [`teacher_vcc_professional_qualifications`](#teacher_vcc_professional_qualifications) · [`teacher_vcc_vocational_qualifications`](#teacher_vcc_vocational_qualifications) · [`teacher_vcc_vocational_evidence`](#teacher_vcc_vocational_evidence) · [`teacher_vcc_professional_evidence`](#teacher_vcc_professional_evidence) · [`teacher_vcc_industry_evidence`](#teacher_vcc_industry_evidence) · [`teacher_vcc_courses`](#teacher_vcc_courses) · [`teacher_vcc_units`](#teacher_vcc_units) · [`teacher_vcc_unit_elements`](#teacher_vcc_unit_elements) · [`teacher_documents`](#teacher_documents) · [`teacher_document_connections`](#teacher_document_connections) · [`teacher_currency_activities`](#teacher_currency_activities) · [`teacher_currency_unit_links`](#teacher_currency_unit_links) · [`teacher_vcc_profiling`](#teacher_vcc_profiling)
   - System: [`system_settings`](#system_settings)
 - [Business rules & constraints](#business-rules--constraints)
 - [Functions & triggers](#functions--triggers)
@@ -56,6 +56,12 @@ mapping to the AVETMISS NAT reporting files.
 ---
 
 ## Changelog
+
+### v0.42 — 2026-06-16
+
+1. **New table `teacher_vcc_industry_evidence`.** Records industry engagement evidence declared in a VCC. Columns: `activity_title varchar(200) NOT NULL`, `organisation varchar(200) NULL`, `month smallint NULL` (1–12), `year smallint NULL`, `status varchar(20) NOT NULL DEFAULT 'Draft'`, `approved_at date NULL`, `notes text NULL`, `created_at timestamptz DEFAULT CURRENT_TIMESTAMP`. FK → `teacher_vccs` (`fk_vcc_indevid_vcc`). Constraints: `chk_vcc_indevid_status` (Draft/Pending/Approved/Rejected), `chk_vcc_indevid_month` (1–12). Index: `idx_vcc_indevid_vcc (vcc_id)`.
+
+2. **`teacher_document_connections` updated.** New column `vcc_industry_evidence_id bigint NULL` added with FK `fk_tdc_ind_evidence` → `teacher_vcc_industry_evidence(id)` ON DELETE CASCADE. `chk_tdc_target` now checks `num_nonnulls` across 8 columns (adds `vcc_industry_evidence_id` to the existing 7).
 
 ### v0.41 — 2026-06-15
 
@@ -702,6 +708,7 @@ erDiagram
     TEACHER_VCCS ||--o{ TEACHER_VCC_VOCATIONAL_QUALIFICATIONS : "vocational quals"
     TEACHER_VCCS ||--o{ TEACHER_VCC_VOCATIONAL_EVIDENCE : "vocational evidence"
     TEACHER_VCCS ||--o{ TEACHER_VCC_PROFESSIONAL_EVIDENCE : "professional evidence"
+    TEACHER_VCCS ||--o{ TEACHER_VCC_INDUSTRY_EVIDENCE : "industry evidence"
     TEACHER_VCCS ||--o{ TEACHER_VCC_COURSES : "maps courses"
     TEACHER_VCC_COURSES ||--o{ TEACHER_VCC_UNITS : "has units"
     TEACHER_VCCS ||--o{ TEACHER_VCC_UNITS : "standalone units"
@@ -711,9 +718,23 @@ erDiagram
     TEACHER_VCC_UNIT_ELEMENTS ||--o{ TEACHER_DOCUMENT_CONNECTIONS : "evidenced by"
     TEACHER_VCC_VOCATIONAL_EVIDENCE ||--o{ TEACHER_DOCUMENT_CONNECTIONS : "evidenced by"
     TEACHER_VCC_PROFESSIONAL_EVIDENCE ||--o{ TEACHER_DOCUMENT_CONNECTIONS : "evidenced by"
+    TEACHER_VCC_INDUSTRY_EVIDENCE ||--o{ TEACHER_DOCUMENT_CONNECTIONS : "evidenced by"
     TEACHERS ||--o{ TEACHER_CURRENCY_ACTIVITIES : "currency records"
     TEACHER_CURRENCY_ACTIVITIES ||--o{ TEACHER_CURRENCY_UNIT_LINKS : "related units"
     TEACHER_VCCS ||--o{ TEACHER_VCC_PROFILING : "dimension scores"
+
+    TEACHER_VCC_INDUSTRY_EVIDENCE {
+        bigserial id PK
+        bigint vcc_id FK
+        varchar activity_title
+        varchar organisation "NULL"
+        smallint month "NULL 1-12"
+        smallint year "NULL"
+        varchar status "Draft/Pending/Approved/Rejected"
+        date approved_at "NULL"
+        text notes "NULL"
+        timestamptz created_at
+    }
 ```
 
 ### 13. System settings
@@ -914,11 +935,12 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | `teacher_vcc_vocational_qualifications` | Teacher's industry/AQF vocational qualifications declared in a VCC. | → `teacher_vccs` |
 | `teacher_vcc_vocational_evidence` | Certifications and micro-credentials declared in a VCC as Vocational Evidence (e.g. AWS, Google, short-course certificates). Includes credential code/title, issuing organisation, year, optional month, and approval status. Renamed from `teacher_vcc_credentials` in v0.41. | → `teacher_vccs` |
 | `teacher_vcc_professional_evidence` | Professional evidence (VET Knowledge Currency) declared in a VCC. Identical schema to `teacher_vcc_vocational_evidence`. Added in v0.41. | → `teacher_vccs` |
+| `teacher_vcc_industry_evidence` | Industry engagement evidence declared in a VCC. Records an activity title, optional organisation, optional month/year, and the same Draft → Pending → Approved → Rejected workflow. Added in v0.42. | → `teacher_vccs` |
 | `teacher_vcc_courses` | Courses the teacher is mapped to deliver in a VCC; optionally linked to `programs`. | → `teacher_vccs`, `programs` |
 | `teacher_vcc_units` | Units teacher has currency for, with competency method, description, and self-ratings. Multiple rows per unit allowed. | → `teacher_vccs`, `teacher_vcc_courses`, `subjects` |
 | `teacher_vcc_unit_elements` | Elements of a unit (components / performance criteria clusters). Each element carries a justification and may have evidence documents attached. | → `teacher_vcc_units` |
 | `teacher_documents` | Per-teacher document library (testamurs, transcripts, credentials, other evidence). | → `teachers` |
-| `teacher_document_connections` | Links a document to exactly one VCC entity (professional qual, vocational qual, unit, unit element, currency activity, vocational evidence, or professional evidence). `num_nonnulls = 1` enforced across seven target columns. | → `teacher_documents`, `teacher_vcc_professional_qualifications`, `teacher_vcc_vocational_qualifications`, `teacher_vcc_units`, `teacher_vcc_unit_elements`, `teacher_currency_activities`, `teacher_vcc_vocational_evidence`, `teacher_vcc_professional_evidence` |
+| `teacher_document_connections` | Links a document to exactly one VCC entity (professional qual, vocational qual, unit, unit element, currency activity, vocational evidence, professional evidence, or industry evidence). `num_nonnulls = 1` enforced across eight target columns. | → `teacher_documents`, `teacher_vcc_professional_qualifications`, `teacher_vcc_vocational_qualifications`, `teacher_vcc_units`, `teacher_vcc_unit_elements`, `teacher_currency_activities`, `teacher_vcc_vocational_evidence`, `teacher_vcc_professional_evidence`, `teacher_vcc_industry_evidence` |
 | `teacher_currency_activities` | Vocational and professional currency point records with activity detail and approval tracking. Professional-specific fields (`domain_name`, `program_type`, etc.) are nullable columns on the same table. | → `teachers` |
 | `teacher_currency_unit_links` | "Related Unit/s" M2M between currency activities and subjects. | → `teacher_currency_activities`, `subjects` |
 | `teacher_vcc_profiling` | Spider/radar-chart dimension scores (self, supervisor, business ideal) per VCC version. PK is `(vcc_id, dimension)`. | → `teacher_vccs` |
@@ -2996,6 +3018,42 @@ Professional evidence (VET Knowledge Currency) declared in a VCC. Added in v0.41
 
 *Indexes:* `idx_vcc_profevid_vcc (vcc_id)`
 
+#### `teacher_vcc_industry_evidence`
+
+Industry engagement evidence declared in a VCC. Records activities that demonstrate the teacher's ongoing connection with their industry (e.g. industry advisory committee participation, workplace visits, industry-based projects). Each row records an activity title, optional organisation, optional month and year, and the same Draft → Pending → Approved → Rejected approval workflow as other VCC sub-records. Linked to evidence documents via `teacher_document_connections`. Cascade-deletes when its parent VCC is deleted. References `teacher_vccs`. Added in v0.42.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `id` | `bigserial` | no |  | PK |
+| `vcc_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;teacher_vccs |
+| `activity_title` | `varchar(200)` | no |  |  |
+| `organisation` | `varchar(200)` | yes |  |  |
+| `month` | `smallint` | yes |  |  |
+| `year` | `smallint` | yes |  |  |
+| `status` | `varchar(20)` | no | `'Draft'` |  |
+| `approved_at` | `date` | yes |  |  |
+| `notes` | `text` | yes |  |  |
+| `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
+
+**Column notes:**
+
+| Column | Notes |
+|---|---|
+| `activity_title` | Short descriptive title for the industry engagement activity (e.g. `Industry Advisory Panel — Semester 1`, `Site visit — Siemens Melbourne`). |
+| `organisation` | Organisation the activity was conducted with or through. NULL if not applicable. |
+| `month` | Calendar month (1–12) the activity took place; NULL when only the year is known. |
+| `status` | Approval workflow: `Draft` → `Pending` → `Approved` / `Rejected`. |
+| `approved_at` | Date the supervisor approved the industry evidence declaration. NULL until approved. |
+
+*Constraints:*
+
+- `PRIMARY KEY (id)`
+- `CONSTRAINT fk_vcc_indevid_vcc FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE`
+- `CONSTRAINT chk_vcc_indevid_status CHECK (status IN ('Draft','Pending','Approved','Rejected'))`
+- `CONSTRAINT chk_vcc_indevid_month CHECK (month BETWEEN 1 AND 12)`
+
+*Indexes:* `idx_vcc_indevid_vcc (vcc_id)`
+
 #### `teacher_vcc_courses`
 
 Courses the teacher is mapping to deliver in a VCC. Optionally linked to a `programs` record; stores the course code and title for display (allowing free-text where no matching program exists). Container for `teacher_vcc_units`. `sort_order` controls display sequence. References `teacher_vccs` and optionally `programs`.
@@ -3095,7 +3153,7 @@ Per-teacher document library: testamurs, transcripts, accreditations, registrati
 
 #### `teacher_document_connections`
 
-Links a teacher document to exactly one VCC entity: a professional qualification, a vocational qualification, a VCC unit, a unit element, a currency activity, a vocational evidence record, or a professional evidence record. The `num_nonnulls(...7 columns...) = 1` constraint enforces the single-target rule — one document connection always points to exactly one entity. In v0.41 `vcc_credential_id` was renamed to `vcc_vocational_evidence_id` (FK target changed to `teacher_vcc_vocational_evidence`) and `vcc_professional_evidence_id` was added. References `teacher_documents` and the target entity.
+Links a teacher document to exactly one VCC entity: a professional qualification, a vocational qualification, a VCC unit, a unit element, a currency activity, a vocational evidence record, a professional evidence record, or an industry evidence record. The `num_nonnulls(...8 columns...) = 1` constraint enforces the single-target rule — one document connection always points to exactly one entity. In v0.41 `vcc_credential_id` was renamed to `vcc_vocational_evidence_id` (FK target changed to `teacher_vcc_vocational_evidence`) and `vcc_professional_evidence_id` was added. In v0.42 `vcc_industry_evidence_id` was added. References `teacher_documents` and the target entity.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -3108,6 +3166,7 @@ Links a teacher document to exactly one VCC entity: a professional qualification
 | `vcc_currency_activity_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_currency_activities |
 | `vcc_vocational_evidence_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_vcc_vocational_evidence |
 | `vcc_professional_evidence_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_vcc_professional_evidence |
+| `vcc_industry_evidence_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;teacher_vcc_industry_evidence |
 
 *Constraints:*
 
@@ -3120,7 +3179,8 @@ Links a teacher document to exactly one VCC entity: a professional qualification
 - `CONSTRAINT fk_tdc_currency FOREIGN KEY (vcc_currency_activity_id) REFERENCES public.teacher_currency_activities(id) ON DELETE CASCADE`
 - `CONSTRAINT fk_tdc_voc_evidence FOREIGN KEY (vcc_vocational_evidence_id) REFERENCES public.teacher_vcc_vocational_evidence(id) ON DELETE CASCADE`
 - `CONSTRAINT fk_tdc_prof_evidence FOREIGN KEY (vcc_professional_evidence_id) REFERENCES public.teacher_vcc_professional_evidence(id) ON DELETE CASCADE`
-- `CONSTRAINT chk_tdc_target CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id, vcc_unit_element_id, vcc_vocational_evidence_id, vcc_professional_evidence_id) = 1)`
+- `CONSTRAINT fk_tdc_ind_evidence FOREIGN KEY (vcc_industry_evidence_id) REFERENCES public.teacher_vcc_industry_evidence(id) ON DELETE CASCADE`
+- `CONSTRAINT chk_tdc_target CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id, vcc_unit_element_id, vcc_vocational_evidence_id, vcc_professional_evidence_id, vcc_industry_evidence_id) = 1)`
 
 #### `teacher_currency_activities`
 
@@ -3473,4 +3533,4 @@ periodically.
 
 ---
 
-*Generated from `v0.41` (2026-06-15).*
+*Generated from `v0.42` (2026-06-16).*

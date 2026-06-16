@@ -1,6 +1,11 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.41, 2026-06-15
+-- AVETMISS-compliant SMS schema  --  version 0.42, 2026-06-16
 -- =========================================================================
+-- Changes from v0.42:
+--   1.  teacher_vcc_industry_evidence: new table for Industry Currency.
+--       Columns: activity_title, organisation, month, year, status, approved_at, notes.
+--   2.  teacher_document_connections: added vcc_industry_evidence_id bigint NULL FK →
+--       teacher_vcc_industry_evidence(id) ON DELETE CASCADE; num_nonnulls check now 8.
 -- Changes from v0.41:
 --   1.  teacher_vcc_credentials renamed → teacher_vcc_vocational_evidence.
 --   2.  teacher_vcc_professional_evidence: new table for VET Knowledge Currency.
@@ -2702,6 +2707,24 @@ CREATE TABLE IF NOT EXISTS public.teacher_vcc_professional_evidence (
     CONSTRAINT chk_vcc_profevid_month  CHECK (month BETWEEN 1 AND 12)
 );
 
+-- Industry Currency evidence declared in a VCC.
+CREATE TABLE IF NOT EXISTS public.teacher_vcc_industry_evidence (
+    id             bigserial    NOT NULL,
+    vcc_id         bigint       NOT NULL,
+    activity_title varchar(200) NOT NULL,
+    organisation   varchar(200) NULL,
+    month          smallint     NULL,    -- 1–12; NULL = month not recorded
+    year           smallint     NULL,
+    status         varchar(20)  NOT NULL DEFAULT 'Draft',
+    approved_at    date         NULL,
+    notes          text         NULL,
+    created_at     timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_vcc_indevid_vcc     FOREIGN KEY (vcc_id) REFERENCES public.teacher_vccs(id) ON DELETE CASCADE,
+    CONSTRAINT chk_vcc_indevid_status CHECK (status IN ('Draft','Pending','Approved','Rejected')),
+    CONSTRAINT chk_vcc_indevid_month  CHECK (month BETWEEN 1 AND 12)
+);
+
 -- Courses (qualifications) the teacher is mapped to deliver in this VCC.
 CREATE TABLE IF NOT EXISTS public.teacher_vcc_courses (
     id           bigserial    NOT NULL,
@@ -2807,6 +2830,7 @@ CREATE TABLE IF NOT EXISTS public.teacher_document_connections (
     vcc_unit_element_id      bigint    NULL,
     vcc_vocational_evidence_id   bigint    NULL,
     vcc_professional_evidence_id bigint    NULL,
+    vcc_industry_evidence_id     bigint    NULL,
     PRIMARY KEY (id),
     CONSTRAINT fk_tdc_document      FOREIGN KEY (document_id)              REFERENCES public.teacher_documents(id)                        ON DELETE CASCADE,
     CONSTRAINT fk_tdc_pq            FOREIGN KEY (vcc_professional_qual_id) REFERENCES public.teacher_vcc_professional_qualifications(id)   ON DELETE CASCADE,
@@ -2815,7 +2839,8 @@ CREATE TABLE IF NOT EXISTS public.teacher_document_connections (
     CONSTRAINT fk_tdc_unit_element  FOREIGN KEY (vcc_unit_element_id)      REFERENCES public.teacher_vcc_unit_elements(id)                ON DELETE CASCADE,
     CONSTRAINT fk_tdc_voc_evidence  FOREIGN KEY (vcc_vocational_evidence_id)   REFERENCES public.teacher_vcc_vocational_evidence(id)      ON DELETE CASCADE,
     CONSTRAINT fk_tdc_prof_evidence FOREIGN KEY (vcc_professional_evidence_id) REFERENCES public.teacher_vcc_professional_evidence(id)    ON DELETE CASCADE,
-    CONSTRAINT chk_tdc_target       CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id, vcc_unit_element_id, vcc_vocational_evidence_id, vcc_professional_evidence_id) = 1)
+    CONSTRAINT fk_tdc_ind_evidence  FOREIGN KEY (vcc_industry_evidence_id)     REFERENCES public.teacher_vcc_industry_evidence(id)        ON DELETE CASCADE,
+    CONSTRAINT chk_tdc_target       CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id, vcc_unit_element_id, vcc_vocational_evidence_id, vcc_professional_evidence_id, vcc_industry_evidence_id) = 1)
 );
 
 -- =========================================================================
@@ -2926,6 +2951,21 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
+-- v0.42 live-migration: add vcc_industry_evidence_id to teacher_document_connections.
+ALTER TABLE public.teacher_document_connections
+    ADD COLUMN IF NOT EXISTS vcc_industry_evidence_id bigint NULL;
+ALTER TABLE public.teacher_document_connections
+    DROP CONSTRAINT IF EXISTS chk_tdc_target;
+ALTER TABLE public.teacher_document_connections
+    ADD CONSTRAINT chk_tdc_target
+        CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id, vcc_unit_element_id, vcc_vocational_evidence_id, vcc_professional_evidence_id, vcc_industry_evidence_id) = 1);
+DO $$ BEGIN
+    ALTER TABLE public.teacher_document_connections
+        ADD CONSTRAINT fk_tdc_ind_evidence FOREIGN KEY (vcc_industry_evidence_id)
+        REFERENCES public.teacher_vcc_industry_evidence(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 CREATE OR REPLACE TRIGGER trg_touch_teacher_currency_activities
     BEFORE UPDATE ON public.teacher_currency_activities
     FOR EACH ROW EXECUTE FUNCTION public.fn_set_updated_at();
@@ -2994,6 +3034,9 @@ CREATE INDEX IF NOT EXISTS idx_vcc_vocevid_vcc
 
 CREATE INDEX IF NOT EXISTS idx_vcc_profevid_vcc
     ON public.teacher_vcc_professional_evidence(vcc_id);
+
+CREATE INDEX IF NOT EXISTS idx_vcc_indevid_vcc
+    ON public.teacher_vcc_industry_evidence(vcc_id);
 
 CREATE INDEX IF NOT EXISTS idx_vcc_courses_vcc
     ON public.teacher_vcc_courses(vcc_id);

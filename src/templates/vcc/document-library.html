@@ -7,52 +7,8 @@
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/people.css">
   <link rel="stylesheet" href="/static/sidebar.css">
+  <link rel="stylesheet" href="/static/vcc.css">
   <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
-  <style>
-    .dl-header        { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
-    .dl-title         { font-size:18px; font-weight:600; color:#1e293b; flex:1; }
-    .dl-upload-panel  { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;
-                        padding:18px 20px; margin-bottom:24px; }
-    .dl-upload-title  { font-size:13px; font-weight:600; color:#475569; text-transform:uppercase;
-                        letter-spacing:.04em; margin-bottom:12px; }
-    .dl-upload-row    { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; }
-    .dl-field         { display:flex; flex-direction:column; gap:4px; }
-    .dl-field label   { font-size:12px; color:#64748b; font-weight:500; }
-    .dl-field input,
-    .dl-field select  { font-size:13px; padding:6px 9px; border:1px solid #cbd5e1;
-                        border-radius:5px; background:#fff; color:#1e293b; }
-    .dl-field.grow    { flex:1; min-width:160px; }
-    .dl-or            { font-size:12px; color:#94a3b8; align-self:center; padding-top:16px; }
-    .dl-upload-btn    { padding:7px 16px; font-size:13px; font-weight:600;
-                        background:#2563eb; color:#fff; border:none; border-radius:5px;
-                        cursor:pointer; align-self:flex-end; }
-    .dl-upload-btn:hover { background:#1d4ed8; }
-    .dl-upload-err    { font-size:12px; color:#dc2626; margin-top:8px; display:none; }
-
-    .dl-section       { margin-bottom:28px; }
-    .dl-section-hdr   { font-size:11px; font-weight:700; color:#94a3b8; text-transform:uppercase;
-                        letter-spacing:.06em; padding:6px 0; border-bottom:1px solid #f1f5f9;
-                        margin-bottom:8px; }
-    .dl-empty         { font-size:13px; color:#94a3b8; padding:12px 0; }
-
-    .dl-grid          { display:flex; flex-direction:column; gap:6px; }
-    .dl-card          { display:flex; align-items:center; gap:10px; padding:10px 12px;
-                        background:#fff; border:1px solid #e2e8f0; border-radius:6px; }
-    .dl-icon          { width:32px; height:32px; border-radius:5px; background:#eff6ff;
-                        display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-    .dl-icon svg      { width:16px; height:16px; stroke:#2563eb; }
-    .dl-info          { flex:1; min-width:0; }
-    .dl-doc-title     { font-size:13px; font-weight:500; color:#1e293b;
-                        white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .dl-doc-meta      { font-size:11px; color:#94a3b8; margin-top:2px; }
-    .dl-actions       { display:flex; gap:6px; flex-shrink:0; }
-    .dl-btn-dl        { font-size:12px; color:#2563eb; text-decoration:none;
-                        padding:4px 10px; border:1px solid #bfdbfe; border-radius:4px; }
-    .dl-btn-dl:hover  { background:#eff6ff; }
-    .dl-btn-del       { font-size:12px; color:#dc2626; padding:4px 10px;
-                        border:1px solid #fecaca; border-radius:4px; background:none; cursor:pointer; }
-    .dl-btn-del:hover { background:#fef2f2; }
-  </style>
 </head>
 <body>
   {{template "sidebar" .}}
@@ -87,7 +43,7 @@
             {{range .Categories}}<option>{{.}}</option>{{end}}
           </select>
         </div>
-        <div class="dl-field" style="width:76px">
+        <div class="dl-field dl-field-year">
           <label>Year</label>
           <input type="number" id="up-year" placeholder="2024" min="1980" max="2099">
         </div>

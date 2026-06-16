@@ -1,0 +1,152 @@
+/* ── Workplan / Availability page ────────────────────────────────────────── */
+
+/* ── Info banner ── */
+.av-desc        { font-size:13px; color:#475569; margin:0 0 18px;
+                  background:#f8fafc; border:1px solid #e2e8f0;
+                  border-radius:6px; padding:10px 14px; line-height:1.6; }
+.av-desc strong { color:#1e293b; }
+
+/* ── Section titles ── */
+.av-section     { font-size:11px; font-weight:700; color:#94a3b8;
+                  text-transform:uppercase; letter-spacing:.06em;
+                  margin:28px 0 10px; border-bottom:1px solid #f1f5f9; padding-bottom:6px; }
+
+/* ── Defaults button ── */
+.av-defaults    { margin-bottom:14px; }
+.av-defaults-btn { padding:7px 14px; font-size:13px; font-weight:600;
+                   background:#2563eb; color:#fff; border:none;
+                   border-radius:5px; cursor:pointer; }
+.av-defaults-btn:hover { background:#1d4ed8; }
+
+/* ── Availability day cards ── */
+.av-slot        { border-radius:5px; padding:9px 10px;
+                  background:#f0fdf4; border-left:3px solid #16a34a;
+                  font-size:12px; line-height:1.4; }
+.av-slot-time   { font-weight:700; color:#15803d; font-size:13px; }
+.av-slot-notes  { color:#555; margin-top:3px; font-size:11px; }
+.av-none        { color:#bbb; font-size:18px; text-align:center;
+                  padding:14px 0; margin:0; }
+.av-actions     { display:flex; gap:5px; margin-top:8px; }
+.av-btn-edit    { font-size:11px; padding:3px 9px; border:1px solid #bfdbfe;
+                  border-radius:4px; background:none; color:#2563eb; cursor:pointer; }
+.av-btn-edit:hover   { background:#eff6ff; }
+.av-btn-remove  { font-size:11px; padding:3px 9px; border:1px solid #fecaca;
+                  border-radius:4px; background:none; color:#dc2626; cursor:pointer; }
+.av-btn-remove:hover { background:#fef2f2; }
+.av-btn-add     { font-size:11px; padding:3px 9px; border:1px solid #d1d5db;
+                  border-radius:4px; background:none; color:#6b7280; cursor:pointer; }
+.av-btn-add:hover { background:#f9fafb; color:#374151; }
+.av-form        { display:none; margin-top:8px; flex-direction:column; gap:6px; }
+.av-form.open   { display:flex; }
+.av-form-row    { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.av-form label  { font-size:11px; color:#64748b; font-weight:500; }
+.av-form input[type="time"] { font-size:12px; padding:4px 6px;
+                              border:1px solid #cbd5e1; border-radius:4px; background:#fff; }
+.av-form textarea { font-size:12px; padding:5px 7px; border:1px solid #cbd5e1;
+                    border-radius:4px; background:#fff; resize:vertical;
+                    width:100%; min-height:36px; }
+.av-form-btns   { display:flex; gap:5px; }
+.av-save        { font-size:11px; padding:4px 10px; background:#2563eb;
+                  color:#fff; border:none; border-radius:4px; cursor:pointer; font-weight:600; }
+.av-save:hover  { background:#1d4ed8; }
+.av-cancel      { font-size:11px; padding:4px 10px; background:none; color:#6b7280;
+                  border:1px solid #d1d5db; border-radius:4px; cursor:pointer; }
+.av-cancel:hover { background:#f3f4f6; }
+.av-err         { font-size:11px; color:#dc2626; }
+
+/* ── Leave request panel ── */
+.leave-panel    { display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap; margin-bottom:24px; }
+
+/* Mini calendar */
+.lv-cal         { flex:0 0 auto; width:260px; }
+.lv-cal-hdr     { display:flex; align-items:center; justify-content:space-between;
+                  margin-bottom:8px; }
+.lv-cal-nav     { background:none; border:1px solid #e2e8f0; border-radius:4px;
+                  width:26px; height:26px; cursor:pointer; font-size:14px;
+                  color:#475569; display:flex; align-items:center; justify-content:center; }
+.lv-cal-nav:hover { background:#f1f5f9; }
+.lv-cal-label   { font-size:13px; font-weight:600; color:#1e293b; }
+.lv-cal-grid    { display:grid; grid-template-columns:repeat(7,1fr); gap:2px; }
+.lv-cal-dow     { font-size:10px; font-weight:700; color:#94a3b8; text-align:center;
+                  text-transform:uppercase; padding:3px 0; }
+.lv-cal-day     { font-size:12px; text-align:center; padding:5px 2px; border-radius:4px;
+                  cursor:pointer; color:#1e293b; user-select:none; line-height:1; }
+.lv-cal-day:hover           { background:#f1f5f9; }
+.lv-cal-day.other-month     { color:#cbd5e1; cursor:default; }
+.lv-cal-day.other-month:hover { background:none; }
+.lv-cal-day.selected        { background:#2563eb; color:#fff; font-weight:600; }
+.lv-cal-day.selected:hover  { background:#1d4ed8; }
+.lv-cal-day.in-range        { background:#dbeafe; color:#1e40af; }
+.lv-cal-day.today           { font-weight:700; }
+.lv-cal-day.today:not(.selected) { color:#2563eb; }
+.lv-mode-tabs   { display:flex; gap:0; margin-bottom:10px;
+                  border:1px solid #e2e8f0; border-radius:5px; overflow:hidden; }
+.lv-mode-tab    { flex:1; padding:5px; font-size:11px; font-weight:600;
+                  text-align:center; background:none; border:none; cursor:pointer;
+                  color:#64748b; }
+.lv-mode-tab.active { background:#2563eb; color:#fff; }
+
+/* Range inputs (shown in range mode) */
+.lv-range-inputs { display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
+.lv-range-inputs label { font-size:11px; color:#64748b; font-weight:500; }
+.lv-range-inputs input { font-size:12px; padding:5px 7px; border:1px solid #cbd5e1;
+                          border-radius:4px; background:#fff; width:100%; }
+
+/* Selected dates pills */
+.lv-sel-dates   { min-height:24px; display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+.lv-date-pill   { font-size:11px; background:#dbeafe; color:#1e40af;
+                  border-radius:12px; padding:2px 8px; }
+
+/* Form side */
+.lv-form        { flex:1; min-width:220px; display:flex; flex-direction:column; gap:10px; }
+.lv-field       { display:flex; flex-direction:column; gap:4px; }
+.lv-field label { font-size:12px; font-weight:500; color:#475569; }
+.lv-field select,
+.lv-field textarea,
+.lv-field input { font-size:13px; padding:6px 9px; border:1px solid #cbd5e1;
+                  border-radius:5px; background:#fff; color:#1e293b; }
+.lv-field textarea { resize:vertical; min-height:60px; }
+
+.lv-partial     { display:none; background:#f8fafc; border:1px solid #e2e8f0;
+                  border-radius:5px; padding:10px; gap:8px; flex-direction:column; }
+.lv-partial.show { display:flex; }
+.lv-partial-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.lv-partial label { font-size:12px; font-weight:500; color:#475569; }
+.lv-partial input[type="time"] { font-size:12px; padding:5px 7px;
+                                 border:1px solid #cbd5e1; border-radius:4px; background:#fff; }
+
+.lv-submit      { padding:8px 18px; font-size:13px; font-weight:600;
+                  background:#2563eb; color:#fff; border:none;
+                  border-radius:5px; cursor:pointer; align-self:flex-start; }
+.lv-submit:hover { background:#1d4ed8; }
+.lv-submit:disabled { opacity:.5; cursor:default; }
+.lv-msg         { font-size:12px; }
+.lv-msg.ok      { color:#15803d; }
+.lv-msg.err     { color:#dc2626; }
+
+/* Leave requests table */
+.lv-table       { width:100%; border-collapse:collapse; font-size:13px; }
+.lv-table th    { text-align:left; font-size:11px; font-weight:700; color:#94a3b8;
+                  text-transform:uppercase; letter-spacing:.04em;
+                  padding:6px 10px; border-bottom:1px solid #f1f5f9; }
+.lv-table td    { padding:8px 10px; border-bottom:1px solid #f8fafc; vertical-align:top; }
+.lv-table tr:last-child td { border-bottom:none; }
+.lv-status      { display:inline-block; font-size:11px; font-weight:600;
+                  padding:2px 8px; border-radius:10px; }
+.lv-status.Pending   { background:#fef9c3; color:#854d0e; }
+.lv-status.Approved  { background:#dcfce7; color:#166534; }
+.lv-status.Declined  { background:#fee2e2; color:#991b1b; }
+.lv-status.Cancelled { background:#f1f5f9; color:#64748b; }
+.lv-cancel-btn  { font-size:11px; padding:3px 8px; border:1px solid #fecaca;
+                  border-radius:4px; background:none; color:#dc2626; cursor:pointer; }
+.lv-cancel-btn:hover { background:#fef2f2; }
+.lv-approver-note { font-size:11px; color:#64748b; font-style:italic; margin-top:2px; }
+
+/* "No leave requests" empty message */
+.lv-empty { font-size:13px; color:#94a3b8; }
+
+/* Partial-day checkbox label (replaces inline flex style) */
+.lv-partial-chk-label { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:500; color:#475569; }
+
+/* Date count annotation on multi-day leave rows */
+.lv-date-count { color:#94a3b8; font-size:11px; }

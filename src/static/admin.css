@@ -1,0 +1,142 @@
+/* ── Admin shared styles ─────────────────────────────────────────────────── */
+
+/* ── Admin nav colour bars ── */
+.admin-nav-bar-people     { background: #1a4480; }
+.admin-nav-bar-periods    { background: #0a7a7a; }
+.admin-nav-bar-programs   { background: #155724; }
+.admin-nav-bar-subjects   { background: #334155; }
+.admin-nav-bar-intake     { background: #0a7a7a; }
+.admin-nav-bar-enrolments { background: #155724; }
+.admin-nav-bar-classes    { background: #334155; }
+.admin-nav-bar-sessions   { background: #92400e; }
+
+/* ── Enrollments page ── */
+.enrol-filter { margin-bottom: .75rem; }
+.enrol-filter input { padding: .3rem .5rem; border: 1px solid #ccc; border-radius: 4px; width: 22rem; }
+.enrol-student  { min-width: 14rem; }
+.enrol-program  { min-width: 10rem; }
+.enrol-date     { width: 8.5rem; }
+.enrol-state    { width: 4rem; }
+.enrol-cp       { width: 4.5rem; }
+.enrol-contract { width: 9rem; }
+.enrol-hidden   { display: none; }
+
+/* student picker */
+.student-picker { position: relative; min-width: 14rem; }
+.student-picker input[type=text] { width: 100%; box-sizing: border-box; }
+.student-results {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 100;
+  background: #fff; border: 1px solid #c0c8d8; border-top: none;
+  border-radius: 0 0 4px 4px; max-height: 220px; overflow-y: auto;
+  box-shadow: 0 4px 12px rgba(0,0,0,.12);
+}
+.student-result {
+  padding: 6px 10px; cursor: pointer; font-size: 13px; line-height: 1.4;
+}
+.student-result:hover, .student-result.focused { background: #eef2fb; }
+.student-result-num { color: #888; font-size: 11px; }
+.student-result-none { padding: 8px 10px; color: #999; font-size: 13px; font-style: italic; }
+
+/* ── Map / building / location shared styles ── */
+.btn-map          { background:none; border:none; cursor:pointer; font-size:15px; opacity:.3; padding:0 2px; }
+.btn-map-set      { opacity:1; }
+.btn-map:hover    { opacity:.65; }
+.btn-map-set:hover{ opacity:.8; }
+
+.sess-row.bld-selected td { background:#eff6ff; }
+.sess-row.loc-selected td { background:#eff6ff; }
+
+#bld-map-panel,
+#loc-map-panel    { margin-top:16px; border:1px solid #d1d5db; border-radius:8px;
+                    overflow:hidden; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.1); }
+.map-panel-header { display:flex; justify-content:space-between; align-items:center;
+                    padding:10px 16px; background:#f8fafc; border-bottom:1px solid #e5e7eb; }
+.map-panel-header strong { font-size:14px; color:#111827; margin-right:10px; }
+.map-panel-header span   { font-size:12px; color:#6b7280; font-family:monospace; }
+.map-panel-header button { background:none; border:none; cursor:pointer; font-size:16px;
+                            color:#9ca3af; line-height:1; padding:2px 4px; }
+.map-panel-header button:hover { color:#374151; }
+.map-search-bar   { display:flex; gap:8px; padding:10px 16px; border-bottom:1px solid #e5e7eb; }
+.map-search-bar input  { flex:1; padding:6px 10px; border:1px solid #d1d5db; border-radius:4px; font-size:13px; }
+.map-search-bar button { padding:6px 14px; background:#3b82f6; color:#fff; border:none;
+                          border-radius:4px; cursor:pointer; font-size:13px; }
+#map-search-results     { list-style:none; margin:0; padding:0; max-height:130px; overflow-y:auto; }
+#map-search-results:not(:empty) { border-bottom:1px solid #e5e7eb; }
+#map-search-results li  { padding:7px 16px; cursor:pointer; font-size:13px; color:#374151;
+                           border-bottom:1px solid #f3f4f6; }
+#map-search-results li:hover { background:#f0f9ff; }
+#map-search-results li.no-results { color:#9ca3af; cursor:default; }
+#map-container    { height:420px; }
+#map-resize-handle { height:10px; background:#f1f5f9; cursor:ns-resize;
+                     display:flex; align-items:center; justify-content:center;
+                     border-top:1px solid #e5e7eb; user-select:none; }
+#map-resize-handle::after { content:''; width:36px; height:3px;
+                             background:#cbd5e1; border-radius:2px; }
+.map-panel-footer { display:flex; justify-content:space-between; align-items:center;
+                    padding:10px 16px; border-top:1px solid #e5e7eb; background:#f8fafc; }
+.map-panel-footer span { font-size:12px; color:#6b7280; font-family:monospace; }
+.btn-map-save     { padding:6px 18px; background:#16a34a; color:#fff; border:none;
+                    border-radius:4px; cursor:pointer; font-size:13px; }
+.btn-map-save:disabled { background:#9ca3af; cursor:not-allowed; }
+
+/* ── Buildings filter ── */
+.bld-filter       { margin-bottom:14px; }
+.bld-filter-row   { display:flex; flex-wrap:wrap; gap:16px; align-items:center; min-height:24px; }
+.bld-filter-row label { display:flex; align-items:center; gap:5px; font-size:13px; cursor:pointer; }
+
+/* ── Buildings column-scoped input widths ── */
+.bld-col-loc  { width: 180px; }
+.bld-col-name { width: 160px; }
+.bld-col-addr { width: 180px; }
+.bld-col-suburb { width: 110px; }
+.bld-col-state  { width: 62px; }
+.bld-col-post   { width: 52px; }
+
+/* ── Locations column-scoped input widths ── */
+.loc-col-org    { width: 100px; }
+.loc-col-id     { width: 100px; font-family: monospace; }
+.loc-col-name   { width: 200px; }
+.loc-col-addr   { width: 180px; }
+.loc-col-suburb { width: 110px; }
+.loc-col-state  { width: 62px; }
+.loc-col-post   { width: 52px; }
+
+/* ── Rooms column-scoped input widths ── */
+.room-col-bld  { width: 160px; }
+.room-col-name { width: 120px; }
+.room-col-cap  { width: 60px; text-align: center; }
+.room-col-type { width: 140px; }
+
+/* ── Rooms filter ── */
+.rooms-filter        { margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px; }
+.rooms-filter-row    { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; min-height: 24px; }
+.rooms-filter-row label { display: flex; align-items: center; gap: 5px; font-size: 13px; cursor: pointer; }
+
+/* ── Centered table cells ── */
+.td-center { text-align: center; }
+
+/* ── Actions column header width ── */
+.col-actions    { width: 70px; }
+.col-actions-sm { width: 50px; }
+
+/* ── Orgs column-scoped input widths ── */
+.org-col-code    { width: 80px; font-family: monospace; }
+.org-col-name    { width: 200px; }
+.org-col-type    { width: 42px; text-align: center; }
+.org-col-addr    { width: 180px; }
+.org-col-suburb  { width: 110px; }
+.org-col-state   { width: 62px; }
+.org-col-post    { width: 52px; }
+.org-col-contact { width: 140px; }
+.org-col-phone   { width: 110px; }
+.org-col-email   { width: 180px; }
+
+/* ── Departments input classes ── */
+.dep-input-name   { width: 100%; min-width: 200px; }
+.dep-input-faculty { min-width: 160px; }
+
+/* ── Faculties input classes ── */
+.fac-input-name { width: 100%; min-width: 240px; }
+
+/* ── Hint paragraph ── */
+.hint { margin-top: 20px; }

@@ -6,6 +6,7 @@
   <title>NVIMS — Database Backup</title>
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/admin.css">
   <link rel="stylesheet" href="/static/sidebar.css">
   <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
 </head>
@@ -27,14 +28,14 @@
   </header>
 
   <main>
-    <div style="max-width:640px;padding:24px 24px 0">
+    <div class="backup-wrap">
 
       {{/* ── Full SQL Backup ── */}}
       <div class="form-section form-section--spaced">
         <h2 class="form-section-title">Full SQL Backup</h2>
         <p class="hint">Complete <code>pg_dump</code> of the entire database. Suitable for full restore.</p>
         <form method="POST" action="/backup/sql">
-          <div class="form-actions" style="margin-top:12px">
+          <div class="form-actions form-actions--mt">
             <button type="submit" class="btn-primary">Download SQL Backup</button>
           </div>
         </form>
@@ -45,7 +46,7 @@
         <h2 class="form-section-title">Full JSON Export</h2>
         <p class="hint">All tables exported to a single JSON file, keyed by table name.</p>
         <form method="POST" action="/backup/json">
-          <div class="form-actions" style="margin-top:12px">
+          <div class="form-actions form-actions--mt">
             <button type="submit" class="btn-primary">Download JSON Export</button>
           </div>
         </form>
@@ -56,7 +57,7 @@
         <h2 class="form-section-title">Export Table</h2>
         <p class="hint">Choose a table and download it as CSV or JSON.</p>
         <form method="POST" action="/backup/table">
-          <div class="form-row" style="margin-top:12px">
+          <div class="form-row form-row--mt">
             <div class="form-group fg-260">
               <label>Table</label>
               <select name="table" required>
@@ -68,17 +69,17 @@
             </div>
             <div class="form-group">
               <label>Format</label>
-              <div style="display:flex;gap:16px;padding-top:6px">
-                <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer">
+              <div class="checkbox-row">
+                <label class="checkbox-label">
                   <input type="radio" name="format" value="csv" checked> CSV
                 </label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer">
+                <label class="checkbox-label">
                   <input type="radio" name="format" value="json"> JSON
                 </label>
               </div>
             </div>
           </div>
-          <div class="form-actions" style="margin-top:8px">
+          <div class="form-actions form-actions--mt8">
             <button type="submit" class="btn-primary">Download Table</button>
           </div>
         </form>

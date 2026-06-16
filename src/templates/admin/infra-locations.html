@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/static/sessions.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="/static/sidebar.css">
+  <link rel="stylesheet" href="/static/admin.css">
   <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
 </head>
 <body>
@@ -42,31 +43,31 @@
             <th class="td-left">Suburb</th>
             <th>State</th>
             <th>Postcode</th>
-            <th style="width:70px"></th>
+            <th class="col-actions"></th>
           </tr>
         </thead>
         <tbody id="locs-tbody">
           {{range .Locations}}
           <tr class="sess-row" data-id="{{.ID}}">
             <td>
-              <select class="sess-input" name="training_org_id" style="width:100px">
+              <select class="sess-input loc-col-org" name="training_org_id">
                 {{$oid := .TrainingOrgID}}
                 {{range $.Orgs}}<option value="{{.ID}}"{{if eq .ID $oid}} selected{{end}}>{{.Code}}</option>{{end}}
               </select>
             </td>
-            <td><input class="sess-input" type="text" name="delivery_loc_id" value="{{.LocID}}"  maxlength="30"  style="width:100px;font-family:monospace"></td>
-            <td><input class="sess-input" type="text" name="name"            value="{{.Name}}"   maxlength="100" style="width:200px"></td>
-            <td style="text-align:center"><input type="checkbox" name="is_virtual"{{if .IsVirtual}} checked{{end}}></td>
-            <td><input class="sess-input" type="text" name="address"         value="{{.Address}}" maxlength="200" style="width:180px"></td>
-            <td><input class="sess-input" type="text" name="suburb"          value="{{.Suburb}}"  maxlength="50"  style="width:110px"></td>
+            <td><input class="sess-input loc-col-id" type="text" name="delivery_loc_id" value="{{.LocID}}"  maxlength="30"></td>
+            <td><input class="sess-input loc-col-name" type="text" name="name"           value="{{.Name}}"   maxlength="100"></td>
+            <td class="td-center"><input type="checkbox" name="is_virtual"{{if .IsVirtual}} checked{{end}}></td>
+            <td><input class="sess-input loc-col-addr" type="text" name="address"        value="{{.Address}}" maxlength="200"></td>
+            <td><input class="sess-input loc-col-suburb" type="text" name="suburb"       value="{{.Suburb}}"  maxlength="50"></td>
             <td>
-              <select class="sess-input" name="state_code" style="width:62px">
+              <select class="sess-input loc-col-state" name="state_code">
                 <option value=""></option>
                 {{$sc := .StateCode}}
                 {{range $.States}}<option value="{{.}}"{{if eq . $sc}} selected{{end}}>{{.}}</option>{{end}}
               </select>
             </td>
-            <td><input class="sess-input" type="text" name="postcode" value="{{.Postcode}}" maxlength="4" style="width:52px"></td>
+            <td><input class="sess-input loc-col-post" type="text" name="postcode" value="{{.Postcode}}" maxlength="4"></td>
             <td class="sess-actions">
               <input type="hidden" name="latitude"  value="{{.Latitude}}">
               <input type="hidden" name="longitude" value="{{.Longitude}}">
@@ -85,7 +86,7 @@
     </div>
 
     {{/* ── Inline map panel ── */}}
-    <div id="loc-map-panel" style="display:none">
+    <div id="loc-map-panel" class="hidden">
       <div class="map-panel-header">
         <div>
           <strong id="map-panel-title"></strong>
@@ -106,47 +107,6 @@
       </div>
     </div>
   </main>
-
-<style>
-.btn-map          { background:none; border:none; cursor:pointer; font-size:15px; opacity:.3; padding:0 2px; }
-.btn-map-set      { opacity:1; }
-.btn-map:hover    { opacity:.65; }
-.btn-map-set:hover{ opacity:.8; }
-
-.sess-row.loc-selected td { background:#eff6ff; }
-
-#loc-map-panel    { margin-top:16px; border:1px solid #d1d5db; border-radius:8px;
-                    overflow:hidden; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.1); }
-.map-panel-header { display:flex; justify-content:space-between; align-items:center;
-                    padding:10px 16px; background:#f8fafc; border-bottom:1px solid #e5e7eb; }
-.map-panel-header strong { font-size:14px; color:#111827; margin-right:10px; }
-.map-panel-header span   { font-size:12px; color:#6b7280; font-family:monospace; }
-.map-panel-header button { background:none; border:none; cursor:pointer; font-size:16px;
-                            color:#9ca3af; line-height:1; padding:2px 4px; }
-.map-panel-header button:hover { color:#374151; }
-.map-search-bar   { display:flex; gap:8px; padding:10px 16px; border-bottom:1px solid #e5e7eb; }
-.map-search-bar input  { flex:1; padding:6px 10px; border:1px solid #d1d5db; border-radius:4px; font-size:13px; }
-.map-search-bar button { padding:6px 14px; background:#3b82f6; color:#fff; border:none;
-                          border-radius:4px; cursor:pointer; font-size:13px; }
-#map-search-results     { list-style:none; margin:0; padding:0; max-height:130px; overflow-y:auto; }
-#map-search-results:not(:empty) { border-bottom:1px solid #e5e7eb; }
-#map-search-results li  { padding:7px 16px; cursor:pointer; font-size:13px; color:#374151;
-                           border-bottom:1px solid #f3f4f6; }
-#map-search-results li:hover { background:#f0f9ff; }
-#map-search-results li.no-results { color:#9ca3af; cursor:default; }
-#map-container    { height:420px; }
-#map-resize-handle { height:10px; background:#f1f5f9; cursor:ns-resize;
-                     display:flex; align-items:center; justify-content:center;
-                     border-top:1px solid #e5e7eb; user-select:none; }
-#map-resize-handle::after { content:''; width:36px; height:3px;
-                             background:#cbd5e1; border-radius:2px; }
-.map-panel-footer { display:flex; justify-content:space-between; align-items:center;
-                    padding:10px 16px; border-top:1px solid #e5e7eb; background:#f8fafc; }
-.map-panel-footer span { font-size:12px; color:#6b7280; font-family:monospace; }
-.btn-map-save     { padding:6px 18px; background:#16a34a; color:#fff; border:none;
-                    border-radius:4px; cursor:pointer; font-size:13px; }
-.btn-map-save:disabled { background:#9ca3af; cursor:not-allowed; }
-</style>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -219,14 +179,14 @@
     const tr = document.createElement('tr');
     tr.className = 'sess-row sess-new'; tr.dataset.id = 'new';
     tr.innerHTML = `
-      <td><select class="sess-input" name="training_org_id" style="width:100px">${orgOpts}</select></td>
-      <td><input class="sess-input" type="text" name="delivery_loc_id" placeholder="CHI-DAN"        maxlength="30"  style="width:100px;font-family:monospace"></td>
-      <td><input class="sess-input" type="text" name="name"            placeholder="Location name"  maxlength="100" style="width:200px"></td>
-      <td style="text-align:center"><input type="checkbox" name="is_virtual"></td>
-      <td><input class="sess-input" type="text" name="address"         placeholder="Street address" maxlength="200" style="width:180px"></td>
-      <td><input class="sess-input" type="text" name="suburb"          placeholder="Suburb"         maxlength="50"  style="width:110px"></td>
-      <td><select class="sess-input" name="state_code" style="width:62px">${stateOpts}</select></td>
-      <td><input class="sess-input" type="text" name="postcode"        placeholder="3000"           maxlength="4"   style="width:52px"></td>
+      <td><select class="sess-input loc-col-org"    name="training_org_id">${orgOpts}</select></td>
+      <td><input class="sess-input loc-col-id"     type="text" name="delivery_loc_id" placeholder="CHI-DAN"        maxlength="30"></td>
+      <td><input class="sess-input loc-col-name"   type="text" name="name"            placeholder="Location name"  maxlength="100"></td>
+      <td class="td-center"><input type="checkbox" name="is_virtual"></td>
+      <td><input class="sess-input loc-col-addr"   type="text" name="address"         placeholder="Street address" maxlength="200"></td>
+      <td><input class="sess-input loc-col-suburb" type="text" name="suburb"          placeholder="Suburb"         maxlength="50"></td>
+      <td><select class="sess-input loc-col-state" name="state_code">${stateOpts}</select></td>
+      <td><input class="sess-input loc-col-post"   type="text" name="postcode"        placeholder="3000"           maxlength="4"></td>
       <td class="sess-actions">
         <input type="hidden" name="latitude" value="">
         <input type="hidden" name="longitude" value="">

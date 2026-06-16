@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/people.css">
   <link rel="stylesheet" href="/static/sessions.css">
+  <link rel="stylesheet" href="/static/vcc.css">
   <link rel="stylesheet" href="/static/sidebar.css">
   <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
 </head>
@@ -30,7 +31,7 @@
   <main class="sessions-main">
 
   {{if not .VCC}}
-    <p style="padding:16px 0">No VCC record found for your account.</p>
+    <p class="vcc-empty">No VCC record found for your account.</p>
   {{else}}
 
     {{$vcc := .VCC}}
@@ -55,7 +56,7 @@
           <span class="sess-status vcc-ind"></span>
           <button type="button" class="vcc-btn-del-cr" title="Delete credential">&times;</button>
         </div>
-        <div class="vcc-acc-body" style="display:none">
+        <div class="vcc-acc-body hidden">
           <div class="vcc-form-grid">
             <label class="vcc-field vcc-field-sm">
               <span>Code</span>
@@ -121,12 +122,12 @@
               </div>
               {{end}}
             </div>
-            <div class="vcc-add-doc-bar" style="display:none">
+            <div class="vcc-add-doc-bar hidden">
               <input type="text" class="vcc-input doc-title-inp" placeholder="Document name (e.g. AWS Certified Developer certificate)" maxlength="200">
-              <div style="display:flex;align-items:center;gap:8px;margin-top:5px">
+              <div class="doc-url-row">
                 <input type="file" class="doc-file-inp">
-                <span style="color:#888;font-size:0.85em">or</span>
-                <input type="url" class="vcc-input doc-url-inp" placeholder="External URL (e.g. Credly badge link)" maxlength="2048" style="flex:1">
+                <span class="doc-url-sep">or</span>
+                <input type="url" class="vcc-input doc-url-inp" placeholder="External URL (e.g. Credly badge link)" maxlength="2048">
               </div>
               <div class="vcc-add-doc-actions">
                 <button type="button" class="vcc-btn-sm btn-doc-save">Add</button>
@@ -140,8 +141,8 @@
       </div>
       {{end}}
     </div>
-    <div id="cr-add-bar" style="display:none">
-      <div class="vcc-form-grid" style="margin-bottom:8px">
+    <div id="cr-add-bar" class="hidden">
+      <div class="vcc-form-grid vcc-form-grid--mb">
         <label class="vcc-field vcc-field-sm">
           <span>Code</span>
           <input type="text" id="cr-add-code" placeholder="e.g. AWS-CDA" maxlength="30" class="vcc-input mono">
@@ -189,83 +190,6 @@
   </main>
   </div>
 
-<style>
-/* ── Panel header ── */
-.vcc-panel-header { margin-bottom: 12px; }
-.vcc-panel-header h2 { font-size: 15px; font-weight: 700; color: #1e293b; margin: 0 0 3px; }
-.vcc-panel-desc { font-size: 12px; color: #94a3b8; margin: 0; }
-.vcc-empty { font-size: 13px; color: #9ca3af; padding: 8px 0; }
-
-/* ── Accordion ── */
-.vcc-acc-list { display: flex; flex-direction: column; gap: 4px; }
-.vcc-acc { background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; }
-.vcc-acc-hdr {
-  display: flex; align-items: center; gap: 8px;
-  padding: 9px 13px; cursor: pointer; user-select: none;
-  border-radius: 6px; transition: background 0.1s;
-}
-.vcc-acc-hdr:hover { background: #f8fafc; }
-.vcc-acc.open > .vcc-acc-hdr { background: #f1f5f9; border-bottom: 1px solid #e2e8f0; border-radius: 6px 6px 0 0; }
-.vcc-btn-del-cr { margin-left: auto; background: none; border: none; color: #94a3b8; font-size: 1.2rem; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
-.vcc-btn-del-cr:hover { background: #fee2e2; color: #dc2626; }
-.vcc-chev { font-size: 8px; color: #94a3b8; flex-shrink: 0; transition: transform 0.18s; display: inline-block; }
-.vcc-acc.open > .vcc-acc-hdr .vcc-chev { transform: rotate(90deg); }
-.vcc-acc-code { font-family: monospace; font-size: 12px; font-weight: 700; color: #2563eb; flex-shrink: 0; }
-.vcc-acc-title { font-size: 13px; color: #1e293b; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.vcc-approved-date { font-size: 11px; color: #16a34a; flex-shrink: 0; white-space: nowrap; }
-.vcc-ind { flex-shrink: 0; }
-.vcc-acc-body { padding: 13px 15px; background: #fafafa; border-radius: 0 0 6px 6px; }
-
-/* ── Status badges ── */
-.vcc-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; flex-shrink: 0; }
-.vcc-badge[data-st="Draft"]    { background: #f3f4f6; color: #6b7280; }
-.vcc-badge[data-st="Pending"]  { background: #fef3c7; color: #d97706; }
-.vcc-badge[data-st="Approved"] { background: #dcfce7; color: #15803d; }
-.vcc-badge[data-st="Rejected"] { background: #fee2e2; color: #dc2626; }
-
-/* ── Form grid ── */
-.vcc-form-grid { display: flex; flex-wrap: wrap; gap: 10px 14px; }
-.vcc-field { display: flex; flex-direction: column; gap: 4px; }
-.vcc-field > span { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
-.vcc-field-xs  { width: 100px; }
-.vcc-field-sm  { width: 140px; }
-.vcc-field-md  { width: 200px; }
-.vcc-field-lg  { flex: 1; min-width: 220px; }
-.vcc-field-full { flex: 0 0 100%; }
-.vcc-input {
-  font-size: 13px; padding: 5px 8px;
-  border: 1px solid #d1d5db; border-radius: 4px;
-  background: #fff; width: 100%; box-sizing: border-box;
-  transition: border-color 0.12s;
-}
-.vcc-input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 2px #bfdbfe55; }
-.vcc-input.mono { font-family: monospace; }
-
-/* ── Documents section ── */
-.vcc-docs-section { margin-top: 12px; padding-top: 10px; border-top: 1px solid #f0f0f0; }
-.vcc-docs-hdr { margin-bottom: 6px; }
-.vcc-section-label { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
-.vcc-doc-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
-.vcc-doc-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 4px; background: #f8fafc; border: 1px solid #e2e8f0; }
-.vcc-doc-link { font-size: 12px; color: #2563eb; text-decoration: none; flex: 1; }
-.vcc-doc-link:hover { text-decoration: underline; }
-.vcc-doc-name { font-size: 12px; color: #374151; flex: 1; }
-.vcc-doc-del { border: none; background: none; cursor: pointer; color: #9ca3af; font-size: 15px; line-height: 1; padding: 0 2px; flex-shrink: 0; }
-.vcc-doc-del:hover { color: #ef4444; }
-.vcc-add-doc-bar { padding: 8px; background: #f1f5f9; border-radius: 5px; margin-bottom: 6px; }
-.vcc-add-doc-actions { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
-.vcc-err-msg { font-size: 12px; color: #ef4444; }
-
-/* ── Buttons ── */
-.vcc-btn-sm { font-size: 12px; padding: 4px 10px; border-radius: 4px; cursor: pointer; border: 1px solid #2563eb; background: #2563eb; color: #fff; white-space: nowrap; }
-.vcc-btn-sm:hover { background: #1d4ed8; border-color: #1d4ed8; }
-.vcc-btn-ghost { background: #fff; color: #374151; border-color: #d1d5db; }
-.vcc-btn-ghost:hover { background: #f1f5f9; }
-.vcc-btn-add { margin-top: 10px; font-size: 12px; padding: 6px 14px; border-radius: 5px; border: 1px dashed #93c5fd; background: #eff6ff; color: #2563eb; cursor: pointer; display: block; }
-.vcc-btn-add:hover { background: #dbeafe; border-color: #3b82f6; }
-#cr-add-bar { margin-top: 8px; padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; }
-.vcc-add-actions { display: flex; gap: 8px; align-items: center; }
-</style>
 
 <script>
 (function () {
@@ -295,8 +219,8 @@
     const acc = hdr.parentElement;
     const body = acc.querySelector(':scope > .vcc-acc-body');
     if (!body) return;
-    const isOpen = body.style.display !== 'none';
-    body.style.display = isOpen ? 'none' : '';
+    const isOpen = !body.classList.contains('hidden');
+    body.classList.toggle('hidden');
     acc.classList.toggle('open', !isOpen);
   });
 
@@ -381,13 +305,13 @@
     const addDocBar = acc.querySelector('.vcc-add-doc-bar');
     const btnAddDoc = acc.querySelector('.btn-add-doc');
     btnAddDoc?.addEventListener('click', () => {
-      addDocBar.style.display = '';
-      btnAddDoc.style.display = 'none';
+      addDocBar.classList.remove('hidden');
+      btnAddDoc.classList.add('hidden');
       addDocBar.querySelector('.doc-title-inp').focus();
     });
     acc.querySelector('.btn-doc-cancel')?.addEventListener('click', () => {
-      addDocBar.style.display = 'none';
-      btnAddDoc.style.display = '';
+      addDocBar.classList.add('hidden');
+      btnAddDoc.classList.remove('hidden');
       addDocBar.querySelector('.doc-title-inp').value = '';
       addDocBar.querySelector('.doc-url-inp').value = '';
       addDocBar.querySelector('.doc-file-inp').value = '';
@@ -410,8 +334,8 @@
         if (!res.ok) { errEl.textContent = 'Error saving'; return; }
         const d = await res.json();
         appendDocRow(acc, d);
-        addDocBar.style.display = 'none';
-        btnAddDoc.style.display = '';
+        addDocBar.classList.add('hidden');
+        btnAddDoc.classList.remove('hidden');
         titleInp.value = '';
         urlInp.value   = '';
         fileInp.value  = '';
@@ -430,8 +354,8 @@
   const crList      = document.getElementById('cr-list');
 
   crAddBtn?.addEventListener('click', () => {
-    crAddBar.style.display = '';
-    crAddBtn.style.display = 'none';
+    crAddBar.classList.remove('hidden');
+    crAddBtn.classList.add('hidden');
     document.getElementById('cr-add-code').focus();
   });
   function resetCredAddBar() {
@@ -444,8 +368,8 @@
   }
 
   crAddCancel?.addEventListener('click', () => {
-    crAddBar.style.display = 'none';
-    crAddBtn.style.display = '';
+    crAddBar.classList.add('hidden');
+    crAddBtn.classList.remove('hidden');
     resetCredAddBar();
   });
   crAddSave?.addEventListener('click', async () => {
@@ -470,8 +394,8 @@
       const acc = buildCredAccordion(cred);
       crList.appendChild(acc);
       attachCredHandlers(acc);
-      crAddBar.style.display = 'none';
-      crAddBtn.style.display = '';
+      crAddBar.classList.add('hidden');
+      crAddBtn.classList.remove('hidden');
       resetCredAddBar();
     } catch { crAddErr.textContent = 'Network error'; }
   });
@@ -546,12 +470,12 @@
         <div class="vcc-docs-section">
           <div class="vcc-docs-hdr"><span class="vcc-section-label">Evidence Documents</span></div>
           <div class="vcc-doc-list"></div>
-          <div class="vcc-add-doc-bar" style="display:none">
+          <div class="vcc-add-doc-bar hidden">
             <input type="text" class="vcc-input doc-title-inp" placeholder="Document name (e.g. AWS Certified Developer certificate)" maxlength="200">
-            <div style="display:flex;align-items:center;gap:8px;margin-top:5px">
+            <div class="doc-url-row">
               <input type="file" class="doc-file-inp">
-              <span style="color:#888;font-size:0.85em">or</span>
-              <input type="url" class="vcc-input doc-url-inp" placeholder="External URL (e.g. Credly badge link)" maxlength="2048" style="flex:1">
+              <span class="doc-url-sep">or</span>
+              <input type="url" class="vcc-input doc-url-inp" placeholder="External URL (e.g. Credly badge link)" maxlength="2048">
             </div>
             <div class="vcc-add-doc-actions">
               <button type="button" class="vcc-btn-sm btn-doc-save">Add</button>
