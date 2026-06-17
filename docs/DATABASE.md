@@ -1,8 +1,8 @@
-# A National VET Information Management System (NVIMS), Student Management System (SMS) — Database Design v0.45, 2026-06-16
+# A National VET Information Management System (NVIMS), Student Management System (SMS) — Database Design v0.46, 2026-06-17
 
 PostgreSQL schema for a national, AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.45` (2026-06-16): its entities, relationships, business rules, and the
+describes the design of `v0.46` (2026-06-17): its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -56,6 +56,17 @@ mapping to the AVETMISS NAT reporting files.
 ---
 
 ## Changelog
+
+### v0.46 — 2026-06-17
+
+1. **`classes` table — four new nullable columns added.**
+   - `delivery_mode varchar(20) NULL` — the delivery mode used for this class (e.g. face-to-face, online, blended).
+   - `delivery_activity varchar(50) NULL` — the specific delivery activity type within the mode.
+   - `attendance_method varchar(50) NULL` — the method used to record or validate attendance.
+   - `tas_version varchar(50) NULL` — the Training and Assessment Strategy (TAS) document version this class is delivered under.
+
+2. **`class_subjects` table — one new nullable column added.**
+   - `assessment_tool_version varchar(50) NULL` — the version of the assessment tool used for this subject within this class.
 
 ### v0.45 — 2026-06-16
 
@@ -1010,7 +1021,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 
 ## Data dictionary
 
-Every table and column, generated from `v0.41`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
+Every table and column, generated from `v0.46`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
 
 ### Identity & reference
 
@@ -2200,6 +2211,10 @@ A delivery instance of a program within an academic period at a delivery locatio
 | `delivery_location_id` | `bigint` | no |  | FK&nbsp;&rarr;&nbsp;delivery_locations |
 | `enrolment_cap` | `integer` | yes |  |  |
 | `department_id` | `bigint` | yes |  | FK&nbsp;&rarr;&nbsp;departments |
+| `delivery_mode` | `varchar(20)` | yes |  |  |
+| `delivery_activity` | `varchar(50)` | yes |  |  |
+| `attendance_method` | `varchar(50)` | yes |  |  |
+| `tas_version` | `varchar(50)` | yes |  |  |
 | `created_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 | `updated_at` | `timestamp with time zone` | yes | `CURRENT_TIMESTAMP` |  |
 
@@ -2215,13 +2230,14 @@ A delivery instance of a program within an academic period at a delivery locatio
 
 #### `class_subjects`
 
-Which subjects a class delivers. A class may deliver one or more subjects simultaneously; a subject may be taught across multiple classes. `subject_label` is a display-override for the subject name in the context of this class. References `classes` and `subjects`. Used by the attendance register to list subjects students are attending.
+Which subjects a class delivers. A class may deliver one or more subjects simultaneously; a subject may be taught across multiple classes. `subject_label` is a display-override for the subject name in the context of this class. `assessment_tool_version` records the version of the assessment tool used for this subject within this class. References `classes` and `subjects`. Used by the attendance register to list subjects students are attending.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
 | `class_id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;classes |
 | `subject_id` | `bigint` | no |  | PK, FK&nbsp;&rarr;&nbsp;subjects |
 | `subject_label` | `varchar(100)` | no |  |  |
+| `assessment_tool_version` | `varchar(50)` | yes |  |  |
 
 *Constraints:*
 
