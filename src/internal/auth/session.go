@@ -78,6 +78,7 @@ func (s *Sessions) Middleware(next http.Handler) http.Handler {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 		ctx := context.WithValue(r.Context(), ctxKey{}, entry.User)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

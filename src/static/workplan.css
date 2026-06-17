@@ -167,6 +167,8 @@
 .td-list-code { font-weight:600; color:#1e293b; white-space:nowrap; }
 .td-list-program { font-weight:600; color:#334155; display:block; }
 .td-list-intake { font-size:12px; color:#64748b; display:block; }
+.td-list-teachers { font-size:12px; color:#334155; }
+.td-list-period   { font-size:12px; color:#64748b; white-space:nowrap; }
 .td-list-subjects { font-size:12px; color:#475569; }
 .td-list-hours { text-align:right; font-weight:600; color:#0f766e; white-space:nowrap; }
 .td-list-empty { color:#cbd5e1; }

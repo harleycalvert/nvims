@@ -155,9 +155,9 @@
           <thead>
             <tr>
               <th class="td-left">Date</th>
-              <th class="td-left">Time</th>
-              <th class="td-left">Class</th>
-              <th class="td-left">Program / Intake</th>
+              <th class="td-left">Teacher</th>
+              <th class="td-left">Academic Period</th>
+              <th class="td-left">Intake</th>
               <th class="td-left">Subjects</th>
               <th class="td-left">Delivery Mode</th>
               <th>Hours</th>
@@ -167,13 +167,13 @@
             {{range .Timetable}}
             <tr>
               <td class="td-list-date">{{.SessionDate.Format "02 Jan 2006"}}</td>
-              <td class="td-list-time">{{.StartTime}}–{{.EndTime}}</td>
-              <td class="td-list-code">{{.ClassCode}}</td>
+              <td class="td-list-teachers">{{if .Teachers}}{{.Teachers}}{{else}}<span class="td-list-empty">—</span>{{end}}</td>
+              <td class="td-list-period">{{$.PeriodName}}</td>
               <td>
                 {{if .ProgramCode}}<span class="td-list-program">{{.ProgramCode}}</span>{{end}}
                 {{if .IntakeGroupName}}<span class="td-list-intake">{{.IntakeGroupName}}</span>{{end}}
               </td>
-              <td class="td-list-subjects">{{.Subjects}}</td>
+              <td class="td-list-subjects">{{if .Subjects}}{{.Subjects}}{{else}}<span class="td-list-empty">—</span>{{end}}</td>
               <td>{{if .DeliveryMode}}{{.DeliveryMode}}{{else}}<span class="td-list-empty">—</span>{{end}}</td>
               <td class="td-list-hours">{{printf "%.1f" .Hours}}</td>
             </tr>

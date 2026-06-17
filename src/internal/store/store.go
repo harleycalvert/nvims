@@ -4631,8 +4631,9 @@ type TimetableListRow struct {
 	ProgramCode     string
 	IntakeGroupName string
 	DeliveryMode    string
-	Subjects        string  // comma-separated subject codes
-	Hours           float64 // duration of this session
+	Subjects        string  // · separated subject codes
+	Hours           float64 // duration of this session in hours
+	Teachers        string  // · separated teacher names
 }
 
 // GetTeacherSessionList returns every individual timetabled session for a teacher
@@ -4643,22 +4644,30 @@ func (s *Store) GetTeacherSessionList(ctx context.Context, teacherID, periodID i
 		       TO_CHAR(cs.start_time, 'HH24:MI'),
 		       TO_CHAR(cs.end_time,   'HH24:MI'),
 		       c.class_code,
-		       COALESCE(p.program_code, ''),
+		       COALESCE(prog.program_code, ''),
 		       COALESCE(ig.group_name, ''),
 		       COALESCE(c.delivery_mode, ''),
-		       COALESCE(string_agg(DISTINCT s.subject_code ORDER BY s.subject_code), ''),
-		       EXTRACT(EPOCH FROM (cs.end_time - cs.start_time)) / 3600.0 AS hours
+		       (SELECT COALESCE(string_agg(subj.subject_code, ' · ' ORDER BY subj.subject_code), '')
+		        FROM public.class_subjects csj
+		        JOIN public.subjects subj ON subj.id = csj.subject_id
+		        WHERE csj.class_id = c.id),
+		       EXTRACT(EPOCH FROM (cs.end_time - cs.start_time)) / 3600.0,
+		       COALESCE(string_agg(
+		           p2.first_given_name || ' ' || p2.family_name,
+		           ' · ' ORDER BY p2.family_name, p2.first_given_name
+		       ), '')
 		FROM public.class_sessions cs
-		JOIN public.session_teachers st  ON st.session_id = cs.id AND st.teacher_id = $1
-		JOIN public.classes c            ON c.id = cs.class_id
-		LEFT JOIN public.class_subjects csub ON csub.class_id = c.id
-		LEFT JOIN public.subjects s          ON s.id = csub.subject_id
-		LEFT JOIN public.intake_groups ig    ON ig.id = c.intake_group_id
-		LEFT JOIN public.program_intakes pi  ON pi.id = ig.intake_id
-		LEFT JOIN public.programs p          ON p.id  = pi.program_id
+		JOIN public.session_teachers st    ON st.session_id = cs.id AND st.teacher_id = $1
+		JOIN public.classes c              ON c.id = cs.class_id
+		LEFT JOIN public.intake_groups ig  ON ig.id = c.intake_group_id
+		LEFT JOIN public.program_intakes pi ON pi.id = ig.intake_id
+		LEFT JOIN public.programs prog     ON prog.id = pi.program_id
+		LEFT JOIN public.session_teachers st2 ON st2.session_id = cs.id
+		LEFT JOIN public.teachers t2       ON t2.id = st2.teacher_id
+		LEFT JOIN public.people p2         ON p2.id = t2.id
 		WHERE c.academic_period_id = $2 AND NOT cs.cancelled
-		GROUP BY cs.id, cs.session_date, cs.start_time, cs.end_time,
-		         c.class_code, p.program_code, ig.group_name, c.delivery_mode
+		GROUP BY cs.id, c.id, cs.session_date, cs.start_time, cs.end_time,
+		         c.class_code, prog.program_code, ig.group_name, c.delivery_mode
 		ORDER BY cs.session_date, cs.start_time, c.class_code
 	`, teacherID, periodID)
 	if err != nil {
@@ -4670,7 +4679,7 @@ func (s *Store) GetTeacherSessionList(ctx context.Context, teacherID, periodID i
 		var r TimetableListRow
 		if err := rows.Scan(&r.SessionDate, &r.StartTime, &r.EndTime,
 			&r.ClassCode, &r.ProgramCode, &r.IntakeGroupName,
-			&r.DeliveryMode, &r.Subjects, &r.Hours); err != nil {
+			&r.DeliveryMode, &r.Subjects, &r.Hours, &r.Teachers); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
