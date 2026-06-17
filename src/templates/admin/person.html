@@ -191,19 +191,6 @@
           </div>
         </div>
 
-        <div class="role-card{{if .Person.IsTeacher}} role-card-active{{end}}">
-          <div class="role-card-header role-teacher-header">Teacher</div>
-          <div class="role-card-body">
-            {{if .Person.IsTeacher}}
-              <p class="role-number">{{.Person.StaffNumber}}</p>
-              <a class="btn-row-action" href="/admin/people/{{.Form.ID}}/role?type=teacher">Edit</a>
-            {{else}}
-              <p class="role-none">Not assigned</p>
-              <a class="btn-primary" href="/admin/people/{{.Form.ID}}/role?type=teacher">Add Teacher Role</a>
-            {{end}}
-          </div>
-        </div>
-
         <div class="role-card{{if .Person.IsStaff}} role-card-active{{end}}">
           <div class="role-card-header role-staff-header">Staff</div>
           <div class="role-card-body">

@@ -310,6 +310,32 @@ func (s *Store) UpdateLastLogin(ctx context.Context, userID int64) {
 	_, _ = s.pool.Exec(ctx, `UPDATE public.app_users SET last_login_at = NOW() WHERE id = $1`, userID)
 }
 
+// BootstrapAdmin creates the first admin user if no users exist yet.
+// It is a no-op when any app_users row already exists.
+func (s *Store) BootstrapAdmin(ctx context.Context, username, passwordHash string) (created bool, err error) {
+	var count int
+	if err = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM public.app_users`).Scan(&count); err != nil {
+		return false, err
+	}
+	if count > 0 {
+		return false, nil
+	}
+	var id int64
+	err = s.pool.QueryRow(ctx, `
+		INSERT INTO public.app_users (username, password_hash, is_active)
+		VALUES ($1, $2, true)
+		RETURNING id
+	`, username, passwordHash).Scan(&id)
+	if err != nil {
+		return false, err
+	}
+	_, err = s.pool.Exec(ctx, `
+		INSERT INTO public.app_user_roles (user_id, role, granted_at)
+		VALUES ($1, 'Admin', NOW())
+	`, id)
+	return err == nil, err
+}
+
 // ── Results ────────────────────────────────────────────────────────────────
 
 type ResultCol struct {
@@ -621,10 +647,18 @@ func (s *Store) ListPeople(ctx context.Context, search, role string, limit int) 
 	switch role {
 	case "Student":
 		conds = append(conds, "st.id IS NOT NULL")
-	case "Teacher":
-		conds = append(conds, "t.id IS NOT NULL")
 	case "Staff":
 		conds = append(conds, "sf.id IS NOT NULL")
+	case "":
+		// no filter
+	default:
+		// org role filter — match by role_type name, current assignments only
+		args = append(args, role)
+		conds = append(conds, fmt.Sprintf(`EXISTS (
+			SELECT 1 FROM public.staff_roles sr
+			JOIN public.role_types rt ON rt.id = sr.role_type_id
+			WHERE sr.staff_id = p.id AND rt.role_name = $%d AND sr.ended_on IS NULL
+		)`, len(args)))
 	}
 
 	q := sel
@@ -4284,6 +4318,12 @@ type RoleType struct {
 	IsSystem    bool
 	Description string
 	SortOrder   int
+}
+
+func (s *Store) GetRoleTypeName(ctx context.Context, id int64) (string, error) {
+	var name string
+	err := s.pool.QueryRow(ctx, `SELECT role_name FROM public.role_types WHERE id = $1`, id).Scan(&name)
+	return name, err
 }
 
 func (s *Store) ListRoleTypes(ctx context.Context) ([]RoleType, error) {

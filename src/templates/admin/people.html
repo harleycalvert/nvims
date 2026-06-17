@@ -33,9 +33,17 @@
         <input id="q" type="search" name="q" value="{{.Search}}" placeholder="Search by name or ID…" autocomplete="off">
         <select id="role-filter" name="role" class="search-role-select">
           <option value=""{{if eq .Role ""}} selected{{end}}>All roles</option>
-          <option value="Student"{{if eq .Role "Student"}} selected{{end}}>Student</option>
-          <option value="Teacher"{{if eq .Role "Teacher"}} selected{{end}}>Teacher</option>
-          <option value="Staff"{{if eq .Role "Staff"}} selected{{end}}>Staff</option>
+          <optgroup label="System">
+            <option value="Student"{{if eq .Role "Student"}} selected{{end}}>Student</option>
+            <option value="Staff"{{if eq .Role "Staff"}} selected{{end}}>Staff</option>
+          </optgroup>
+          {{if .RoleTypes}}
+          <optgroup label="Organisational">
+            {{range .RoleTypes}}
+            <option value="{{.RoleName}}"{{if eq $.Role .RoleName}} selected{{end}}>{{.RoleName}}</option>
+            {{end}}
+          </optgroup>
+          {{end}}
         </select>
         <select id="limit-select" name="limit" class="search-role-select">
           <option value="20"{{if eq .Limit 20}} selected{{end}}>20</option>

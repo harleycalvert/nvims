@@ -103,7 +103,7 @@
           <div class="form-group fg-160">
             <label>FTE <span class="form-hint">Full-Time Equivalent</span></label>
             <input type="number" name="fte" id="fte-input"
-                   min="0.01" max="0.99" step="0.01"
+                   min="0.1" max="0.9" step="0.1"
                    value="{{printf "%.2f" .Role.FTE}}"
                    placeholder="—">
           </div>
@@ -140,8 +140,8 @@
       fteInput.readOnly = false;
       fteInput.classList.remove('input-readonly');
       /* only suggest default if value was auto-set or blank */
-      if (!fteInput.value || fteInput.value === '0.00' || fteInput.value === '1.00') {
-        fteInput.value = '0.50';
+      if (!fteInput.value || fteInput.value === '0.0' || fteInput.value === '1.0') {
+        fteInput.value = '0.5';
       }
       fteInput.select();
     } else {

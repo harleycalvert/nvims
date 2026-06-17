@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/crypto/bcrypt"
 
 	"nvims/internal/auth"
 	"nvims/internal/handler"
@@ -47,8 +48,25 @@ func main() {
 		log.Fatalf("storage bucket: %v", err)
 	}
 
-	sessions := auth.NewSessions()
 	st := store.New(pool)
+
+	if adminUser := os.Getenv("BOOTSTRAP_ADMIN_USER"); adminUser != "" {
+		if adminPass := os.Getenv("BOOTSTRAP_ADMIN_PASS"); adminPass != "" {
+			hash, err := bcrypt.GenerateFromPassword([]byte(adminPass), bcrypt.DefaultCost)
+			if err != nil {
+				log.Fatalf("bootstrap: hash password: %v", err)
+			}
+			created, err := st.BootstrapAdmin(context.Background(), adminUser, string(hash))
+			if err != nil {
+				log.Fatalf("bootstrap: %v", err)
+			}
+			if created {
+				log.Printf("bootstrap: created admin user %q", adminUser)
+			}
+		}
+	}
+
+	sessions := auth.NewSessions()
 	h := handler.New(st, sessions, stor)
 
 	protect := func(fn http.HandlerFunc) http.HandlerFunc {

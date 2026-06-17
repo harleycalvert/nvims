@@ -902,10 +902,18 @@ func (h *Handler) AdminMenu(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) AdminPeople(w http.ResponseWriter, r *http.Request) {
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
+	roleTypes, _ := h.store.ListRoleTypes(r.Context())
+
+	// build allowed role filter values: system roles + all org role names
+	allowed := map[string]bool{"Student": true, "Staff": true}
+	for _, rt := range roleTypes {
+		allowed[rt.RoleName] = true
+	}
 	role := r.URL.Query().Get("role")
-	if !map[string]bool{"Student": true, "Teacher": true, "Staff": true}[role] {
+	if !allowed[role] {
 		role = ""
 	}
+
 	limit := 50
 	switch r.URL.Query().Get("limit") {
 	case "20":
@@ -926,6 +934,7 @@ func (h *Handler) AdminPeople(w http.ResponseWriter, r *http.Request) {
 		"Limit":     limit,
 		"Search":    search,
 		"Role":      role,
+		"RoleTypes": roleTypes,
 		"User":      user,
 	})
 }
@@ -2279,11 +2288,21 @@ func (h *Handler) AdminOrgRoleAdd(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid start date"}`, http.StatusBadRequest)
 		return
 	}
+	roleName, err := h.store.GetRoleTypeName(r.Context(), roleTypeID)
+	if err != nil {
+		http.Error(w, `{"error":"invalid role type"}`, http.StatusBadRequest)
+		return
+	}
 	id, err := h.store.AddStaffOrgRole(r.Context(), personID, roleTypeID, startedOn)
 	if err != nil {
 		log.Printf("AddStaffOrgRole(%d): %v", personID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
+	}
+	if roleName == "Teacher" {
+		if err := h.store.AddTeacherRole(r.Context(), personID); err != nil {
+			log.Printf("AddTeacherRole(%d) via org role: %v", personID, err)
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprintf(w, `{"ok":true,"id":%d}`, id)
