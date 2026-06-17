@@ -1,6 +1,10 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.45, 2026-06-16
+-- AVETMISS-compliant SMS schema  --  version 0.46, 2026-06-17
 -- =========================================================================
+-- Changes from v0.46:
+--   1.  classes: added delivery_mode varchar(20), delivery_activity varchar(50),
+--       attendance_method varchar(50), tas_version varchar(50) (all NULL).
+--   2.  class_subjects: added assessment_tool_version varchar(50) NULL.
 -- Changes from v0.45:
 --   1.  role_types: lookup table for organisational staff roles
 --       (Teacher, Education Manager, Head of Department, …).
@@ -3185,5 +3189,16 @@ DO $$ BEGIN
         NULL;
     END IF;
 END $$;
+
+-- ── v0.46 — Teaching Delivery fields ─────────────────────────────────────────
+
+ALTER TABLE public.classes
+    ADD COLUMN IF NOT EXISTS delivery_mode     varchar(20)  NULL,
+    ADD COLUMN IF NOT EXISTS delivery_activity varchar(50)  NULL,
+    ADD COLUMN IF NOT EXISTS attendance_method varchar(50)  NULL,
+    ADD COLUMN IF NOT EXISTS tas_version       varchar(50)  NULL;
+
+ALTER TABLE public.class_subjects
+    ADD COLUMN IF NOT EXISTS assessment_tool_version varchar(50) NULL;
 
 COMMIT;

@@ -4442,3 +4442,179 @@ func (s *Store) DeleteStaffOrgRole(ctx context.Context, id, staffID int64) error
 	`, id, staffID)
 	return err
 }
+
+// ── Teaching Delivery ─────────────────────────────────────────────────────────
+
+type TDSubject struct {
+	SubjectID             int64
+	SubjectCode           string
+	SubjectName           string
+	NominalHours          *int
+	TASVersion            string
+	AssessmentToolVersion string
+}
+
+type TDTeacher struct {
+	Name  string
+	Hours float64
+	Role  string
+}
+
+type TDClass struct {
+	ClassID          int64
+	ClassCode        string
+	ProgramCode      string
+	LocationName     string
+	DeliveryMode     string
+	DeliveryActivity string
+	AttendanceMethod string
+	TASVersion       string
+	ScheduledHours   float64
+	DeliveryWeeks    int
+	Subjects         []TDSubject
+	Teachers         []TDTeacher
+}
+
+// GetTeachingDelivery returns all classes a teacher is allocated to within a period,
+// with computed hours, delivery weeks, subjects, and co-teachers.
+func (s *Store) GetTeachingDelivery(ctx context.Context, teacherID, periodID int64) ([]TDClass, error) {
+	// 1. Classes the teacher has at least one session in during this period.
+	classRows, err := s.pool.Query(ctx, `
+		SELECT c.id, c.class_code,
+		       COALESCE(p.program_code, ''),
+		       COALESCE(dl.name, ''),
+		       COALESCE(c.delivery_mode, ''),
+		       COALESCE(c.delivery_activity, ''),
+		       COALESCE(c.attendance_method, ''),
+		       COALESCE(c.tas_version, ''),
+		       COALESCE(SUM(
+		           EXTRACT(EPOCH FROM (cs.end_time - cs.start_time)) / 3600.0
+		       ) FILTER (WHERE NOT cs.cancelled), 0) AS scheduled_hours,
+		       COUNT(DISTINCT DATE_TRUNC('week', cs.session_date))
+		           FILTER (WHERE NOT cs.cancelled)   AS delivery_weeks
+		FROM public.classes c
+		JOIN public.class_sessions cs    ON cs.class_id = c.id
+		JOIN public.session_teachers st  ON st.session_id = cs.id AND st.teacher_id = $1
+		LEFT JOIN public.delivery_locations dl ON dl.id = c.delivery_location_id
+		LEFT JOIN public.intake_groups ig   ON ig.id = c.intake_group_id
+		LEFT JOIN public.program_intakes pi ON pi.id = ig.intake_id
+		LEFT JOIN public.programs p         ON p.id  = pi.program_id
+		WHERE c.academic_period_id = $2
+		GROUP BY c.id, c.class_code, p.program_code, dl.name,
+		         c.delivery_mode, c.delivery_activity, c.attendance_method, c.tas_version
+		ORDER BY c.class_code
+	`, teacherID, periodID)
+	if err != nil {
+		return nil, err
+	}
+	defer classRows.Close()
+
+	var classes []TDClass
+	var classIDs []int64
+	for classRows.Next() {
+		var cl TDClass
+		if err := classRows.Scan(&cl.ClassID, &cl.ClassCode, &cl.ProgramCode,
+			&cl.LocationName, &cl.DeliveryMode, &cl.DeliveryActivity,
+			&cl.AttendanceMethod, &cl.TASVersion,
+			&cl.ScheduledHours, &cl.DeliveryWeeks); err != nil {
+			return nil, err
+		}
+		classes = append(classes, cl)
+		classIDs = append(classIDs, cl.ClassID)
+	}
+	if err := classRows.Err(); err != nil {
+		return nil, err
+	}
+	if len(classes) == 0 {
+		return nil, nil
+	}
+
+	// 2. Subjects for each class.
+	subjectRows, err := s.pool.Query(ctx, `
+		SELECT cs.class_id, s.id, s.subject_code, s.subject_name,
+		       s.nominal_hours,
+		       COALESCE(cs.assessment_tool_version, '')
+		FROM public.class_subjects cs
+		JOIN public.subjects s ON s.id = cs.subject_id
+		WHERE cs.class_id = ANY($1)
+		ORDER BY cs.class_id, s.subject_code
+	`, classIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer subjectRows.Close()
+	subjectMap := map[int64][]TDSubject{}
+	for subjectRows.Next() {
+		var classID int64
+		var sub TDSubject
+		if err := subjectRows.Scan(&classID, &sub.SubjectID, &sub.SubjectCode, &sub.SubjectName, &sub.NominalHours, &sub.AssessmentToolVersion); err != nil {
+			return nil, err
+		}
+		subjectMap[classID] = append(subjectMap[classID], sub)
+	}
+	if err := subjectRows.Err(); err != nil {
+		return nil, err
+	}
+
+	// 3. All teachers per class (hours in this period), from session_teachers.
+	teacherRows, err := s.pool.Query(ctx, `
+		SELECT c.id AS class_id,
+		       COALESCE(p.preferred_name, p.first_given_name) || ' ' || p.family_name AS full_name,
+		       st.role,
+		       COALESCE(SUM(
+		           EXTRACT(EPOCH FROM (cs.end_time - cs.start_time)) / 3600.0
+		       ) FILTER (WHERE NOT cs.cancelled), 0) AS hours
+		FROM public.classes c
+		JOIN public.class_sessions cs   ON cs.class_id = c.id
+		JOIN public.session_teachers st ON st.session_id = cs.id
+		JOIN public.teachers t          ON t.id = st.teacher_id
+		JOIN public.staff sf            ON sf.id = t.id
+		JOIN public.people p            ON p.id  = sf.id
+		WHERE c.id = ANY($1) AND c.academic_period_id = $2
+		GROUP BY c.id, full_name, st.role
+		ORDER BY c.id, st.role, full_name
+	`, classIDs, periodID)
+	if err != nil {
+		return nil, err
+	}
+	defer teacherRows.Close()
+	teacherMap := map[int64][]TDTeacher{}
+	for teacherRows.Next() {
+		var classID int64
+		var t TDTeacher
+		if err := teacherRows.Scan(&classID, &t.Name, &t.Role, &t.Hours); err != nil {
+			return nil, err
+		}
+		teacherMap[classID] = append(teacherMap[classID], t)
+	}
+	if err := teacherRows.Err(); err != nil {
+		return nil, err
+	}
+
+	for i := range classes {
+		classes[i].Subjects = subjectMap[classes[i].ClassID]
+		classes[i].Teachers = teacherMap[classes[i].ClassID]
+	}
+	return classes, nil
+}
+
+func (s *Store) UpdateClassDeliveryDetails(ctx context.Context, classID int64, mode, activity, attendanceMethod, tasVersion string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.classes
+		SET delivery_mode     = NULLIF($2, ''),
+		    delivery_activity = NULLIF($3, ''),
+		    attendance_method = NULLIF($4, ''),
+		    tas_version       = NULLIF($5, '')
+		WHERE id = $1
+	`, classID, mode, activity, attendanceMethod, tasVersion)
+	return err
+}
+
+func (s *Store) UpdateSubjectAssessmentToolVersion(ctx context.Context, classID, subjectID int64, version string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.class_subjects
+		SET assessment_tool_version = NULLIF($3, '')
+		WHERE class_id = $1 AND subject_id = $2
+	`, classID, subjectID, version)
+	return err
+}

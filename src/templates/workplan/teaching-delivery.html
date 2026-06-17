@@ -1,0 +1,152 @@
+{{define "workplan-teaching-delivery"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS — Teaching Delivery</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/sidebar.css">
+  <link rel="stylesheet" href="/static/workplan.css">
+  <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
+</head>
+<body>
+  {{template "sidebar" .}}
+  <div class="page-wrap">
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/workplan">Workplan</a>
+        <h1>Teaching Delivery</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+
+  <main>
+    <form class="td-period-bar" method="GET" action="/workplan/teaching-delivery">
+      <label for="period_id" class="td-period-label">Academic Period</label>
+      <select id="period_id" name="period_id" class="td-period-select" onchange="this.form.submit()">
+        <option value="">— select period —</option>
+        {{range .Periods}}
+        <option value="{{.ID}}"{{if eq .ID $.PeriodID}} selected{{end}}>{{.PeriodCode}} — {{.PeriodName}} {{.Year}}</option>
+        {{end}}
+      </select>
+    </form>
+
+    {{if .NoPersonLinked}}
+    <p class="td-empty">This account is not linked to a person record — Teaching Delivery is not available.</p>
+    {{else if and .PeriodID (eq (len .Classes) 0)}}
+    <p class="td-empty">No classes found for this period.</p>
+    {{end}}
+
+    {{range .Classes}}
+    {{$classID := .ClassID}}
+    {{$scheduledHours := .ScheduledHours}}
+    <div class="td-card" data-class-id="{{$classID}}">
+      <div class="td-card-head">
+        <span class="td-class-code">{{.ClassCode}}</span>
+        {{if .ProgramCode}}<span class="td-program-code">{{.ProgramCode}}</span>{{end}}
+        {{if .LocationName}}<span class="td-location">{{.LocationName}}</span>{{end}}
+        <span class="td-hours">{{printf "%.1f" .ScheduledHours}} hrs</span>
+        <span class="td-weeks">{{.DeliveryWeeks}} wks</span>
+      </div>
+
+      <div class="td-fields">
+        <div class="td-field-row">
+          <label class="td-label">Delivery Mode</label>
+          <input class="td-input" name="delivery_mode" value="{{.DeliveryMode}}"
+                 data-class="{{$classID}}" data-field="delivery_mode">
+        </div>
+        <div class="td-field-row">
+          <label class="td-label">Delivery Activity</label>
+          <input class="td-input" name="delivery_activity" value="{{.DeliveryActivity}}"
+                 data-class="{{$classID}}" data-field="delivery_activity">
+        </div>
+        <div class="td-field-row">
+          <label class="td-label">Attendance Method</label>
+          <input class="td-input" name="attendance_method" value="{{.AttendanceMethod}}"
+                 data-class="{{$classID}}" data-field="attendance_method">
+        </div>
+        <div class="td-field-row">
+          <label class="td-label">TAS Version</label>
+          <input class="td-input" name="tas_version" value="{{.TASVersion}}"
+                 data-class="{{$classID}}" data-field="tas_version">
+        </div>
+      </div>
+
+      {{if .Subjects}}
+      <div class="td-subjects">
+        <div class="td-subjects-head">Subjects</div>
+        {{range .Subjects}}
+        <div class="td-subject-row">
+          <span class="td-subject-code">{{.SubjectCode}}</span>
+          <span class="td-subject-title">{{.SubjectName}}</span>
+          <span class="td-subject-hours">
+            <span class="td-hours-label">Nominal hrs</span>
+            <span class="td-hours-val">{{if .NominalHours}}{{.NominalHours}}{{else}}—{{end}}</span>
+            <span class="td-hours-label">Scheduled hrs</span>
+            <span class="td-hours-val">{{printf "%.1f" $scheduledHours}}</span>
+          </span>
+          <label class="td-label td-label-inline">Assessment Tool Version</label>
+          <input class="td-input td-input-sm" value="{{.AssessmentToolVersion}}"
+                 data-class="{{$classID}}" data-subject="{{.SubjectID}}" data-field="assessment_tool_version">
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+
+      {{if .Teachers}}
+      <div class="td-teachers">
+        <div class="td-teachers-head">Teachers</div>
+        {{range .Teachers}}
+        <div class="td-teacher-row">
+          <span class="td-teacher-name">{{.Name}}</span>
+          <span class="td-teacher-role">{{.Role}}</span>
+          <span class="td-teacher-hours">{{printf "%.1f" .Hours}} hrs</span>
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+    </div>
+    {{end}}
+  </main>
+  </div>
+
+<script>
+(function() {
+  // Collect class-level fields and save on blur
+  document.querySelectorAll('.td-input[data-class][data-field]').forEach(function(inp) {
+    if (inp.dataset.subject) return; // subject inputs handled separately
+    inp.addEventListener('blur', function() {
+      var classID = inp.dataset.class;
+      var card = document.querySelector('.td-card[data-class-id="' + classID + '"]');
+      var fields = ['delivery_mode','delivery_activity','attendance_method','tas_version'];
+      var body = new URLSearchParams();
+      fields.forEach(function(f) {
+        var el = card.querySelector('[data-field="' + f + '"]');
+        if (el) body.append(f, el.value);
+      });
+      fetch('/workplan/td/class/' + classID, {method:'POST', body: body})
+        .then(function(r){ if (!r.ok) console.error('save class failed', r.status); });
+    });
+  });
+
+  // Subject assessment tool version — save on blur
+  document.querySelectorAll('.td-input[data-subject]').forEach(function(inp) {
+    inp.addEventListener('blur', function() {
+      var classID = inp.dataset.class;
+      var subjectID = inp.dataset.subject;
+      var body = new URLSearchParams();
+      body.append('assessment_tool_version', inp.value);
+      fetch('/workplan/td/class/' + classID + '/subject/' + subjectID, {method:'POST', body: body})
+        .then(function(r){ if (!r.ok) console.error('save subject failed', r.status); });
+    });
+  });
+})();
+</script>
+</body>
+</html>{{end}}

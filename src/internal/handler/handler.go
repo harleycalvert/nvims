@@ -161,6 +161,7 @@ func New(st *store.Store, sessions *auth.Sessions, stor *storage.Client) *Handle
 			"templates/partials/admin-nav.html",
 			"templates/workplan/menu.html",
 			"templates/workplan/availability.html",
+			"templates/workplan/teaching-delivery.html",
 			"templates/vcc/menu.html",
 			"templates/vcc/document-library.html",
 			"templates/vcc/professional-evidence.html",
@@ -2819,6 +2820,86 @@ func (h *Handler) WorkplanLeaveCancel(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, `{"ok":true}`)
+}
+
+// ── Workplan / Teaching Delivery ─────────────────────────────────────────────
+
+func (h *Handler) WorkplanTeachingDelivery(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	periods, err := h.store.ListPeriods(r.Context())
+	if err != nil {
+		log.Printf("ListPeriods: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	data := map[string]any{
+		"User":    user,
+		"Periods": periods,
+	}
+	periodID, _ := strconv.ParseInt(r.URL.Query().Get("period_id"), 10, 64)
+	data["PeriodID"] = periodID
+	log.Printf("TeachingDelivery: user=%q personID=%d periodID=%d", user.Username, user.PersonID, periodID)
+	if user.PersonID == 0 {
+		data["NoPersonLinked"] = true
+	} else if periodID != 0 {
+		classes, err := h.store.GetTeachingDelivery(r.Context(), user.PersonID, periodID)
+		if err != nil {
+			log.Printf("GetTeachingDelivery(%d,%d): %v", user.PersonID, periodID, err)
+		}
+		log.Printf("TeachingDelivery: got %d classes", len(classes))
+		data["Classes"] = classes
+	}
+	h.render(w, "workplan-teaching-delivery", data)
+}
+
+func (h *Handler) WorkplanTDClassSave(w http.ResponseWriter, r *http.Request) {
+	classID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	err = h.store.UpdateClassDeliveryDetails(r.Context(), classID,
+		r.FormValue("delivery_mode"),
+		r.FormValue("delivery_activity"),
+		r.FormValue("attendance_method"),
+		r.FormValue("tas_version"),
+	)
+	if err != nil {
+		log.Printf("UpdateClassDeliveryDetails(%d): %v", classID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) WorkplanTDSubjectSave(w http.ResponseWriter, r *http.Request) {
+	classID, err := strconv.ParseInt(r.PathValue("class_id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad class id"}`, http.StatusBadRequest)
+		return
+	}
+	subjectID, err := strconv.ParseInt(r.PathValue("subject_id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad subject id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.UpdateSubjectAssessmentToolVersion(r.Context(), classID, subjectID,
+		r.FormValue("assessment_tool_version")); err != nil {
+		log.Printf("UpdateSubjectAssessmentToolVersion(%d,%d): %v", classID, subjectID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
 // VCCMenu — landing page with section tiles.
