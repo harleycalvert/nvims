@@ -44,6 +44,7 @@
             <th title="Credit points (HE)">Credits</th>
             <th title="Module flag">Mod</th>
             <th title="VET flag">VET</th>
+            <th title="Assessment Tool Version">ATV</th>
             <th></th>
           </tr>
         </thead>
@@ -67,6 +68,8 @@
               </select>
             </td>
             <td class="pp-flag"><input type="checkbox" name="vet_flag"{{if .VetFlag}} checked{{end}}></td>
+            <td><input class="sess-input sb-atv" type="text" name="assessment_tool_version"
+                       value="{{.AssessmentToolVersion}}" maxlength="50" placeholder="—"></td>
             <td class="sess-actions">
               <span class="sess-status"></span>
               <button class="btn-danger-sm sb-delete" type="button" title="Delete">✕</button>
@@ -94,13 +97,14 @@
 
   function collectFields(tr) {
     return {
-      subject_code:       tr.querySelector('[name=subject_code]').value.trim(),
-      subject_name:       tr.querySelector('[name=subject_name]').value.trim(),
-      field_of_education: tr.querySelector('[name=field_of_education]').value.trim(),
-      nominal_hours:      tr.querySelector('[name=nominal_hours]').value.trim(),
-      credit_points:      tr.querySelector('[name=credit_points]').value.trim(),
-      module_flag:        tr.querySelector('[name=module_flag]').value,
-      vet_flag:           tr.querySelector('[name=vet_flag]').checked ? '1' : '0',
+      subject_code:            tr.querySelector('[name=subject_code]').value.trim(),
+      subject_name:            tr.querySelector('[name=subject_name]').value.trim(),
+      field_of_education:      tr.querySelector('[name=field_of_education]').value.trim(),
+      nominal_hours:           tr.querySelector('[name=nominal_hours]').value.trim(),
+      credit_points:           tr.querySelector('[name=credit_points]').value.trim(),
+      module_flag:             tr.querySelector('[name=module_flag]').value,
+      vet_flag:                tr.querySelector('[name=vet_flag]').checked ? '1' : '0',
+      assessment_tool_version: tr.querySelector('[name=assessment_tool_version]').value.trim(),
     };
   }
 
@@ -137,7 +141,7 @@
   }
 
   function attachRowListeners(tr) {
-    ['subject_code','subject_name','field_of_education','nominal_hours','credit_points'].forEach(name => {
+    ['subject_code','subject_name','field_of_education','nominal_hours','credit_points','assessment_tool_version'].forEach(name => {
       tr.querySelector(`[name=${name}]`)?.addEventListener('blur', () => saveRow(tr));
     });
     tr.querySelector('[name=module_flag]')?.addEventListener('change', () => saveRow(tr));
@@ -170,6 +174,8 @@
             <option value="Y">Yes</option>
           </select></td>
       <td class="pp-flag"><input type="checkbox" name="vet_flag" checked></td>
+      <td><input class="sess-input sb-atv" type="text" name="assessment_tool_version"
+                 placeholder="—" maxlength="50"></td>
       <td class="sess-actions">
         <span class="sess-status"></span>
         <button class="btn-danger-sm sb-delete" type="button" title="Remove">✕</button>

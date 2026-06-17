@@ -27,22 +27,52 @@
   </header>
 
   <main>
-    <form class="td-period-bar" method="GET" action="/workplan/teaching-delivery">
-      <label for="period_id" class="td-period-label">Academic Period</label>
-      <select id="period_id" name="period_id" class="td-period-select" onchange="this.form.submit()">
-        <option value="">— select period —</option>
-        {{range .Periods}}
-        <option value="{{.ID}}"{{if eq .ID $.PeriodID}} selected{{end}}>{{.PeriodCode}} — {{.PeriodName}} {{.Year}}</option>
-        {{end}}
-      </select>
-    </form>
+    <div class="td-period-bar">
+      <form method="GET" action="/workplan/teaching-delivery" id="td-filter-form" style="display:contents">
+        <label for="period_id" class="td-period-label">Academic Period</label>
+        <select id="period_id" name="period_id" class="td-period-select" onchange="this.form.submit()">
+          <option value="">— select period —</option>
+          {{range .Periods}}
+          <option value="{{.ID}}"{{if eq .ID $.PeriodID}} selected{{end}}>{{.PeriodCode}} — {{.PeriodName}} {{.Year}}</option>
+          {{end}}
+        </select>
+        <input type="hidden" name="view" id="view-input" value="{{.View}}">
+      </form>
+      {{if .Classes}}
+      <span class="td-view-toggle">
+        <label class="td-radio-label">
+          <input type="radio" name="_view" value="summary"{{if eq .View "summary"}} checked{{end}} onchange="setView('summary')"> Summary
+        </label>
+        <label class="td-radio-label">
+          <input type="radio" name="_view" value="list"{{if eq .View "list"}} checked{{end}} onchange="setView('list')"> List
+        </label>
+      </span>
+      {{end}}
+    </div>
 
     {{if .NoPersonLinked}}
     <p class="td-empty">This account is not linked to a person record — Teaching Delivery is not available.</p>
     {{else if and .PeriodID (eq (len .Classes) 0)}}
     <p class="td-empty">No classes found for this period.</p>
+    {{else if .SummaryClasses}}
+    <div class="td-summary">
+      <div class="td-summary-item">
+        <span class="td-summary-val">{{.SummaryClasses}}</span>
+        <span class="td-summary-label">Classes</span>
+      </div>
+      <div class="td-summary-item">
+        <span class="td-summary-val">{{.SummarySubjects}}</span>
+        <span class="td-summary-label">Subjects</span>
+      </div>
+      <div class="td-summary-item td-summary-highlight">
+        <span class="td-summary-val">{{printf "%.1f" .SummaryHours}}</span>
+        <span class="td-summary-label">Total Scheduled Hours</span>
+      </div>
+    </div>
     {{end}}
 
+    {{/* ── Summary view ── */}}
+    <div id="td-view-summary"{{if eq .View "list"}} style="display:none"{{end}}>
     {{range .Classes}}
     {{$classID := .ClassID}}
     {{$scheduledHours := .ScheduledHours}}
@@ -50,6 +80,7 @@
       <div class="td-card-head">
         <span class="td-class-code">{{.ClassCode}}</span>
         {{if .ProgramCode}}<span class="td-program-code">{{.ProgramCode}}</span>{{end}}
+        {{if .IntakeGroupName}}<span class="td-location">{{.IntakeGroupName}}</span>{{end}}
         {{if .LocationName}}<span class="td-location">{{.LocationName}}</span>{{end}}
         <span class="td-hours">{{printf "%.1f" .ScheduledHours}} hrs</span>
         <span class="td-weeks">{{.DeliveryWeeks}} wks</span>
@@ -113,14 +144,68 @@
       {{end}}
     </div>
     {{end}}
+    </div>{{/* end #td-view-summary */}}
+
+    {{/* ── List view ── */}}
+    {{if .Classes}}
+    <div id="td-view-list"{{if eq .View "summary"}} style="display:none"{{end}}>
+      {{if .Timetable}}
+      <div class="table-wrap">
+        <table class="sessions-table td-list-table">
+          <thead>
+            <tr>
+              <th class="td-left">Date</th>
+              <th class="td-left">Time</th>
+              <th class="td-left">Class</th>
+              <th class="td-left">Program / Intake</th>
+              <th class="td-left">Subjects</th>
+              <th class="td-left">Delivery Mode</th>
+              <th>Hours</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .Timetable}}
+            <tr>
+              <td class="td-list-date">{{.SessionDate.Format "02 Jan 2006"}}</td>
+              <td class="td-list-time">{{.StartTime}}–{{.EndTime}}</td>
+              <td class="td-list-code">{{.ClassCode}}</td>
+              <td>
+                {{if .ProgramCode}}<span class="td-list-program">{{.ProgramCode}}</span>{{end}}
+                {{if .IntakeGroupName}}<span class="td-list-intake">{{.IntakeGroupName}}</span>{{end}}
+              </td>
+              <td class="td-list-subjects">{{.Subjects}}</td>
+              <td>{{if .DeliveryMode}}{{.DeliveryMode}}{{else}}<span class="td-list-empty">—</span>{{end}}</td>
+              <td class="td-list-hours">{{printf "%.1f" .Hours}}</td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{else}}
+      <p class="td-empty">No timetabled sessions found for this period.</p>
+      {{end}}
+    </div>
+    {{end}}
+
   </main>
   </div>
 
 <script>
+function setView(v) {
+  document.getElementById('view-input').value = v;
+  var sumEl  = document.getElementById('td-view-summary');
+  var listEl = document.getElementById('td-view-list');
+  if (sumEl)  sumEl.style.display  = v === 'summary' ? '' : 'none';
+  if (listEl) listEl.style.display = v === 'list'    ? '' : 'none';
+  var url = new URL(location.href);
+  url.searchParams.set('view', v);
+  history.replaceState(null, '', url);
+}
+
 (function() {
   // Collect class-level fields and save on blur
   document.querySelectorAll('.td-input[data-class][data-field]').forEach(function(inp) {
-    if (inp.dataset.subject) return; // subject inputs handled separately
+    if (inp.dataset.subject) return;
     inp.addEventListener('blur', function() {
       var classID = inp.dataset.class;
       var card = document.querySelector('.td-card[data-class-id="' + classID + '"]');
@@ -135,7 +220,6 @@
     });
   });
 
-  // Subject assessment tool version — save on blur
   document.querySelectorAll('.td-input[data-subject]').forEach(function(inp) {
     inp.addEventListener('blur', function() {
       var classID = inp.dataset.class;

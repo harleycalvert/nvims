@@ -131,6 +131,7 @@ func main() {
 	mux.HandleFunc("POST /admin/periods/{id}/delete", protect(h.AdminPeriodDelete))
 	mux.HandleFunc("GET /admin/infrastructure", protect(h.AdminInfrastructure))
 	mux.HandleFunc("GET /assessment", protect(h.AssessmentMenu))
+	mux.HandleFunc("GET /tas", protect(h.TAFTas))
 	mux.HandleFunc("GET /system", protect(h.SystemMenu))
 	mux.HandleFunc("GET /admin/infrastructure/orgs", protect(h.AdminInfraOrgs))
 	mux.HandleFunc("GET /admin/infrastructure/locations", protect(h.AdminInfraLocations))

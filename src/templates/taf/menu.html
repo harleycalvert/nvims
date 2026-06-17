@@ -1,9 +1,9 @@
-{{define "assessment-menu"}}<!DOCTYPE html>
+{{define "taf-menu"}}<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>NVIMS — Assessment Tools</title>
+  <title>NVIMS — T&amp;A Framework</title>
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/menu.css">
   <link rel="stylesheet" href="/static/sidebar.css">
@@ -16,7 +16,7 @@
     <div class="header-top">
       <div class="header-title-group">
         <a class="header-home" href="/">NVIMS</a>
-        <h1>Assessment Tools</h1>
+        <h1>Training &amp; Assessment Framework</h1>
       </div>
       <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
     </div>
@@ -26,28 +26,31 @@
     </div>
   </header>
   <main>
+    <div class="menu-section-label">TAS</div>
+    <div class="menu-grid">
+      <a class="menu-card" href="/taf/tas">
+        <div class="menu-card-accent menu-accent-teal"></div>
+        <div class="menu-card-body">
+          <div class="menu-card-title">Training &amp; Assessment Strategy</div>
+          <div class="menu-card-desc">TAS documents, delivery modes and assessment strategies by program</div>
+        </div>
+      </a>
+    </div>
+    <div class="menu-section-label">Assessment</div>
     <div class="menu-grid">
       <div class="menu-card menu-card-disabled">
         <div class="menu-card-accent menu-accent-amber"></div>
         <div class="menu-card-body">
-          <div class="menu-card-title">AT Creation</div>
-          <div class="menu-card-desc">Build assessments aligned to units of competency, with TGA training package integration</div>
+          <div class="menu-card-title">Creation</div>
+          <div class="menu-card-desc">Build assessments aligned to units of competency</div>
           <div class="menu-soon">Coming soon</div>
         </div>
       </div>
       <div class="menu-card menu-card-disabled">
         <div class="menu-card-accent menu-accent-slate"></div>
         <div class="menu-card-body">
-          <div class="menu-card-title">AT Maintenance</div>
+          <div class="menu-card-title">Maintenance</div>
           <div class="menu-card-desc">Version control and review workflows for assessment tools</div>
-          <div class="menu-soon">Coming soon</div>
-        </div>
-      </div>
-      <div class="menu-card menu-card-disabled">
-        <div class="menu-card-accent menu-accent-purple"></div>
-        <div class="menu-card-body">
-          <div class="menu-card-title">AT History</div>
-          <div class="menu-card-desc">Audit trail and version history for assessment tools</div>
           <div class="menu-soon">Coming soon</div>
         </div>
       </div>

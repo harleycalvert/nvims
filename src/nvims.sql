@@ -1,6 +1,8 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.46, 2026-06-17
+-- AVETMISS-compliant SMS schema  --  version 0.47, 2026-06-17
 -- =========================================================================
+-- Changes from v0.47:
+--   1.  subjects: added assessment_tool_version varchar(50) NULL.
 -- Changes from v0.46:
 --   1.  classes: added delivery_mode varchar(20), delivery_activity varchar(50),
 --       attendance_method varchar(50), tas_version varchar(50) (all NULL).
@@ -709,6 +711,7 @@ CREATE TABLE IF NOT EXISTS public.subjects (
     nominal_hours integer CHECK (nominal_hours > 0),
     vet_flag boolean NOT NULL DEFAULT true,
     credit_points integer NULL,                   -- HE credit point value of this unit
+    assessment_tool_version varchar(50) NULL,
     PRIMARY KEY (id),
     CONSTRAINT uq_subjects_code UNIQUE (subject_code),
     CONSTRAINT chk_module_flag CHECK (module_flag IN ('Y', 'N')),
@@ -3189,6 +3192,11 @@ DO $$ BEGIN
         NULL;
     END IF;
 END $$;
+
+-- ── v0.47 — Subject assessment tool version ──────────────────────────────────
+
+ALTER TABLE public.subjects
+    ADD COLUMN IF NOT EXISTS assessment_tool_version varchar(50) NULL;
 
 -- ── v0.46 — Teaching Delivery fields ─────────────────────────────────────────
 

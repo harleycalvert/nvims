@@ -5,6 +5,15 @@
   margin-top: 8px;
 }
 
+.menu-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .6px;
+  text-transform: uppercase;
+  color: #94a3b8;
+  margin: 24px 0 4px;
+}
+
 .menu-card {
   background: #fff;
   border: 1px solid #ddd;

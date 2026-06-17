@@ -180,6 +180,7 @@ func New(st *store.Store, sessions *auth.Sessions, stor *storage.Client) *Handle
 			"templates/admin/enrollments.html",
 			"templates/system/lms.html",
 			"templates/assessment/menu.html",
+			"templates/taf/tas.html",
 			"templates/system/menu.html",
 			"templates/admin/departments.html",
 			"templates/admin/roles.html",
@@ -1408,7 +1409,8 @@ func (h *Handler) AdminClassUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.store.UpdateClass(r.Context(), id, periodID, locationID, classCode,
-		classOptionalInt64(r, "intake_group_id"), classOptionalInt(r, "enrolment_cap")); err != nil {
+		classOptionalInt64(r, "intake_group_id"), classOptionalInt(r, "enrolment_cap"),
+		r.FormValue("delivery_mode"), r.FormValue("attendance_method"), r.FormValue("tas_version")); err != nil {
 		log.Printf("UpdateClass(%d): %v", id, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
@@ -2511,7 +2513,8 @@ func (h *Handler) AdminSubjectCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, err := h.store.CreateSubject(r.Context(), code, name, mod, field,
-		subjectNullableInt(r, "nominal_hours"), vet, subjectNullableInt(r, "credit_points"))
+		subjectNullableInt(r, "nominal_hours"), vet, subjectNullableInt(r, "credit_points"),
+		r.FormValue("assessment_tool_version"))
 	if err != nil {
 		log.Printf("CreateSubject: %v", err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
@@ -2537,7 +2540,8 @@ func (h *Handler) AdminSubjectUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.store.UpdateSubject(r.Context(), id, code, name, mod, field,
-		subjectNullableInt(r, "nominal_hours"), subjectNullableInt(r, "credit_points"), vet); err != nil {
+		subjectNullableInt(r, "nominal_hours"), subjectNullableInt(r, "credit_points"), vet,
+		r.FormValue("assessment_tool_version")); err != nil {
 		log.Printf("UpdateSubject(%d): %v", id, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
@@ -2837,7 +2841,19 @@ func (h *Handler) WorkplanTeachingDelivery(w http.ResponseWriter, r *http.Reques
 		"Periods": periods,
 	}
 	periodID, _ := strconv.ParseInt(r.URL.Query().Get("period_id"), 10, 64)
+	view := r.URL.Query().Get("view")
+	if view != "list" {
+		view = "summary"
+	}
 	data["PeriodID"] = periodID
+	data["View"] = view
+	// Resolve selected period name for display in list view
+	for _, p := range periods {
+		if p.ID == periodID {
+			data["PeriodName"] = p.PeriodName + " " + strconv.Itoa(p.Year)
+			break
+		}
+	}
 	log.Printf("TeachingDelivery: user=%q personID=%d periodID=%d", user.Username, user.PersonID, periodID)
 	if user.PersonID == 0 {
 		data["NoPersonLinked"] = true
@@ -2846,8 +2862,27 @@ func (h *Handler) WorkplanTeachingDelivery(w http.ResponseWriter, r *http.Reques
 		if err != nil {
 			log.Printf("GetTeachingDelivery(%d,%d): %v", user.PersonID, periodID, err)
 		}
-		log.Printf("TeachingDelivery: got %d classes", len(classes))
+			log.Printf("TeachingDelivery: got %d classes", len(classes))
 		data["Classes"] = classes
+
+		timetable, err := h.store.GetTeacherSessionList(r.Context(), user.PersonID, periodID)
+		if err != nil {
+			log.Printf("GetTeacherSessionList(%d,%d): %v", user.PersonID, periodID, err)
+		}
+		data["Timetable"] = timetable
+
+		// Compute summary totals
+		var totalHours float64
+		subjectSeen := map[int64]bool{}
+		for _, cl := range classes {
+			totalHours += cl.ScheduledHours
+			for _, s := range cl.Subjects {
+				subjectSeen[s.SubjectID] = true
+			}
+		}
+		data["SummaryClasses"]  = len(classes)
+		data["SummaryHours"]    = totalHours
+		data["SummarySubjects"] = len(subjectSeen)
 	}
 	h.render(w, "workplan-teaching-delivery", data)
 }
@@ -4367,6 +4402,11 @@ func (h *Handler) AdminInfrastructure(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) AssessmentMenu(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.Current(r)
 	h.render(w, "assessment-menu", map[string]any{"User": user})
+}
+
+func (h *Handler) TAFTas(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	h.render(w, "taf-tas", map[string]any{"User": user})
 }
 
 func (h *Handler) SystemMenu(w http.ResponseWriter, r *http.Request) {

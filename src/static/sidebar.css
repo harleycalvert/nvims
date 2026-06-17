@@ -170,6 +170,15 @@ html[data-sidebar="closed"] .sidebar-section { display: none; }
 .sidebar-item.sidebar-subitem:hover { color: #e2e8f0; }
 .sidebar-item.sidebar-subitem.active { color: #93c5fd; }
 .sidebar-item.sidebar-disabled { opacity: 0.4; cursor: default; pointer-events: none; }
+.sidebar-subnav-group {
+  display: block;
+  padding: 8px 14px 3px 18px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .7px;
+  text-transform: uppercase;
+  color: #475569;
+}
 
 /* ── Section body collapse ── */
 .sidebar-section-body.sidebar-collapsed { display: none; }

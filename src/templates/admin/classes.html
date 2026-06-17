@@ -42,6 +42,9 @@
             <th>Location</th>
             <th>Intake Group</th>
             <th title="Enrolment cap">Cap</th>
+            <th title="Delivery Mode">Mode</th>
+            <th title="Attendance Method">Attendance</th>
+            <th title="TAS Version">TAS Ver</th>
             <th></th>
           </tr>
         </thead>
@@ -79,6 +82,12 @@
             </td>
             <td><input class="sess-input cl-cap" type="number" name="enrolment_cap"
                        value="{{if .EnrolmentCap}}{{.EnrolmentCap}}{{end}}" min="1" placeholder="—"></td>
+            <td><input class="sess-input cl-mode" type="text" name="delivery_mode"
+                       value="{{.DeliveryMode}}" maxlength="20" placeholder="—"></td>
+            <td><input class="sess-input cl-attendance" type="text" name="attendance_method"
+                       value="{{.AttendanceMethod}}" maxlength="50" placeholder="—"></td>
+            <td><input class="sess-input cl-tas" type="text" name="tas_version"
+                       value="{{.TASVersion}}" maxlength="50" placeholder="—"></td>
             <td class="sess-actions">
               <span class="sess-status"></span>
               <button class="btn-danger-sm cl-delete" type="button" title="Delete">✕</button>
@@ -148,6 +157,9 @@
       delivery_location_id: tr.querySelector('[name=delivery_location_id]').value,
       intake_group_id:      tr.querySelector('[name=intake_group_id]').value,
       enrolment_cap:        tr.querySelector('[name=enrolment_cap]').value.trim(),
+      delivery_mode:        tr.querySelector('[name=delivery_mode]').value.trim(),
+      attendance_method:    tr.querySelector('[name=attendance_method]').value.trim(),
+      tas_version:          tr.querySelector('[name=tas_version]').value.trim(),
     };
   }
 
@@ -184,8 +196,9 @@
   }
 
   function attachRowListeners(tr) {
-    tr.querySelector('[name=class_code]')?.addEventListener('blur', () => saveRow(tr));
-    tr.querySelector('[name=enrolment_cap]')?.addEventListener('blur', () => saveRow(tr));
+    ['class_code','enrolment_cap','delivery_mode','attendance_method','tas_version'].forEach(name => {
+      tr.querySelector(`[name=${name}]`)?.addEventListener('blur', () => saveRow(tr));
+    });
     ['academic_period_id','delivery_location_id','intake_group_id'].forEach(name => {
       tr.querySelector(`[name=${name}]`)?.addEventListener('change', () => saveRow(tr));
     });
@@ -210,6 +223,9 @@
       <td><select class="sess-input cl-location" name="delivery_location_id">${locationOptions(defaultLocationID)}</select></td>
       <td><select class="sess-input cl-group" name="intake_group_id">${groupOptions(0)}</select></td>
       <td><input class="sess-input cl-cap" type="number" name="enrolment_cap" placeholder="—" min="1"></td>
+      <td><input class="sess-input cl-mode" type="text" name="delivery_mode" placeholder="—" maxlength="20"></td>
+      <td><input class="sess-input cl-attendance" type="text" name="attendance_method" placeholder="—" maxlength="50"></td>
+      <td><input class="sess-input cl-tas" type="text" name="tas_version" placeholder="—" maxlength="50"></td>
       <td class="sess-actions">
         <span class="sess-status"></span>
         <button class="btn-danger-sm cl-delete" type="button" title="Remove">✕</button>

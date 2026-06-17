@@ -157,6 +157,28 @@
 .td-period-select { font-size:13px; padding:5px 10px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#1e293b; min-width:280px; }
 .td-empty { font-size:13px; color:#94a3b8; }
 
+.td-view-toggle { display:flex; align-items:center; gap:12px; margin-left:20px; }
+.td-radio-label { display:flex; align-items:center; gap:5px; font-size:13px; font-weight:500; color:#475569; cursor:pointer; }
+.td-radio-label input[type=radio] { accent-color:#6366f1; }
+
+.td-list-table td { vertical-align:top; font-size:13px; }
+.td-list-date { white-space:nowrap; color:#475569; }
+.td-list-time { white-space:nowrap; color:#64748b; font-size:12px; }
+.td-list-code { font-weight:600; color:#1e293b; white-space:nowrap; }
+.td-list-program { font-weight:600; color:#334155; display:block; }
+.td-list-intake { font-size:12px; color:#64748b; display:block; }
+.td-list-subjects { font-size:12px; color:#475569; }
+.td-list-hours { text-align:right; font-weight:600; color:#0f766e; white-space:nowrap; }
+.td-list-empty { color:#cbd5e1; }
+
+.td-summary { display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
+.td-summary-item { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:12px 20px; display:flex; flex-direction:column; align-items:center; min-width:120px; }
+.td-summary-val { font-size:24px; font-weight:700; color:#1e293b; line-height:1; }
+.td-summary-label { font-size:11px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.5px; margin-top:4px; }
+.td-summary-highlight { border-color:#0f766e; background:#f0fdf4; }
+.td-summary-highlight .td-summary-val { color:#0f766e; }
+.td-summary-highlight .td-summary-label { color:#0f766e; }
+
 .td-card { background:#fff; border:1px solid #e2e8f0; border-radius:10px; margin-bottom:16px; overflow:hidden; }
 .td-card-head { display:flex; align-items:center; gap:10px; padding:10px 14px; background:#f8fafc; border-bottom:1px solid #e2e8f0; flex-wrap:wrap; }
 .td-class-code { font-size:14px; font-weight:700; color:#1e293b; }

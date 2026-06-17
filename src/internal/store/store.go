@@ -1055,14 +1055,15 @@ type IntakeGroupRow struct {
 }
 
 type SubjectRow struct {
-	ID               int64
-	SubjectCode      string
-	SubjectName      string
-	FieldOfEducation string
-	NominalHours     int
-	CreditPoints     int
-	VetFlag          bool
-	ModuleFlag       string
+	ID                    int64
+	SubjectCode           string
+	SubjectName           string
+	FieldOfEducation      string
+	NominalHours          int
+	CreditPoints          int
+	VetFlag               bool
+	ModuleFlag            string
+	AssessmentToolVersion string
 }
 
 type ProgramListRow struct {
@@ -1090,6 +1091,9 @@ type ClassListRow struct {
 	DeliveryLocationID int64
 	IntakeGroupID      int64
 	EnrolmentCap       int
+	DeliveryMode       string
+	AttendanceMethod   string
+	TASVersion         string
 }
 
 type ClassSubject struct {
@@ -1221,7 +1225,8 @@ func (s *Store) ListIntakeGroups(ctx context.Context) ([]IntakeGroupRow, error) 
 func (s *Store) ListSubjects(ctx context.Context) ([]SubjectRow, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, subject_code, subject_name,
-		       field_of_education, COALESCE(nominal_hours,0), COALESCE(credit_points,0), vet_flag, module_flag
+		       field_of_education, COALESCE(nominal_hours,0), COALESCE(credit_points,0), vet_flag, module_flag,
+		       COALESCE(assessment_tool_version, '')
 		FROM public.subjects ORDER BY subject_code
 	`)
 	if err != nil {
@@ -1232,7 +1237,8 @@ func (s *Store) ListSubjects(ctx context.Context) ([]SubjectRow, error) {
 	for rows.Next() {
 		var r SubjectRow
 		if err := rows.Scan(&r.ID, &r.SubjectCode, &r.SubjectName,
-			&r.FieldOfEducation, &r.NominalHours, &r.CreditPoints, &r.VetFlag, &r.ModuleFlag); err != nil {
+			&r.FieldOfEducation, &r.NominalHours, &r.CreditPoints, &r.VetFlag, &r.ModuleFlag,
+			&r.AssessmentToolVersion); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -1244,7 +1250,8 @@ func (s *Store) ListClasses(ctx context.Context) ([]ClassListRow, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT c.id, c.class_code, ap.period_name || ' ' || ap.year, dl.name,
 		       c.academic_period_id, c.delivery_location_id,
-		       COALESCE(c.intake_group_id,0), COALESCE(c.enrolment_cap,0)
+		       COALESCE(c.intake_group_id,0), COALESCE(c.enrolment_cap,0),
+		       COALESCE(c.delivery_mode,''), COALESCE(c.attendance_method,''), COALESCE(c.tas_version,'')
 		FROM public.classes c
 		JOIN public.academic_periods ap ON ap.id = c.academic_period_id
 		JOIN public.delivery_locations dl ON dl.id = c.delivery_location_id
@@ -1258,7 +1265,8 @@ func (s *Store) ListClasses(ctx context.Context) ([]ClassListRow, error) {
 	for rows.Next() {
 		var r ClassListRow
 		if err := rows.Scan(&r.ID, &r.ClassCode, &r.PeriodName, &r.LocationName,
-			&r.AcademicPeriodID, &r.DeliveryLocationID, &r.IntakeGroupID, &r.EnrolmentCap); err != nil {
+			&r.AcademicPeriodID, &r.DeliveryLocationID, &r.IntakeGroupID, &r.EnrolmentCap,
+			&r.DeliveryMode, &r.AttendanceMethod, &r.TASVersion); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -2108,13 +2116,13 @@ func (s *Store) DeleteDepartment(ctx context.Context, id int64) error {
 	return err
 }
 
-func (s *Store) UpdateSubject(ctx context.Context, id int64, subjectCode, subjectName, moduleFlag, fieldOfEducation string, nominalHours, creditPoints *int, vetFlag bool) error {
+func (s *Store) UpdateSubject(ctx context.Context, id int64, subjectCode, subjectName, moduleFlag, fieldOfEducation string, nominalHours, creditPoints *int, vetFlag bool, assessmentToolVersion string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE public.subjects
 		SET subject_code=$2, subject_name=$3, module_flag=$4, field_of_education=$5,
-		    nominal_hours=$6, credit_points=$7, vet_flag=$8
+		    nominal_hours=$6, credit_points=$7, vet_flag=$8, assessment_tool_version=NULLIF($9,'')
 		WHERE id=$1
-	`, id, subjectCode, subjectName, moduleFlag, fieldOfEducation, nominalHours, creditPoints, vetFlag)
+	`, id, subjectCode, subjectName, moduleFlag, fieldOfEducation, nominalHours, creditPoints, vetFlag, assessmentToolVersion)
 	return err
 }
 
@@ -2123,24 +2131,26 @@ func (s *Store) DeleteSubject(ctx context.Context, id int64) error {
 	return err
 }
 
-func (s *Store) CreateSubject(ctx context.Context, subjectCode, subjectName, moduleFlag, fieldOfEducation string, nominalHours *int, vetFlag bool, creditPoints *int) (int64, error) {
+func (s *Store) CreateSubject(ctx context.Context, subjectCode, subjectName, moduleFlag, fieldOfEducation string, nominalHours *int, vetFlag bool, creditPoints *int, assessmentToolVersion string) (int64, error) {
 	var id int64
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO public.subjects
-		    (subject_code, subject_name, module_flag, field_of_education, nominal_hours, vet_flag, credit_points)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		    (subject_code, subject_name, module_flag, field_of_education, nominal_hours, vet_flag, credit_points, assessment_tool_version)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8,''))
 		RETURNING id
-	`, subjectCode, subjectName, moduleFlag, fieldOfEducation, nominalHours, vetFlag, creditPoints).Scan(&id)
+	`, subjectCode, subjectName, moduleFlag, fieldOfEducation, nominalHours, vetFlag, creditPoints, assessmentToolVersion).Scan(&id)
 	return id, err
 }
 
-func (s *Store) UpdateClass(ctx context.Context, id, academicPeriodID, deliveryLocationID int64, classCode string, intakeGroupID *int64, enrolmentCap *int) error {
+func (s *Store) UpdateClass(ctx context.Context, id, academicPeriodID, deliveryLocationID int64, classCode string, intakeGroupID *int64, enrolmentCap *int, deliveryMode, attendanceMethod, tasVersion string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE public.classes
 		SET class_code=$2, academic_period_id=$3, delivery_location_id=$4,
-		    intake_group_id=$5, enrolment_cap=$6
+		    intake_group_id=$5, enrolment_cap=$6,
+		    delivery_mode=NULLIF($7,''), attendance_method=NULLIF($8,''), tas_version=NULLIF($9,'')
 		WHERE id=$1
-	`, id, classCode, academicPeriodID, deliveryLocationID, intakeGroupID, enrolmentCap)
+	`, id, classCode, academicPeriodID, deliveryLocationID, intakeGroupID, enrolmentCap,
+		deliveryMode, attendanceMethod, tasVersion)
 	return err
 }
 
@@ -4464,6 +4474,7 @@ type TDClass struct {
 	ClassID          int64
 	ClassCode        string
 	ProgramCode      string
+	IntakeGroupName  string
 	LocationName     string
 	DeliveryMode     string
 	DeliveryActivity string
@@ -4482,6 +4493,7 @@ func (s *Store) GetTeachingDelivery(ctx context.Context, teacherID, periodID int
 	classRows, err := s.pool.Query(ctx, `
 		SELECT c.id, c.class_code,
 		       COALESCE(p.program_code, ''),
+		       COALESCE(ig.group_name, ''),
 		       COALESCE(dl.name, ''),
 		       COALESCE(c.delivery_mode, ''),
 		       COALESCE(c.delivery_activity, ''),
@@ -4500,7 +4512,7 @@ func (s *Store) GetTeachingDelivery(ctx context.Context, teacherID, periodID int
 		LEFT JOIN public.program_intakes pi ON pi.id = ig.intake_id
 		LEFT JOIN public.programs p         ON p.id  = pi.program_id
 		WHERE c.academic_period_id = $2
-		GROUP BY c.id, c.class_code, p.program_code, dl.name,
+		GROUP BY c.id, c.class_code, p.program_code, ig.group_name, dl.name,
 		         c.delivery_mode, c.delivery_activity, c.attendance_method, c.tas_version
 		ORDER BY c.class_code
 	`, teacherID, periodID)
@@ -4514,7 +4526,7 @@ func (s *Store) GetTeachingDelivery(ctx context.Context, teacherID, periodID int
 	for classRows.Next() {
 		var cl TDClass
 		if err := classRows.Scan(&cl.ClassID, &cl.ClassCode, &cl.ProgramCode,
-			&cl.LocationName, &cl.DeliveryMode, &cl.DeliveryActivity,
+			&cl.IntakeGroupName, &cl.LocationName, &cl.DeliveryMode, &cl.DeliveryActivity,
 			&cl.AttendanceMethod, &cl.TASVersion,
 			&cl.ScheduledHours, &cl.DeliveryWeeks); err != nil {
 			return nil, err
@@ -4608,6 +4620,62 @@ func (s *Store) UpdateClassDeliveryDetails(ctx context.Context, classID int64, m
 		WHERE id = $1
 	`, classID, mode, activity, attendanceMethod, tasVersion)
 	return err
+}
+
+// TimetableListRow is one session row for the Teaching Delivery list view.
+type TimetableListRow struct {
+	SessionDate     time.Time
+	StartTime       string
+	EndTime         string
+	ClassCode       string
+	ProgramCode     string
+	IntakeGroupName string
+	DeliveryMode    string
+	Subjects        string  // comma-separated subject codes
+	Hours           float64 // duration of this session
+}
+
+// GetTeacherSessionList returns every individual timetabled session for a teacher
+// in the given academic period, ordered by date then start time.
+func (s *Store) GetTeacherSessionList(ctx context.Context, teacherID, periodID int64) ([]TimetableListRow, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT cs.session_date,
+		       TO_CHAR(cs.start_time, 'HH24:MI'),
+		       TO_CHAR(cs.end_time,   'HH24:MI'),
+		       c.class_code,
+		       COALESCE(p.program_code, ''),
+		       COALESCE(ig.group_name, ''),
+		       COALESCE(c.delivery_mode, ''),
+		       COALESCE(string_agg(DISTINCT s.subject_code ORDER BY s.subject_code), ''),
+		       EXTRACT(EPOCH FROM (cs.end_time - cs.start_time)) / 3600.0 AS hours
+		FROM public.class_sessions cs
+		JOIN public.session_teachers st  ON st.session_id = cs.id AND st.teacher_id = $1
+		JOIN public.classes c            ON c.id = cs.class_id
+		LEFT JOIN public.class_subjects csub ON csub.class_id = c.id
+		LEFT JOIN public.subjects s          ON s.id = csub.subject_id
+		LEFT JOIN public.intake_groups ig    ON ig.id = c.intake_group_id
+		LEFT JOIN public.program_intakes pi  ON pi.id = ig.intake_id
+		LEFT JOIN public.programs p          ON p.id  = pi.program_id
+		WHERE c.academic_period_id = $2 AND NOT cs.cancelled
+		GROUP BY cs.id, cs.session_date, cs.start_time, cs.end_time,
+		         c.class_code, p.program_code, ig.group_name, c.delivery_mode
+		ORDER BY cs.session_date, cs.start_time, c.class_code
+	`, teacherID, periodID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TimetableListRow
+	for rows.Next() {
+		var r TimetableListRow
+		if err := rows.Scan(&r.SessionDate, &r.StartTime, &r.EndTime,
+			&r.ClassCode, &r.ProgramCode, &r.IntakeGroupName,
+			&r.DeliveryMode, &r.Subjects, &r.Hours); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) UpdateSubjectAssessmentToolVersion(ctx context.Context, classID, subjectID int64, version string) error {
