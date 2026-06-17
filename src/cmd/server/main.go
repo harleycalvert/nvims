@@ -101,6 +101,7 @@ func main() {
 	mux.HandleFunc("POST /admin/people/{id}/org-roles/new", protect(h.AdminOrgRoleAdd))
 	mux.HandleFunc("POST /admin/people/{id}/org-roles/{rid}", protect(h.AdminOrgRoleUpdateEnd))
 	mux.HandleFunc("POST /admin/people/{id}/org-roles/{rid}/delete", protect(h.AdminOrgRoleDelete))
+	mux.HandleFunc("POST /admin/people/{id}/location-pref", protect(h.AdminPersonLocationPrefSave))
 	mux.HandleFunc("GET /admin/roles", protect(h.AdminRoles))
 	mux.HandleFunc("POST /admin/role-types/new", protect(h.AdminRoleTypeCreate))
 	mux.HandleFunc("POST /admin/role-types/{id}", protect(h.AdminRoleTypeUpdate))

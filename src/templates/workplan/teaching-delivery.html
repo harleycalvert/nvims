@@ -164,6 +164,9 @@
     {{if .Classes}}
     <div id="td-view-list"{{if eq .View "summary"}} style="display:none"{{end}}>
       {{if .Timetable}}
+      <div class="td-list-toolbar">
+        <button type="button" class="td-csv-btn" onclick="downloadListCSV()">Download CSV</button>
+      </div>
       <div class="table-wrap">
         <table class="sessions-table td-list-table">
           <thead>
@@ -183,9 +186,8 @@
               <td class="td-list-date">{{.SessionDate.Format "02 Jan 2006"}}</td>
               <td class="td-list-teachers">{{if .Teachers}}{{.Teachers}}{{else}}<span class="td-list-empty">—</span>{{end}}</td>
               <td class="td-list-period">{{.AcademicPeriod}}</td>
-              <td>
-                {{if .ProgramCode}}<span class="td-list-program">{{.ProgramCode}}</span>{{end}}
-                {{if .IntakeGroupName}}<span class="td-list-intake">{{.IntakeGroupName}}</span>{{end}}
+              <td class="td-list-intake-cell">
+                {{if .ProgramCode}}<span class="td-list-program">{{.ProgramCode}}</span>{{end}}{{if and .ProgramCode .IntakeGroupName}} · {{end}}{{if .IntakeGroupName}}<span class="td-list-intake">{{.IntakeGroupName}}</span>{{end}}
               </td>
               <td class="td-list-subjects">{{if .Subjects}}{{.Subjects}}{{else}}<span class="td-list-empty">—</span>{{end}}</td>
               <td>{{if .DeliveryMode}}{{.DeliveryMode}}{{else}}<span class="td-list-empty">—</span>{{end}}</td>
@@ -205,6 +207,28 @@
   </div>
 
 <script>
+function downloadListCSV() {
+  var table = document.querySelector('#td-view-list table');
+  if (!table) return;
+  var rows = [];
+  table.querySelectorAll('tr').forEach(function(tr) {
+    var cells = [];
+    tr.querySelectorAll('th, td').forEach(function(cell) {
+      var text = cell.textContent.trim().replace(/\s+/g, ' ');
+      cells.push(text.includes(',') || text.includes('"') ? '"' + text.replace(/"/g, '""') + '"' : text);
+    });
+    rows.push(cells.join(','));
+  });
+  var blob = new Blob([rows.join('\r\n')], {type: 'text/csv'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'teaching-delivery.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+
 function setView(v) {
   document.getElementById('view-input').value = v;
   var sumEl  = document.getElementById('td-view-summary');

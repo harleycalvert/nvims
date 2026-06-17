@@ -414,3 +414,21 @@
 .admin-nav-label {
   padding: 6px 11px;
 }
+
+/* ── Location preferences ─────────────────────────────────── */
+.loc-prefs-list    { display: flex; flex-direction: column; gap: 4px; max-width: 480px; }
+.loc-pref-row      { display: flex; align-items: center; justify-content: space-between;
+                     padding: 6px 10px; border-radius: 6px; background: #f8fafc;
+                     border: 1px solid #e2e8f0; }
+.loc-pref-row:nth-child(even) { background: #fff; }
+.loc-pref-name     { font-size: 13px; color: #334155; font-weight: 500; }
+.loc-pref-rank-wrap { display: flex; align-items: center; gap: 8px; }
+.loc-pref-input    { width: 56px; padding: 4px 8px; font-size: 13px; text-align: center;
+                     border: 1px solid #cbd5e1; border-radius: 5px; background: #fff;
+                     color: #1e293b; }
+.loc-pref-input:focus { outline: none; border-color: #6366f1; }
+.loc-pref-input::-webkit-inner-spin-button,
+.loc-pref-input::-webkit-outer-spin-button { opacity: 1; }
+.loc-pref-status   { font-size: 13px; min-width: 16px; }
+.loc-pref-ok       { color: #16a34a; }
+.loc-pref-err      { color: #dc2626; }

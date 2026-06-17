@@ -1005,6 +1005,8 @@ func (h *Handler) AdminPersonView(w http.ResponseWriter, r *http.Request) {
 		data["OrgRoles"] = orgRoles
 		data["RoleTypes"] = roleTypes
 	}
+	locationPrefs, _ := h.store.GetPersonLocationPrefs(r.Context(), id)
+	data["LocationPrefs"] = locationPrefs
 	h.render(w, "admin-person", data)
 }
 
@@ -1045,6 +1047,44 @@ func (h *Handler) AdminPersonUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/admin/people/%d?saved=1", id), http.StatusSeeOther)
+}
+
+func (h *Handler) AdminPersonLocationPrefSave(w http.ResponseWriter, r *http.Request) {
+	personID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || personID == 0 {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad form"}`, http.StatusBadRequest)
+		return
+	}
+	locationID, err := strconv.ParseInt(r.FormValue("location_id"), 10, 64)
+	if err != nil || locationID == 0 {
+		http.Error(w, `{"error":"bad location_id"}`, http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	rankStr := strings.TrimSpace(r.FormValue("rank"))
+	if rankStr == "" || rankStr == "0" {
+		if err := h.store.DeletePersonLocationPref(r.Context(), personID, locationID); err != nil {
+			log.Printf("DeletePersonLocationPref(%d,%d): %v", personID, locationID, err)
+			http.Error(w, `{"error":"delete failed"}`, http.StatusInternalServerError)
+			return
+		}
+	} else {
+		rank, err := strconv.Atoi(rankStr)
+		if err != nil || rank < 1 {
+			http.Error(w, `{"error":"rank must be a positive integer"}`, http.StatusBadRequest)
+			return
+		}
+		if err := h.store.UpsertPersonLocationPref(r.Context(), personID, locationID, rank); err != nil {
+			log.Printf("UpsertPersonLocationPref(%d,%d,%d): %v", personID, locationID, rank, err)
+			http.Error(w, `{"error":"save failed"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+	fmt.Fprint(w, `{"ok":true}`)
 }
 
 func (h *Handler) AdminRoleForm(w http.ResponseWriter, r *http.Request) {

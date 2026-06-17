@@ -207,6 +207,27 @@
       </div>
     </div>
 
+    {{if .LocationPrefs}}
+    <div class="form-section form-section--spaced" id="loc-prefs-section">
+      <h2 class="form-section-title">Location Preferences</h2>
+      <p class="form-hint">Rank delivery locations in order of preference. Equal ranks are allowed — clear the field to remove a preference.</p>
+      <div class="loc-prefs-list">
+        {{range .LocationPrefs}}
+        <div class="loc-pref-row" data-location-id="{{.LocationID}}">
+          <span class="loc-pref-name">{{.LocationName}}</span>
+          <div class="loc-pref-rank-wrap">
+            <input type="number" class="loc-pref-input" min="1" step="1"
+                   value="{{if .Rank}}{{.Rank}}{{end}}"
+                   placeholder="—"
+                   data-location-id="{{.LocationID}}">
+            <span class="loc-pref-status"></span>
+          </div>
+        </div>
+        {{end}}
+      </div>
+    </div>
+    {{end}}
+
     {{if .Person.IsStaff}}
     <div class="form-section form-section--spaced" id="org-roles-section">
       <h2 class="form-section-title">Organisational Roles</h2>
@@ -287,6 +308,36 @@
     });
   }
 </script>
+
+{{if not .IsNew}}
+<script>
+(function () {
+  const personID = {{.Form.ID}};
+  document.querySelectorAll('.loc-pref-input').forEach(function(inp) {
+    inp.addEventListener('blur', function() {
+      var locationID = inp.dataset.locationId;
+      var rank = inp.value.trim();
+      var row = inp.closest('.loc-pref-row');
+      var status = row.querySelector('.loc-pref-status');
+      var body = new URLSearchParams();
+      body.append('location_id', locationID);
+      body.append('rank', rank);
+      fetch('/admin/people/' + personID + '/location-pref', {method: 'POST', body: body})
+        .then(function(r) {
+          if (r.ok) {
+            status.textContent = '✓';
+            status.className = 'loc-pref-status loc-pref-ok';
+            setTimeout(function() { status.textContent = ''; status.className = 'loc-pref-status'; }, 2000);
+          } else {
+            status.textContent = '✗';
+            status.className = 'loc-pref-status loc-pref-err';
+          }
+        });
+    });
+  });
+})();
+</script>
+{{end}}
 
 {{if .Person.IsStaff}}
 <script>

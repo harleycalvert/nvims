@@ -4690,6 +4690,60 @@ func (s *Store) GetTeacherSessionList(ctx context.Context, teacherID int64, peri
 	return out, rows.Err()
 }
 
+// LocationPrefRow is one delivery location with this person's preference rank (0 = no preference).
+type LocationPrefRow struct {
+	LocationID   int64
+	LocationName string
+	Rank         int
+}
+
+// GetPersonLocationPrefs returns all delivery locations with the person's current preference ranks.
+// Ranked locations appear first (ascending), then unranked locations alphabetically.
+func (s *Store) GetPersonLocationPrefs(ctx context.Context, personID int64) ([]LocationPrefRow, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT dl.id, dl.name, COALESCE(plp.preference_rank, 0)
+		FROM public.delivery_locations dl
+		LEFT JOIN public.person_location_preferences plp
+		    ON plp.delivery_location_id = dl.id AND plp.person_id = $1
+		ORDER BY
+		    CASE WHEN plp.preference_rank IS NULL THEN 1 ELSE 0 END,
+		    plp.preference_rank,
+		    dl.name
+	`, personID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []LocationPrefRow
+	for rows.Next() {
+		var r LocationPrefRow
+		if err := rows.Scan(&r.LocationID, &r.LocationName, &r.Rank); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// UpsertPersonLocationPref inserts or updates a preference rank for one location.
+func (s *Store) UpsertPersonLocationPref(ctx context.Context, personID, locationID int64, rank int) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO public.person_location_preferences (person_id, delivery_location_id, preference_rank)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (person_id, delivery_location_id) DO UPDATE SET preference_rank = $3
+	`, personID, locationID, rank)
+	return err
+}
+
+// DeletePersonLocationPref removes a location preference (when rank is cleared).
+func (s *Store) DeletePersonLocationPref(ctx context.Context, personID, locationID int64) error {
+	_, err := s.pool.Exec(ctx, `
+		DELETE FROM public.person_location_preferences
+		WHERE person_id = $1 AND delivery_location_id = $2
+	`, personID, locationID)
+	return err
+}
+
 func (s *Store) UpdateSubjectAssessmentToolVersion(ctx context.Context, classID, subjectID int64, version string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE public.class_subjects
