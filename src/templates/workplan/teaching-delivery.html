@@ -27,18 +27,32 @@
   </header>
 
   <main>
-    <div class="td-period-bar">
-      <form method="GET" action="/workplan/teaching-delivery" id="td-filter-form" style="display:contents">
-        <label for="period_id" class="td-period-label">Academic Period</label>
-        <select id="period_id" name="period_id" class="td-period-select" onchange="this.form.submit()">
-          <option value="">— select period —</option>
-          {{range .Periods}}
-          <option value="{{.ID}}"{{if eq .ID $.PeriodID}} selected{{end}}>{{.PeriodCode}} — {{.PeriodName}} {{.Year}}</option>
+    <form method="GET" action="/workplan/teaching-delivery" id="td-filter-form">
+      <div class="td-filter-row">
+        <label class="td-period-label">Year</label>
+        <select name="year" class="td-year-select" onchange="this.form.submit()">
+          {{range .Years}}
+          <option value="{{.}}"{{if eq . $.SelectedYear}} selected{{end}}>{{.}}</option>
           {{end}}
         </select>
+        {{if .PeriodsForYear}}
+        <span class="td-period-checks">
+          {{range .PeriodsForYear}}
+          <label class="td-check-label">
+            <input type="checkbox" name="period_id" value="{{.ID}}"
+                   {{if index $.SelectedPeriods .ID}}checked{{end}}
+                   onchange="this.form.submit()">
+            {{.PeriodName}}
+          </label>
+          {{end}}
+        </span>
+        {{end}}
         <input type="hidden" name="view" id="view-input" value="{{.View}}">
-      </form>
-      {{if .Classes}}
+      </div>
+    </form>
+
+    {{if .Classes}}
+    <div class="td-view-bar">
       <span class="td-view-toggle">
         <label class="td-radio-label">
           <input type="radio" name="_view" value="summary"{{if eq .View "summary"}} checked{{end}} onchange="setView('summary')"> Summary
@@ -47,13 +61,13 @@
           <input type="radio" name="_view" value="list"{{if eq .View "list"}} checked{{end}} onchange="setView('list')"> List
         </label>
       </span>
-      {{end}}
     </div>
+    {{end}}
 
     {{if .NoPersonLinked}}
     <p class="td-empty">This account is not linked to a person record — Teaching Delivery is not available.</p>
-    {{else if and .PeriodID (eq (len .Classes) 0)}}
-    <p class="td-empty">No classes found for this period.</p>
+    {{else if and .SelectedPeriods (eq (len .Classes) 0)}}
+    <p class="td-empty">No classes found for the selected period(s).</p>
     {{else if .SummaryClasses}}
     <div class="td-summary">
       <div class="td-summary-item">
@@ -168,7 +182,7 @@
             <tr>
               <td class="td-list-date">{{.SessionDate.Format "02 Jan 2006"}}</td>
               <td class="td-list-teachers">{{if .Teachers}}{{.Teachers}}{{else}}<span class="td-list-empty">—</span>{{end}}</td>
-              <td class="td-list-period">{{$.PeriodName}}</td>
+              <td class="td-list-period">{{.AcademicPeriod}}</td>
               <td>
                 {{if .ProgramCode}}<span class="td-list-program">{{.ProgramCode}}</span>{{end}}
                 {{if .IntakeGroupName}}<span class="td-list-intake">{{.IntakeGroupName}}</span>{{end}}

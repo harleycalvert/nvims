@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -2836,42 +2837,67 @@ func (h *Handler) WorkplanTeachingDelivery(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "database error", http.StatusInternalServerError)
 		return
 	}
-	data := map[string]any{
-		"User":    user,
-		"Periods": periods,
+
+	// Build year list (descending) and periods-by-year map.
+	yearSet := map[int]bool{}
+	var years []int
+	periodsByYear := map[int][]store.PeriodListRow{}
+	for _, p := range periods {
+		if !yearSet[p.Year] {
+			yearSet[p.Year] = true
+			years = append(years, p.Year)
+		}
+		periodsByYear[p.Year] = append(periodsByYear[p.Year], p)
 	}
-	periodID, _ := strconv.ParseInt(r.URL.Query().Get("period_id"), 10, 64)
+	sort.Sort(sort.Reverse(sort.IntSlice(years)))
+
+	// Selected year — default to the most recent year with periods.
+	selectedYear, _ := strconv.Atoi(r.URL.Query().Get("year"))
+	if selectedYear == 0 && len(years) > 0 {
+		selectedYear = years[0]
+	}
+
+	// Selected period IDs (can be multiple).
+	var periodIDs []int64
+	selectedPeriods := map[int64]bool{}
+	for _, s := range r.URL.Query()["period_id"] {
+		id, err := strconv.ParseInt(s, 10, 64)
+		if err == nil && id > 0 {
+			periodIDs = append(periodIDs, id)
+			selectedPeriods[id] = true
+		}
+	}
+
 	view := r.URL.Query().Get("view")
 	if view != "list" {
 		view = "summary"
 	}
-	data["PeriodID"] = periodID
-	data["View"] = view
-	// Resolve selected period name for display in list view
-	for _, p := range periods {
-		if p.ID == periodID {
-			data["PeriodName"] = p.PeriodName + " " + strconv.Itoa(p.Year)
-			break
-		}
+
+	data := map[string]any{
+		"User":            user,
+		"Years":           years,
+		"SelectedYear":    selectedYear,
+		"PeriodsForYear":  periodsByYear[selectedYear],
+		"SelectedPeriods": selectedPeriods,
+		"View":            view,
 	}
-	log.Printf("TeachingDelivery: user=%q personID=%d periodID=%d", user.Username, user.PersonID, periodID)
+
 	if user.PersonID == 0 {
 		data["NoPersonLinked"] = true
-	} else if periodID != 0 {
-		classes, err := h.store.GetTeachingDelivery(r.Context(), user.PersonID, periodID)
+	} else if len(periodIDs) > 0 {
+		classes, err := h.store.GetTeachingDelivery(r.Context(), user.PersonID, periodIDs)
 		if err != nil {
-			log.Printf("GetTeachingDelivery(%d,%d): %v", user.PersonID, periodID, err)
+			log.Printf("GetTeachingDelivery: %v", err)
 		}
-			log.Printf("TeachingDelivery: got %d classes", len(classes))
 		data["Classes"] = classes
 
-		timetable, err := h.store.GetTeacherSessionList(r.Context(), user.PersonID, periodID)
+		timetable, err := h.store.GetTeacherSessionList(r.Context(), user.PersonID, periodIDs)
 		if err != nil {
-			log.Printf("GetTeacherSessionList(%d,%d): %v", user.PersonID, periodID, err)
+			log.Printf("GetTeacherSessionList: %v", err)
 		}
 		data["Timetable"] = timetable
 
-		// Compute summary totals
+		// Summary totals across all selected periods.
 		var totalHours float64
 		subjectSeen := map[int64]bool{}
 		for _, cl := range classes {

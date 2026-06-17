@@ -152,14 +152,21 @@
 .lv-date-count { color:#94a3b8; font-size:11px; }
 
 /* ── Teaching Delivery ─────────────────────────────────────────────────────── */
-.td-period-bar { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
-.td-period-label { font-size:13px; font-weight:600; color:#475569; }
-.td-period-select { font-size:13px; padding:5px 10px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#1e293b; min-width:280px; }
-.td-empty { font-size:13px; color:#94a3b8; }
+.td-filter-row  { display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+                  margin-bottom:14px; padding:10px 14px;
+                  background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; }
+.td-period-label { font-size:12px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:.04em; }
+.td-year-select  { font-size:13px; padding:4px 8px; border:1px solid #cbd5e1; border-radius:5px; background:#fff; color:#1e293b; }
+.td-period-checks { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.td-check-label  { display:flex; align-items:center; gap:5px; font-size:13px; font-weight:500; color:#334155; cursor:pointer; white-space:nowrap; }
+.td-check-label input[type=checkbox] { accent-color:#6366f1; width:15px; height:15px; cursor:pointer; }
 
-.td-view-toggle { display:flex; align-items:center; gap:12px; margin-left:20px; }
+.td-view-bar    { display:flex; align-items:center; margin-bottom:16px; }
+.td-view-toggle { display:flex; align-items:center; gap:12px; }
 .td-radio-label { display:flex; align-items:center; gap:5px; font-size:13px; font-weight:500; color:#475569; cursor:pointer; }
 .td-radio-label input[type=radio] { accent-color:#6366f1; }
+
+.td-empty { font-size:13px; color:#94a3b8; }
 
 .td-list-table td { vertical-align:top; font-size:13px; }
 .td-list-date { white-space:nowrap; color:#475569; }

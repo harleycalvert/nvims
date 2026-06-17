@@ -4486,10 +4486,10 @@ type TDClass struct {
 	Teachers         []TDTeacher
 }
 
-// GetTeachingDelivery returns all classes a teacher is allocated to within a period,
+// GetTeachingDelivery returns all classes a teacher is allocated to within the given periods,
 // with computed hours, delivery weeks, subjects, and co-teachers.
-func (s *Store) GetTeachingDelivery(ctx context.Context, teacherID, periodID int64) ([]TDClass, error) {
-	// 1. Classes the teacher has at least one session in during this period.
+func (s *Store) GetTeachingDelivery(ctx context.Context, teacherID int64, periodIDs []int64) ([]TDClass, error) {
+	// 1. Classes the teacher has at least one session in during these periods.
 	classRows, err := s.pool.Query(ctx, `
 		SELECT c.id, c.class_code,
 		       COALESCE(p.program_code, ''),
@@ -4511,11 +4511,11 @@ func (s *Store) GetTeachingDelivery(ctx context.Context, teacherID, periodID int
 		LEFT JOIN public.intake_groups ig   ON ig.id = c.intake_group_id
 		LEFT JOIN public.program_intakes pi ON pi.id = ig.intake_id
 		LEFT JOIN public.programs p         ON p.id  = pi.program_id
-		WHERE c.academic_period_id = $2
+		WHERE c.academic_period_id = ANY($2)
 		GROUP BY c.id, c.class_code, p.program_code, ig.group_name, dl.name,
 		         c.delivery_mode, c.delivery_activity, c.attendance_method, c.tas_version
 		ORDER BY c.class_code
-	`, teacherID, periodID)
+	`, teacherID, periodIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -4582,10 +4582,10 @@ func (s *Store) GetTeachingDelivery(ctx context.Context, teacherID, periodID int
 		JOIN public.teachers t          ON t.id = st.teacher_id
 		JOIN public.staff sf            ON sf.id = t.id
 		JOIN public.people p            ON p.id  = sf.id
-		WHERE c.id = ANY($1) AND c.academic_period_id = $2
+		WHERE c.id = ANY($1)
 		GROUP BY c.id, full_name, st.role
 		ORDER BY c.id, st.role, full_name
-	`, classIDs, periodID)
+	`, classIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -4634,11 +4634,12 @@ type TimetableListRow struct {
 	Subjects        string  // · separated subject codes
 	Hours           float64 // duration of this session in hours
 	Teachers        string  // · separated teacher names
+	AcademicPeriod  string  // e.g. "Term 2 2026"
 }
 
 // GetTeacherSessionList returns every individual timetabled session for a teacher
-// in the given academic period, ordered by date then start time.
-func (s *Store) GetTeacherSessionList(ctx context.Context, teacherID, periodID int64) ([]TimetableListRow, error) {
+// across the given academic periods, ordered by date then start time.
+func (s *Store) GetTeacherSessionList(ctx context.Context, teacherID int64, periodIDs []int64) ([]TimetableListRow, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT cs.session_date,
 		       TO_CHAR(cs.start_time, 'HH24:MI'),
@@ -4655,21 +4656,23 @@ func (s *Store) GetTeacherSessionList(ctx context.Context, teacherID, periodID i
 		       COALESCE(string_agg(
 		           p2.first_given_name || ' ' || p2.family_name,
 		           ' · ' ORDER BY p2.family_name, p2.first_given_name
-		       ), '')
+		       ), ''),
+		       ap.period_name || ' ' || ap.year::text
 		FROM public.class_sessions cs
 		JOIN public.session_teachers st    ON st.session_id = cs.id AND st.teacher_id = $1
 		JOIN public.classes c              ON c.id = cs.class_id
+		JOIN public.academic_periods ap    ON ap.id = c.academic_period_id
 		LEFT JOIN public.intake_groups ig  ON ig.id = c.intake_group_id
 		LEFT JOIN public.program_intakes pi ON pi.id = ig.intake_id
 		LEFT JOIN public.programs prog     ON prog.id = pi.program_id
 		LEFT JOIN public.session_teachers st2 ON st2.session_id = cs.id
 		LEFT JOIN public.teachers t2       ON t2.id = st2.teacher_id
 		LEFT JOIN public.people p2         ON p2.id = t2.id
-		WHERE c.academic_period_id = $2 AND NOT cs.cancelled
-		GROUP BY cs.id, c.id, cs.session_date, cs.start_time, cs.end_time,
+		WHERE c.academic_period_id = ANY($2) AND NOT cs.cancelled
+		GROUP BY cs.id, c.id, ap.period_name, ap.year, cs.session_date, cs.start_time, cs.end_time,
 		         c.class_code, prog.program_code, ig.group_name, c.delivery_mode
 		ORDER BY cs.session_date, cs.start_time, c.class_code
-	`, teacherID, periodID)
+	`, teacherID, periodIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -4679,7 +4682,7 @@ func (s *Store) GetTeacherSessionList(ctx context.Context, teacherID, periodID i
 		var r TimetableListRow
 		if err := rows.Scan(&r.SessionDate, &r.StartTime, &r.EndTime,
 			&r.ClassCode, &r.ProgramCode, &r.IntakeGroupName,
-			&r.DeliveryMode, &r.Subjects, &r.Hours, &r.Teachers); err != nil {
+			&r.DeliveryMode, &r.Subjects, &r.Hours, &r.Teachers, &r.AcademicPeriod); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
