@@ -165,6 +165,7 @@
         <a class="sidebar-item sidebar-subitem" href="/admin/enrollments" data-path="/admin/enrollments">Enrolments</a>
         <a class="sidebar-item sidebar-subitem" href="/admin/classes" data-path="/admin/classes">Classes</a>
         <a class="sidebar-item sidebar-subitem" href="/admin/sessions" data-path="/admin/sessions">Sessions</a>
+        <a class="sidebar-item sidebar-subitem" href="/admin/exceptions" data-path="/admin/exceptions">Exceptions</a>
       </div>
 
     </div>
@@ -342,5 +343,10 @@
     saveSections(secState);
   });
 })();
+</script>
+<script>
+window.addEventListener('pageshow', function(e) {
+  if (e.persisted) location.reload();
+});
 </script>
 {{end}}

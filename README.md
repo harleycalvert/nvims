@@ -2,7 +2,7 @@
 
 NVIMS is a Student Management System (SMS) and more built for Australian RTOs, TAFEs, and Higher Education providers. It is implemented in PostgreSQL and Go, and is designed to support AVETMISS reporting, teacher workforce compliance (VCC), timetabling, attendance, and enrolment management.
 
-> **Status:** Early development. The system is almost in a usable state for class scheduling, timetabling, and attendance. 
+> **Status:** Early development. The system is almost in a usable state for class scheduling, timetabling, resulting, and attendance. 
 
 > **Project commenced:** 5 June 2026  
 > **Development cost to date:** $34.00

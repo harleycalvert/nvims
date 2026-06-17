@@ -10,6 +10,7 @@
 .admin-nav-bar-enrolments { background: #155724; }
 .admin-nav-bar-classes    { background: #334155; }
 .admin-nav-bar-sessions   { background: #92400e; }
+.admin-nav-bar-exceptions { background: #991b1b; }
 
 /* ── Enrollments page ── */
 .enrol-filter { margin-bottom: .75rem; }

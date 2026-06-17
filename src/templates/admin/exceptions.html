@@ -1,0 +1,557 @@
+{{define "admin-exceptions"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS — Exceptions</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/sessions.css">
+  <link rel="stylesheet" href="/static/sidebar.css">
+  <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
+</head>
+<body>
+  {{template "sidebar" .}}
+  <div class="page-wrap">
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/admin">Administration</a>
+        <h1>Exceptions</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+
+  <main class="sessions-main">
+
+    {{template "admin-nav" .}}
+
+    <p class="page-desc">Holiday rules define recurring or one-off public holidays. Observances are the actual computed dates for a given year. Use <strong>Generate</strong> to create observances automatically from rules.</p>
+
+    {{/* ── Rules section ── */}}
+    <h2 class="section-heading">Holiday Rules</h2>
+
+    <div class="table-wrap">
+      <table class="sessions-table" id="rules-table">
+        <thead>
+          <tr>
+            <th class="td-left">Name</th>
+            <th>State</th>
+            <th>Recurrence</th>
+            <th class="td-left">Schedule</th>
+            <th>Obs. Sub?</th>
+            <th>Active</th>
+            <th class="td-left">Notes</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="rules-tbody">
+          {{range .Rules}}
+          <tr class="sess-row" data-id="{{.ID}}">
+            <td><input class="sess-input exc-name" type="text" name="holiday_name"
+                       value="{{.HolidayName}}" maxlength="100" placeholder="Holiday name"></td>
+            <td>
+              <select class="sess-input exc-state" name="state_code">
+                <option value=""{{if eq .StateCode ""}} selected{{end}}>All</option>
+                {{$sc := .StateCode}}
+                {{range $.States}}
+                <option value="{{.}}"{{if eq . $sc}} selected{{end}}>{{.}}</option>
+                {{end}}
+              </select>
+            </td>
+            <td>
+              <select class="sess-input exc-recurrence" name="recurrence">
+                {{$rec := .Recurrence}}
+                <option value="ANNUAL_FIXED"{{if eq $rec "ANNUAL_FIXED"}} selected{{end}}>Annual Fixed</option>
+                <option value="ANNUAL_NTH_DOW"{{if eq $rec "ANNUAL_NTH_DOW"}} selected{{end}}>Annual Nth DOW</option>
+                <option value="ANNUAL_EASTER_OFFSET"{{if eq $rec "ANNUAL_EASTER_OFFSET"}} selected{{end}}>Easter Offset</option>
+                <option value="ONCE"{{if eq $rec "ONCE"}} selected{{end}}>Once</option>
+              </select>
+            </td>
+            <td class="exc-schedule-cell">
+              {{/* ONCE: fixed date */}}
+              <span class="exc-field exc-fixed-date">
+                <input class="sess-input" type="date" name="fixed_date" value="{{.FixedDate}}">
+              </span>
+              {{/* ANNUAL_FIXED: month + day */}}
+              <span class="exc-field exc-month-day">
+                <select class="sess-input exc-month" name="month">
+                  <option value="0">— month —</option>
+                  {{$m := .Month}}
+                  <option value="1"{{if eq $m 1}} selected{{end}}>Jan</option>
+                  <option value="2"{{if eq $m 2}} selected{{end}}>Feb</option>
+                  <option value="3"{{if eq $m 3}} selected{{end}}>Mar</option>
+                  <option value="4"{{if eq $m 4}} selected{{end}}>Apr</option>
+                  <option value="5"{{if eq $m 5}} selected{{end}}>May</option>
+                  <option value="6"{{if eq $m 6}} selected{{end}}>Jun</option>
+                  <option value="7"{{if eq $m 7}} selected{{end}}>Jul</option>
+                  <option value="8"{{if eq $m 8}} selected{{end}}>Aug</option>
+                  <option value="9"{{if eq $m 9}} selected{{end}}>Sep</option>
+                  <option value="10"{{if eq $m 10}} selected{{end}}>Oct</option>
+                  <option value="11"{{if eq $m 11}} selected{{end}}>Nov</option>
+                  <option value="12"{{if eq $m 12}} selected{{end}}>Dec</option>
+                </select>
+                <input class="sess-input exc-day" type="number" name="day"
+                       value="{{if .Day}}{{.Day}}{{end}}" min="1" max="31" placeholder="day" style="width:4em">
+              </span>
+              {{/* ANNUAL_NTH_DOW: nth + weekday + month */}}
+              <span class="exc-field exc-nth-dow">
+                <select class="sess-input exc-nth" name="nth">
+                  <option value="0">— nth —</option>
+                  {{$nth := .Nth}}
+                  <option value="1"{{if eq $nth 1}} selected{{end}}>1st</option>
+                  <option value="2"{{if eq $nth 2}} selected{{end}}>2nd</option>
+                  <option value="3"{{if eq $nth 3}} selected{{end}}>3rd</option>
+                  <option value="4"{{if eq $nth 4}} selected{{end}}>4th</option>
+                  <option value="-1"{{if eq $nth -1}} selected{{end}}>Last</option>
+                </select>
+                <select class="sess-input exc-weekday" name="weekday">
+                  <option value="0">— day —</option>
+                  {{$wd := .Weekday}}
+                  <option value="1"{{if eq $wd 1}} selected{{end}}>Mon</option>
+                  <option value="2"{{if eq $wd 2}} selected{{end}}>Tue</option>
+                  <option value="3"{{if eq $wd 3}} selected{{end}}>Wed</option>
+                  <option value="4"{{if eq $wd 4}} selected{{end}}>Thu</option>
+                  <option value="5"{{if eq $wd 5}} selected{{end}}>Fri</option>
+                  <option value="6"{{if eq $wd 6}} selected{{end}}>Sat</option>
+                  <option value="7"{{if eq $wd 7}} selected{{end}}>Sun</option>
+                </select>
+                <select class="sess-input exc-amonth" name="month_dow">
+                  <option value="0">— month —</option>
+                  {{$m2 := .Month}}
+                  <option value="1"{{if eq $m2 1}} selected{{end}}>Jan</option>
+                  <option value="2"{{if eq $m2 2}} selected{{end}}>Feb</option>
+                  <option value="3"{{if eq $m2 3}} selected{{end}}>Mar</option>
+                  <option value="4"{{if eq $m2 4}} selected{{end}}>Apr</option>
+                  <option value="5"{{if eq $m2 5}} selected{{end}}>May</option>
+                  <option value="6"{{if eq $m2 6}} selected{{end}}>Jun</option>
+                  <option value="7"{{if eq $m2 7}} selected{{end}}>Jul</option>
+                  <option value="8"{{if eq $m2 8}} selected{{end}}>Aug</option>
+                  <option value="9"{{if eq $m2 9}} selected{{end}}>Sep</option>
+                  <option value="10"{{if eq $m2 10}} selected{{end}}>Oct</option>
+                  <option value="11"{{if eq $m2 11}} selected{{end}}>Nov</option>
+                  <option value="12"{{if eq $m2 12}} selected{{end}}>Dec</option>
+                </select>
+              </span>
+              {{/* ANNUAL_EASTER_OFFSET: offset days */}}
+              <span class="exc-field exc-easter">
+                <input class="sess-input exc-easter-offset" type="number" name="easter_offset"
+                       value="{{.EasterOffset}}" placeholder="days from Easter" style="width:7em">
+              </span>
+            </td>
+            <td style="text-align:center">
+              <input type="checkbox" name="observe_substitute"
+                     value="1"{{if .ObserveSubstitute}} checked{{end}}>
+            </td>
+            <td>
+              <input class="sess-input exc-active-from" type="number" name="active_from"
+                     value="{{if .ActiveFrom}}{{.ActiveFrom}}{{end}}"
+                     min="2000" max="2099" placeholder="from" style="width:4.5em">
+              <input class="sess-input exc-active-to" type="number" name="active_to"
+                     value="{{if .ActiveTo}}{{.ActiveTo}}{{end}}"
+                     min="2000" max="2099" placeholder="to" style="width:4.5em">
+            </td>
+            <td><input class="sess-input exc-notes" type="text" name="notes"
+                       value="{{.Notes}}" maxlength="200" placeholder="notes"></td>
+            <td class="sess-actions">
+              <span class="sess-status"></span>
+              <button class="btn-danger-sm exc-delete" type="button" title="Delete">&#10005;</button>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sess-add-bar">
+      <button class="btn-primary btn-sm" id="btn-add-rule" type="button">+ Add Rule</button>
+    </div>
+
+    {{/* ── Observances section ── */}}
+    <h2 class="section-heading" style="margin-top:2rem">Observances</h2>
+
+    <div class="sess-toolbar" style="margin-bottom:1rem">
+      <form method="GET" action="/admin/exceptions" id="year-form" style="display:inline-flex;align-items:center;gap:.5rem">
+        <label for="year-select">Year:</label>
+        <select id="year-select" name="year" class="search-role-select" onchange="document.getElementById('year-form').submit()">
+          {{$sy := .SelectedYear}}
+          {{range .Years}}
+          <option value="{{.}}"{{if eq . $sy}} selected{{end}}>{{.}}</option>
+          {{end}}
+        </select>
+      </form>
+      <button class="btn-primary btn-sm" id="btn-generate" type="button">Generate for {{.SelectedYear}}</button>
+    </div>
+
+    <div class="table-wrap">
+      <table class="sessions-table" id="obs-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th class="td-left">Name</th>
+            <th>State</th>
+            <th>Substitute?</th>
+            <th class="td-left">Source</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="obs-tbody">
+          {{range .Observances}}
+          <tr class="sess-row obs-row" data-id="{{.ID}}">
+            <td>{{dateISO .HolidayDate}}</td>
+            <td>{{.HolidayName}}</td>
+            <td>{{if .StateCode}}{{.StateCode}}{{else}}All{{end}}</td>
+            <td style="text-align:center">{{if .IsSubstitute}}&#10003;{{end}}</td>
+            <td>{{if .RuleID}}Rule #{{.RuleID}}{{else}}Manual{{end}}</td>
+            <td class="sess-actions">
+              <span class="sess-status"></span>
+              <button class="btn-danger-sm obs-delete" type="button" title="Delete">&#10005;</button>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sess-add-bar">
+      <button class="btn-primary btn-sm" id="btn-add-obs" type="button">+ Add Observance</button>
+    </div>
+
+    {{/* Add observance form (hidden by default) */}}
+    <div id="obs-add-form" style="display:none;margin-top:1rem;padding:1rem;border:1px solid #ddd;border-radius:4px;max-width:500px">
+      <h3 style="margin:0 0 .75rem">Add Observance</h3>
+      <div style="display:grid;gap:.5rem">
+        <label>Date <input class="sess-input" type="date" id="obs-date"></label>
+        <label>Name <input class="sess-input" type="text" id="obs-name" placeholder="Holiday name" maxlength="100"></label>
+        <label>State
+          <select class="sess-input" id="obs-state">
+            <option value="">All</option>
+            {{range .States}}
+            <option value="{{.}}">{{.}}</option>
+            {{end}}
+          </select>
+        </label>
+        <label><input type="checkbox" id="obs-substitute"> Substitute day</label>
+        <div style="display:flex;gap:.5rem;margin-top:.5rem">
+          <button class="btn-primary btn-sm" id="obs-save-btn" type="button">Save</button>
+          <button class="btn-secondary btn-sm" id="obs-cancel-btn" type="button">Cancel</button>
+          <span id="obs-form-status"></span>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+<script>
+(function () {
+
+  // ── Utility ─────────────────────────────────────────────────────────────────
+
+  const auStates = [{{range $i,$s := .States}}{{if $i}},{{end}}"{{$s}}"{{end}}];
+  const selectedYear = {{.SelectedYear}};
+
+  function setStatus(tr, state) {
+    const el = tr.querySelector('.sess-status');
+    el.className = 'sess-status sess-status-' + state;
+    el.textContent = state === 'saving' ? '…' : state === 'saved' ? '✓' : state === 'error' ? '!' : '';
+    if (state === 'saved') setTimeout(() => { el.textContent = ''; el.className = 'sess-status'; }, 1500);
+  }
+
+  // ── Schedule cell visibility ─────────────────────────────────────────────────
+
+  function updateScheduleCell(tr) {
+    const rec = tr.querySelector('[name=recurrence]')?.value;
+    tr.querySelectorAll('.exc-fixed-date').forEach(el => el.style.display = rec === 'ONCE' ? '' : 'none');
+    tr.querySelectorAll('.exc-month-day').forEach(el => el.style.display = rec === 'ANNUAL_FIXED' ? '' : 'none');
+    tr.querySelectorAll('.exc-nth-dow').forEach(el => el.style.display = rec === 'ANNUAL_NTH_DOW' ? '' : 'none');
+    tr.querySelectorAll('.exc-easter').forEach(el => el.style.display = rec === 'ANNUAL_EASTER_OFFSET' ? '' : 'none');
+  }
+
+  // ── Collect fields ────────────────────────────────────────────────────────────
+
+  function collectFields(tr) {
+    const rec = tr.querySelector('[name=recurrence]')?.value || '';
+    // month: for ANNUAL_NTH_DOW use month_dow select, otherwise month select
+    let month = '0';
+    if (rec === 'ANNUAL_NTH_DOW') {
+      month = tr.querySelector('[name=month_dow]')?.value || '0';
+    } else {
+      month = tr.querySelector('[name=month]')?.value || '0';
+    }
+    return {
+      holiday_name:       tr.querySelector('[name=holiday_name]')?.value.trim() || '',
+      state_code:         tr.querySelector('[name=state_code]')?.value || '',
+      recurrence:         rec,
+      month:              month,
+      day:                tr.querySelector('[name=day]')?.value || '0',
+      weekday:            tr.querySelector('[name=weekday]')?.value || '0',
+      nth:                tr.querySelector('[name=nth]')?.value || '0',
+      easter_offset:      tr.querySelector('[name=easter_offset]')?.value || '0',
+      fixed_date:         tr.querySelector('[name=fixed_date]')?.value || '',
+      observe_substitute: tr.querySelector('[name=observe_substitute]')?.checked ? '1' : '0',
+      active_from:        tr.querySelector('[name=active_from]')?.value || '0',
+      active_to:          tr.querySelector('[name=active_to]')?.value || '0',
+      notes:              tr.querySelector('[name=notes]')?.value.trim() || '',
+    };
+  }
+
+  function isComplete(f) {
+    if (!f.holiday_name || !f.recurrence) return false;
+    switch (f.recurrence) {
+      case 'ONCE':                return !!f.fixed_date;
+      case 'ANNUAL_FIXED':        return f.month !== '0' && f.day !== '0';
+      case 'ANNUAL_NTH_DOW':      return f.nth !== '0' && f.weekday !== '0' && f.month !== '0';
+      case 'ANNUAL_EASTER_OFFSET': return true; // offset can be 0 (Easter itself)
+      default: return false;
+    }
+  }
+
+  // ── Save / Delete rule row ────────────────────────────────────────────────────
+
+  async function saveRow(tr) {
+    const id = tr.dataset.id;
+    const f  = collectFields(tr);
+    if (!isComplete(f)) return;
+
+    setStatus(tr, 'saving');
+    const url  = id === 'new' ? '/admin/exceptions/rules/new' : `/admin/exceptions/rules/${id}`;
+    const body = new URLSearchParams(f);
+    try {
+      const res  = await fetch(url, { method: 'POST', body });
+      const json = await res.json();
+      if (!json.ok) { setStatus(tr, 'error'); return; }
+      if (id === 'new') { location.reload(); return; }
+      setStatus(tr, 'saved');
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  async function deleteRow(tr) {
+    const id = tr.dataset.id;
+    if (id === 'new') { tr.remove(); return; }
+    if (!confirm('Delete this holiday rule?')) return;
+    setStatus(tr, 'saving');
+    try {
+      const res  = await fetch(`/admin/exceptions/rules/${id}/delete`, { method: 'POST' });
+      const json = await res.json();
+      if (!json.ok) { setStatus(tr, 'error'); return; }
+      tr.remove();
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  // ── Attach listeners to a rule row ───────────────────────────────────────────
+
+  function attachRowListeners(tr) {
+    tr.querySelector('[name=recurrence]')?.addEventListener('change', () => {
+      updateScheduleCell(tr);
+      saveRow(tr);
+    });
+    ['holiday_name', 'notes', 'active_from', 'active_to', 'fixed_date', 'day', 'easter_offset'].forEach(name => {
+      tr.querySelector(`[name=${name}]`)?.addEventListener('blur', () => saveRow(tr));
+    });
+    ['state_code', 'month', 'month_dow', 'weekday', 'nth'].forEach(name => {
+      tr.querySelector(`[name=${name}]`)?.addEventListener('change', () => saveRow(tr));
+    });
+    tr.querySelector('[name=observe_substitute]')?.addEventListener('change', () => saveRow(tr));
+    tr.querySelector('.exc-delete')?.addEventListener('click', () => deleteRow(tr));
+  }
+
+  // ── Initialise existing rule rows ─────────────────────────────────────────────
+
+  document.querySelectorAll('#rules-tbody .sess-row').forEach(tr => {
+    updateScheduleCell(tr);
+    attachRowListeners(tr);
+  });
+
+  // ── Month options helper ──────────────────────────────────────────────────────
+
+  const monthNames = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function monthOptions(name, selected) {
+    let opts = `<option value="0">— month —</option>`;
+    for (let i = 1; i <= 12; i++) {
+      opts += `<option value="${i}"${i == selected ? ' selected' : ''}>${monthNames[i]}</option>`;
+    }
+    return `<select class="sess-input exc-month" name="${name}">${opts}</select>`;
+  }
+
+  function stateOptions(selected) {
+    let opts = `<option value="">All</option>`;
+    auStates.forEach(s => {
+      opts += `<option value="${s}"${s === selected ? ' selected' : ''}>${s}</option>`;
+    });
+    return opts;
+  }
+
+  // ── Add new rule row ─────────────────────────────────────────────────────────
+
+  document.getElementById('btn-add-rule')?.addEventListener('click', () => {
+    const tbody = document.getElementById('rules-tbody');
+    tbody.querySelector('.sess-new')?.remove();
+
+    const tr = document.createElement('tr');
+    tr.className = 'sess-row sess-new';
+    tr.dataset.id = 'new';
+    tr.innerHTML = `
+      <td><input class="sess-input exc-name" type="text" name="holiday_name"
+                 placeholder="Holiday name" maxlength="100"></td>
+      <td>
+        <select class="sess-input exc-state" name="state_code">
+          ${stateOptions('')}
+        </select>
+      </td>
+      <td>
+        <select class="sess-input exc-recurrence" name="recurrence">
+          <option value="ANNUAL_FIXED">Annual Fixed</option>
+          <option value="ANNUAL_NTH_DOW">Annual Nth DOW</option>
+          <option value="ANNUAL_EASTER_OFFSET">Easter Offset</option>
+          <option value="ONCE">Once</option>
+        </select>
+      </td>
+      <td class="exc-schedule-cell">
+        <span class="exc-field exc-fixed-date" style="display:none">
+          <input class="sess-input" type="date" name="fixed_date">
+        </span>
+        <span class="exc-field exc-month-day">
+          ${monthOptions('month', 0)}
+          <input class="sess-input exc-day" type="number" name="day" min="1" max="31" placeholder="day" style="width:4em">
+        </span>
+        <span class="exc-field exc-nth-dow" style="display:none">
+          <select class="sess-input exc-nth" name="nth">
+            <option value="0">— nth —</option>
+            <option value="1">1st</option>
+            <option value="2">2nd</option>
+            <option value="3">3rd</option>
+            <option value="4">4th</option>
+            <option value="-1">Last</option>
+          </select>
+          <select class="sess-input exc-weekday" name="weekday">
+            <option value="0">— day —</option>
+            <option value="1">Mon</option>
+            <option value="2">Tue</option>
+            <option value="3">Wed</option>
+            <option value="4">Thu</option>
+            <option value="5">Fri</option>
+            <option value="6">Sat</option>
+            <option value="7">Sun</option>
+          </select>
+          ${monthOptions('month_dow', 0)}
+        </span>
+        <span class="exc-field exc-easter" style="display:none">
+          <input class="sess-input exc-easter-offset" type="number" name="easter_offset"
+                 value="0" placeholder="days from Easter" style="width:7em">
+        </span>
+      </td>
+      <td style="text-align:center">
+        <input type="checkbox" name="observe_substitute" value="1">
+      </td>
+      <td>
+        <input class="sess-input exc-active-from" type="number" name="active_from"
+               min="2000" max="2099" placeholder="from" style="width:4.5em">
+        <input class="sess-input exc-active-to" type="number" name="active_to"
+               min="2000" max="2099" placeholder="to" style="width:4.5em">
+      </td>
+      <td><input class="sess-input exc-notes" type="text" name="notes"
+                 maxlength="200" placeholder="notes"></td>
+      <td class="sess-actions">
+        <span class="sess-status"></span>
+        <button class="btn-danger-sm exc-delete" type="button" title="Remove">&#10005;</button>
+      </td>`;
+    tbody.appendChild(tr);
+    attachRowListeners(tr);
+    updateScheduleCell(tr);
+    tr.querySelector('[name=holiday_name]').focus();
+  });
+
+  // ── Generate observances ──────────────────────────────────────────────────────
+
+  document.getElementById('btn-generate')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-generate');
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+    try {
+      const body = new URLSearchParams({ year: selectedYear });
+      const res  = await fetch('/admin/exceptions/generate', { method: 'POST', body });
+      const json = await res.json();
+      if (json.ok) {
+        alert(`Generated ${json.count} observance(s) for ${selectedYear}.`);
+        location.reload();
+      } else {
+        alert('Error: ' + (json.error || 'unknown'));
+        btn.disabled = false;
+        btn.textContent = `Generate for ${selectedYear}`;
+      }
+    } catch (e) {
+      alert('Network error.');
+      btn.disabled = false;
+      btn.textContent = `Generate for ${selectedYear}`;
+    }
+  });
+
+  // ── Delete observance ──────────────────────────────────────────────────────────
+
+  function attachObsListeners(tr) {
+    tr.querySelector('.obs-delete')?.addEventListener('click', async () => {
+      const id = tr.dataset.id;
+      if (!confirm('Delete this observance?')) return;
+      setStatus(tr, 'saving');
+      try {
+        const res  = await fetch(`/admin/exceptions/observances/${id}/delete`, { method: 'POST' });
+        const json = await res.json();
+        if (!json.ok) { setStatus(tr, 'error'); return; }
+        tr.remove();
+      } catch { setStatus(tr, 'error'); }
+    });
+  }
+
+  document.querySelectorAll('#obs-tbody .obs-row').forEach(attachObsListeners);
+
+  // ── Add observance form ────────────────────────────────────────────────────────
+
+  const obsForm = document.getElementById('obs-add-form');
+
+  document.getElementById('btn-add-obs')?.addEventListener('click', () => {
+    obsForm.style.display = '';
+    document.getElementById('obs-date').focus();
+  });
+
+  document.getElementById('obs-cancel-btn')?.addEventListener('click', () => {
+    obsForm.style.display = 'none';
+  });
+
+  document.getElementById('obs-save-btn')?.addEventListener('click', async () => {
+    const dateVal = document.getElementById('obs-date').value;
+    const nameVal = document.getElementById('obs-name').value.trim();
+    if (!dateVal || !nameVal) {
+      alert('Date and name are required.');
+      return;
+    }
+    const statusEl = document.getElementById('obs-form-status');
+    statusEl.textContent = '…';
+    const body = new URLSearchParams({
+      holiday_date:  dateVal,
+      holiday_name:  nameVal,
+      state_code:    document.getElementById('obs-state').value,
+      is_substitute: document.getElementById('obs-substitute').checked ? '1' : '0',
+    });
+    try {
+      const res  = await fetch('/admin/exceptions/observances/new', { method: 'POST', body });
+      const json = await res.json();
+      if (json.ok) {
+        location.reload();
+      } else {
+        statusEl.textContent = '! ' + (json.error || 'error');
+      }
+    } catch {
+      statusEl.textContent = '! network error';
+    }
+  });
+
+})();
+</script>
+  </div>
+</body>
+</html>{{end}}

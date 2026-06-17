@@ -79,6 +79,8 @@ func (s *Sessions) Middleware(next http.Handler) http.Handler {
 			return
 		}
 		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
 		ctx := context.WithValue(r.Context(), ctxKey{}, entry.User)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

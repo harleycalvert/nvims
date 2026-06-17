@@ -4744,6 +4744,298 @@ func (s *Store) DeletePersonLocationPref(ctx context.Context, personID, location
 	return err
 }
 
+// ── Holiday Rules & Observances ────────────────────────────────────────────
+
+type HolidayRuleRow struct {
+	ID               int64
+	HolidayName      string
+	StateCode        string // "" means all states
+	Recurrence       string // ONCE | ANNUAL_FIXED | ANNUAL_NTH_DOW | ANNUAL_EASTER_OFFSET
+	Month            int    // 0 = null
+	Day              int    // 0 = null
+	Weekday          int    // 0 = null; 1=Mon..7=Sun ISO
+	Nth              int    // 0 = null; 1-5 or -1=last
+	EasterOffset     int    // 0 = null (days from Easter)
+	FixedDate        string // "YYYY-MM-DD" or ""
+	ObserveSubstitute bool
+	ActiveFrom       int // 0 = null (year)
+	ActiveTo         int // 0 = null (year)
+	Notes            string
+}
+
+type HolidayObservanceRow struct {
+	ID           int64
+	HolidayDate  time.Time
+	HolidayName  string
+	StateCode    string
+	RuleID       int64 // 0 = manual
+	IsSubstitute bool
+}
+
+func (s *Store) ListHolidayRules(ctx context.Context) ([]HolidayRuleRow, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, holiday_name, COALESCE(state_code,''), recurrence,
+		       COALESCE(month,0), COALESCE(day,0), COALESCE(weekday,0), COALESCE(nth,0),
+		       COALESCE(easter_offset,0),
+		       COALESCE(TO_CHAR(fixed_date,'YYYY-MM-DD'),''),
+		       observe_substitute,
+		       COALESCE(active_from,0), COALESCE(active_to,0),
+		       COALESCE(notes,'')
+		FROM public.holiday_rules
+		ORDER BY
+		    CASE recurrence
+		        WHEN 'ANNUAL_FIXED'        THEN 1
+		        WHEN 'ANNUAL_NTH_DOW'      THEN 2
+		        WHEN 'ANNUAL_EASTER_OFFSET' THEN 3
+		        WHEN 'ONCE'                THEN 4
+		        ELSE 5
+		    END,
+		    holiday_name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []HolidayRuleRow
+	for rows.Next() {
+		var r HolidayRuleRow
+		if err := rows.Scan(
+			&r.ID, &r.HolidayName, &r.StateCode, &r.Recurrence,
+			&r.Month, &r.Day, &r.Weekday, &r.Nth,
+			&r.EasterOffset, &r.FixedDate,
+			&r.ObserveSubstitute,
+			&r.ActiveFrom, &r.ActiveTo,
+			&r.Notes,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) CreateHolidayRule(ctx context.Context, r HolidayRuleRow) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO public.holiday_rules
+		    (holiday_name, state_code, recurrence, month, day, weekday, nth,
+		     easter_offset, fixed_date, observe_substitute, active_from, active_to, notes)
+		VALUES
+		    ($1, NULLIF($2,''), $3,
+		     NULLIF($4,0), NULLIF($5,0), NULLIF($6,0), NULLIF($7,0),
+		     NULLIF($8,0), NULLIF($9,'')::date,
+		     $10, NULLIF($11,0), NULLIF($12,0), NULLIF($13,''))
+		RETURNING id
+	`, r.HolidayName, r.StateCode, r.Recurrence,
+		r.Month, r.Day, r.Weekday, r.Nth,
+		r.EasterOffset, r.FixedDate,
+		r.ObserveSubstitute, r.ActiveFrom, r.ActiveTo, r.Notes,
+	).Scan(&id)
+	return id, err
+}
+
+func (s *Store) UpdateHolidayRule(ctx context.Context, id int64, r HolidayRuleRow) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.holiday_rules SET
+		    holiday_name       = $2,
+		    state_code         = NULLIF($3,''),
+		    recurrence         = $4,
+		    month              = NULLIF($5,0),
+		    day                = NULLIF($6,0),
+		    weekday            = NULLIF($7,0),
+		    nth                = NULLIF($8,0),
+		    easter_offset      = NULLIF($9,0),
+		    fixed_date         = NULLIF($10,'')::date,
+		    observe_substitute = $11,
+		    active_from        = NULLIF($12,0),
+		    active_to          = NULLIF($13,0),
+		    notes              = NULLIF($14,'')
+		WHERE id = $1
+	`, id, r.HolidayName, r.StateCode, r.Recurrence,
+		r.Month, r.Day, r.Weekday, r.Nth,
+		r.EasterOffset, r.FixedDate,
+		r.ObserveSubstitute, r.ActiveFrom, r.ActiveTo, r.Notes,
+	)
+	return err
+}
+
+func (s *Store) DeleteHolidayRule(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM public.holiday_rules WHERE id = $1`, id)
+	return err
+}
+
+func (s *Store) ListHolidayObservances(ctx context.Context, year int) ([]HolidayObservanceRow, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, holiday_date, holiday_name, COALESCE(state_code,''),
+		       COALESCE(rule_id,0), is_substitute
+		FROM public.holiday_observances
+		WHERE EXTRACT(YEAR FROM holiday_date) = $1
+		ORDER BY holiday_date, holiday_name
+	`, year)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []HolidayObservanceRow
+	for rows.Next() {
+		var row HolidayObservanceRow
+		if err := rows.Scan(
+			&row.ID, &row.HolidayDate, &row.HolidayName,
+			&row.StateCode, &row.RuleID, &row.IsSubstitute,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) CreateHolidayObservance(ctx context.Context, date time.Time, name, stateCode string, ruleID int64, isSubstitute bool) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO public.holiday_observances
+		    (holiday_date, holiday_name, state_code, rule_id, is_substitute)
+		VALUES ($1, $2, NULLIF($3,''), NULLIF($4,0), $5)
+		ON CONFLICT ON CONSTRAINT uq_observance DO NOTHING
+	`, date, name, stateCode, ruleID, isSubstitute)
+	return err
+}
+
+func (s *Store) DeleteHolidayObservance(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM public.holiday_observances WHERE id = $1`, id)
+	return err
+}
+
+// computeEaster returns the date of Easter Sunday for the given year
+// using the Anonymous Gregorian algorithm.
+func computeEaster(year int) time.Time {
+	a := year % 19
+	b := year / 100
+	c := year % 100
+	d := b / 4
+	e := b % 4
+	f := (b + 8) / 25
+	g := (b - f + 1) / 3
+	h := (19*a + b - d - g + 15) % 30
+	i := c / 4
+	k := c % 4
+	l := (32 + 2*e + 2*i - h - k) % 7
+	m := (a + 11*h + 22*l) / 451
+	month := (h + l - 7*m + 114) / 31
+	day := ((h + l - 7*m + 114) % 31) + 1
+	return time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC)
+}
+
+// substituteDate returns the substitute (observed) date for a public holiday:
+// Saturday → Monday (+2), Sunday → Monday (+1), otherwise same day.
+func substituteDate(d time.Time) time.Time {
+	switch d.Weekday() {
+	case time.Saturday:
+		return d.AddDate(0, 0, 2)
+	case time.Sunday:
+		return d.AddDate(0, 0, 1)
+	default:
+		return d
+	}
+}
+
+// nthWeekdayOfMonth returns the date of the nth occurrence of the given ISO weekday
+// (1=Mon..7=Sun) in the given month/year. nth==-1 means the last occurrence.
+func nthWeekdayOfMonth(year, month, isoWeekday, nth int) time.Time {
+	// Convert ISO weekday to Go weekday: ISO 1=Mon..7=Sun → Go 0=Sun..6=Sat
+	goWeekday := time.Weekday(isoWeekday % 7) // ISO 7 (Sun) → 0 (Go Sun)
+
+	if nth > 0 {
+		// Start from the 1st of the month and find the first matching weekday
+		d := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+		offset := int(goWeekday) - int(d.Weekday())
+		if offset < 0 {
+			offset += 7
+		}
+		d = d.AddDate(0, 0, offset+(nth-1)*7)
+		return d
+	}
+	// nth == -1: last occurrence
+	// Start from the last day of the month
+	d := time.Date(year, time.Month(month+1), 0, 0, 0, 0, 0, time.UTC) // last day
+	offset := int(d.Weekday()) - int(goWeekday)
+	if offset < 0 {
+		offset += 7
+	}
+	return d.AddDate(0, 0, -offset)
+}
+
+// GenerateObservancesForYear generates holiday observances for every active rule
+// in the given year and inserts them (ignoring duplicates). Returns the count inserted.
+func (s *Store) GenerateObservancesForYear(ctx context.Context, year int) (int, error) {
+	rules, err := s.ListHolidayRules(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	count := 0
+	for _, rule := range rules {
+		// Check active_from / active_to
+		if rule.ActiveFrom > 0 && year < rule.ActiveFrom {
+			continue
+		}
+		if rule.ActiveTo > 0 && year > rule.ActiveTo {
+			continue
+		}
+
+		var dates []time.Time
+
+		switch rule.Recurrence {
+		case "ONCE":
+			if rule.FixedDate == "" {
+				continue
+			}
+			d, err := time.Parse("2006-01-02", rule.FixedDate)
+			if err != nil {
+				continue
+			}
+			if d.Year() == year {
+				dates = append(dates, d)
+			}
+
+		case "ANNUAL_FIXED":
+			if rule.Month == 0 || rule.Day == 0 {
+				continue
+			}
+			dates = append(dates, time.Date(year, time.Month(rule.Month), rule.Day, 0, 0, 0, 0, time.UTC))
+
+		case "ANNUAL_NTH_DOW":
+			if rule.Month == 0 || rule.Weekday == 0 || rule.Nth == 0 {
+				continue
+			}
+			dates = append(dates, nthWeekdayOfMonth(year, rule.Month, rule.Weekday, rule.Nth))
+
+		case "ANNUAL_EASTER_OFFSET":
+			easter := computeEaster(year)
+			dates = append(dates, easter.AddDate(0, 0, rule.EasterOffset))
+
+		default:
+			continue
+		}
+
+		for _, d := range dates {
+			if err := s.CreateHolidayObservance(ctx, d, rule.HolidayName, rule.StateCode, rule.ID, false); err != nil {
+				return count, fmt.Errorf("CreateHolidayObservance: %w", err)
+			}
+			count++
+			if rule.ObserveSubstitute {
+				sub := substituteDate(d)
+				if sub != d {
+					if err := s.CreateHolidayObservance(ctx, sub, rule.HolidayName+" (Substitute)", rule.StateCode, rule.ID, true); err != nil {
+						return count, fmt.Errorf("CreateHolidayObservance substitute: %w", err)
+					}
+					count++
+				}
+			}
+		}
+	}
+	return count, nil
+}
+
 func (s *Store) UpdateSubjectAssessmentToolVersion(ctx context.Context, classID, subjectID int64, version string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE public.class_subjects

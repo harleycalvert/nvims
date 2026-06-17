@@ -185,6 +185,7 @@ func New(st *store.Store, sessions *auth.Sessions, stor *storage.Client) *Handle
 			"templates/system/menu.html",
 			"templates/admin/departments.html",
 			"templates/admin/roles.html",
+			"templates/admin/exceptions.html",
 		),
 	)
 	h := &Handler{store: st, sessions: sessions, storage: stor, tmpl: tmpl}
@@ -5038,4 +5039,192 @@ func (h *Handler) SystemLMSSave(w http.ResponseWriter, r *http.Request) {
 	h.lmsURL  = url
 	h.mu.Unlock()
 	http.Redirect(w, r, "/system/lms?saved=1", http.StatusSeeOther)
+}
+
+// ── Admin Exceptions ──────────────────────────────────────────────────────────
+
+func (h *Handler) AdminExceptions(w http.ResponseWriter, r *http.Request) {
+	yearStr := r.URL.Query().Get("year")
+	now := time.Now()
+	year := now.Year()
+	if y, err := strconv.Atoi(yearStr); err == nil && y > 0 {
+		year = y
+	}
+
+	rules, err := h.store.ListHolidayRules(r.Context())
+	if err != nil {
+		log.Printf("ListHolidayRules: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+
+	observances, err := h.store.ListHolidayObservances(r.Context(), year)
+	if err != nil {
+		log.Printf("ListHolidayObservances(%d): %v", year, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+
+	years := []int{year - 2, year - 1, year, year + 1, year + 2}
+	user, _ := auth.Current(r)
+	h.render(w, "admin-exceptions", map[string]any{
+		"Rules":        rules,
+		"Observances":  observances,
+		"SelectedYear": year,
+		"Years":        years,
+		"States":       auStates,
+		"User":         user,
+	})
+}
+
+func holidayRuleFromForm(r *http.Request) store.HolidayRuleRow {
+	parseInt := func(s string) int {
+		v, _ := strconv.Atoi(strings.TrimSpace(s))
+		return v
+	}
+	return store.HolidayRuleRow{
+		HolidayName:      strings.TrimSpace(r.FormValue("holiday_name")),
+		StateCode:        strings.TrimSpace(r.FormValue("state_code")),
+		Recurrence:       r.FormValue("recurrence"),
+		Month:            parseInt(r.FormValue("month")),
+		Day:              parseInt(r.FormValue("day")),
+		Weekday:          parseInt(r.FormValue("weekday")),
+		Nth:              parseInt(r.FormValue("nth")),
+		EasterOffset:     parseInt(r.FormValue("easter_offset")),
+		FixedDate:        strings.TrimSpace(r.FormValue("fixed_date")),
+		ObserveSubstitute: r.FormValue("observe_substitute") == "1" || r.FormValue("observe_substitute") == "on" || r.FormValue("observe_substitute") == "true",
+		ActiveFrom:       parseInt(r.FormValue("active_from")),
+		ActiveTo:         parseInt(r.FormValue("active_to")),
+		Notes:            strings.TrimSpace(r.FormValue("notes")),
+	}
+}
+
+func jsonOK(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func jsonError(w http.ResponseWriter, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	b, _ := json.Marshal(map[string]string{"error": msg})
+	_, _ = w.Write(b)
+}
+
+func (h *Handler) AdminExceptionRuleCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		jsonError(w, "bad request")
+		return
+	}
+	row := holidayRuleFromForm(r)
+	if row.HolidayName == "" || row.Recurrence == "" {
+		jsonError(w, "holiday_name and recurrence are required")
+		return
+	}
+	if _, err := h.store.CreateHolidayRule(r.Context(), row); err != nil {
+		log.Printf("CreateHolidayRule: %v", err)
+		jsonError(w, "database error")
+		return
+	}
+	jsonOK(w)
+}
+
+func (h *Handler) AdminExceptionRuleUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id == 0 {
+		jsonError(w, "bad request")
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		jsonError(w, "bad request")
+		return
+	}
+	row := holidayRuleFromForm(r)
+	if row.HolidayName == "" || row.Recurrence == "" {
+		jsonError(w, "holiday_name and recurrence are required")
+		return
+	}
+	if err := h.store.UpdateHolidayRule(r.Context(), id, row); err != nil {
+		log.Printf("UpdateHolidayRule(%d): %v", id, err)
+		jsonError(w, "database error")
+		return
+	}
+	jsonOK(w)
+}
+
+func (h *Handler) AdminExceptionRuleDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id == 0 {
+		jsonError(w, "bad request")
+		return
+	}
+	if err := h.store.DeleteHolidayRule(r.Context(), id); err != nil {
+		log.Printf("DeleteHolidayRule(%d): %v", id, err)
+		jsonError(w, "database error")
+		return
+	}
+	jsonOK(w)
+}
+
+func (h *Handler) AdminExceptionObservanceCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		jsonError(w, "bad request")
+		return
+	}
+	dateStr := strings.TrimSpace(r.FormValue("holiday_date"))
+	name := strings.TrimSpace(r.FormValue("holiday_name"))
+	stateCode := strings.TrimSpace(r.FormValue("state_code"))
+	ruleID, _ := strconv.ParseInt(r.FormValue("rule_id"), 10, 64)
+	isSubstitute := r.FormValue("is_substitute") == "1" || r.FormValue("is_substitute") == "on"
+
+	if dateStr == "" || name == "" {
+		jsonError(w, "holiday_date and holiday_name are required")
+		return
+	}
+	d, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		jsonError(w, "invalid date format")
+		return
+	}
+	if err := h.store.CreateHolidayObservance(r.Context(), d, name, stateCode, ruleID, isSubstitute); err != nil {
+		log.Printf("CreateHolidayObservance: %v", err)
+		jsonError(w, "database error")
+		return
+	}
+	jsonOK(w)
+}
+
+func (h *Handler) AdminExceptionObservanceDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id == 0 {
+		jsonError(w, "bad request")
+		return
+	}
+	if err := h.store.DeleteHolidayObservance(r.Context(), id); err != nil {
+		log.Printf("DeleteHolidayObservance(%d): %v", id, err)
+		jsonError(w, "database error")
+		return
+	}
+	jsonOK(w)
+}
+
+func (h *Handler) AdminExceptionGenerate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		jsonError(w, "bad request")
+		return
+	}
+	yearStr := strings.TrimSpace(r.FormValue("year"))
+	year, err := strconv.Atoi(yearStr)
+	if err != nil || year < 2000 {
+		jsonError(w, "invalid year")
+		return
+	}
+	count, err := h.store.GenerateObservancesForYear(r.Context(), year)
+	if err != nil {
+		log.Printf("GenerateObservancesForYear(%d): %v", year, err)
+		jsonError(w, "database error")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = fmt.Fprintf(w, `{"ok":true,"count":%d}`, count)
 }
