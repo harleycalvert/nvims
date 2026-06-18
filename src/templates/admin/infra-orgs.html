@@ -36,7 +36,7 @@
           <tr>
             <th class="td-left">Code</th>
             <th class="td-left">Name</th>
-            <th>Type</th>
+            <th title="AVETMISS 2-digit organisation type (e.g. 91 = commercial RTO, 31 = TAFE)">AVETMISS Type</th>
             <th class="td-left">Address</th>
             <th class="td-left">Suburb</th>
             <th>State</th>
@@ -44,6 +44,10 @@
             <th class="td-left">Contact</th>
             <th class="td-left">Phone</th>
             <th class="td-left">Email</th>
+            <th class="td-left">Domain</th>
+            <th class="td-left">ABN</th>
+            <th class="td-left">TEQSA</th>
+            <th class="td-left">CRICOS</th>
             <th class="col-actions-sm"></th>
           </tr>
         </thead>
@@ -65,6 +69,10 @@
             <td><input class="sess-input org-col-contact" type="text" name="contact_name" value="{{.ContactName}}" maxlength="100"></td>
             <td><input class="sess-input org-col-phone"   type="text" name="telephone"    value="{{.Telephone}}"   maxlength="20"></td>
             <td><input class="sess-input org-col-email"   type="text" name="email"        value="{{.Email}}"       maxlength="100"></td>
+            <td><input class="sess-input org-col-domain"  type="text" name="domain"       value="{{.Domain}}"      maxlength="100" placeholder="e.g. tafensw.edu.au"></td>
+            <td><input class="sess-input org-col-abn"     type="text" name="abn"          value="{{.ABN}}"         maxlength="11"  placeholder="11 digits"></td>
+            <td><input class="sess-input org-col-teqsa"   type="text" name="teqsa"        value="{{.TEQSA}}"       maxlength="20"  placeholder="e.g. PRV12073"></td>
+            <td><input class="sess-input org-col-cricos"  type="text" name="cricos"       value="{{.CRICOS}}"      maxlength="10"  placeholder="e.g. 00591E"></td>
             <td class="sess-actions">
               <span class="sess-status"></span>
               <button class="btn-danger-sm" type="button" data-delete title="Delete">✕</button>
@@ -96,7 +104,8 @@
     return { org_code: g(tr,'org_code'), org_name: g(tr,'org_name'), org_type: g(tr,'org_type'),
              address: g(tr,'address'), suburb: g(tr,'suburb'),
              state_code: g(tr,'state_code'), postcode: g(tr,'postcode'),
-             contact_name: g(tr,'contact_name'), telephone: g(tr,'telephone'), email: g(tr,'email') };
+             contact_name: g(tr,'contact_name'), telephone: g(tr,'telephone'), email: g(tr,'email'),
+             domain: g(tr,'domain'), abn: g(tr,'abn'), teqsa: g(tr,'teqsa'), cricos: g(tr,'cricos') };
   }
   function isComplete(f) { return f.org_code && f.org_name && f.org_type && f.address && f.suburb && f.state_code && f.postcode; }
 
@@ -148,6 +157,10 @@
       <td><input class="sess-input org-col-contact" type="text" name="contact_name" placeholder="Contact name"    maxlength="100"></td>
       <td><input class="sess-input org-col-phone"   type="text" name="telephone"    placeholder="Phone"            maxlength="20"></td>
       <td><input class="sess-input org-col-email"   type="text" name="email"        placeholder="Email"            maxlength="100"></td>
+      <td><input class="sess-input org-col-domain"  type="text" name="domain"       placeholder="tafensw.edu.au"   maxlength="100"></td>
+      <td><input class="sess-input org-col-abn"     type="text" name="abn"          placeholder="11 digits"        maxlength="11"></td>
+      <td><input class="sess-input org-col-teqsa"   type="text" name="teqsa"        placeholder="PRV12073"         maxlength="20"></td>
+      <td><input class="sess-input org-col-cricos"  type="text" name="cricos"       placeholder="00591E"           maxlength="10"></td>
       <td class="sess-actions"><span class="sess-status"></span>
         <button class="btn-danger-sm" type="button" data-delete title="Remove">✕</button></td>`;
     tbody.appendChild(tr);

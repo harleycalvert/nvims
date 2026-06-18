@@ -1,0 +1,141 @@
+{{define "system-permissions"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS — Role Permissions</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/sessions.css">
+  <link rel="stylesheet" href="/static/sidebar.css">
+  <link rel="stylesheet" href="/static/admin.css">
+  <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
+  <style>
+    .perm-tabs { display:flex; gap:0.25rem; flex-wrap:wrap; margin-bottom:1.25rem; }
+    .perm-tab {
+      padding:0.35rem 0.9rem; border-radius:6px; border:1px solid var(--border);
+      background:var(--bg-card); color:var(--text); cursor:pointer; font-size:0.875rem;
+      font-family:inherit;
+    }
+    .perm-tab[aria-selected="true"] {
+      background:var(--accent); color:#fff; border-color:var(--accent);
+    }
+    .perm-panel { display:none; }
+    .perm-panel.active { display:block; }
+    .perm-group { margin-bottom:1.25rem; }
+    .perm-group-name {
+      font-weight:600; font-size:0.8rem; text-transform:uppercase;
+      letter-spacing:0.06em; color:var(--text-muted); margin-bottom:0.4rem;
+    }
+    .perm-row {
+      display:flex; align-items:center; gap:0.6rem;
+      padding:0.3rem 0.5rem; border-radius:4px;
+    }
+    .perm-row:hover { background:var(--bg-hover); }
+    .perm-row label { cursor:pointer; flex:1; font-size:0.9rem; }
+    .perm-row input[type=checkbox] { width:1rem; height:1rem; cursor:pointer; flex-shrink:0; }
+    .perm-key { font-family:ui-monospace,'Cascadia Code',Menlo,monospace; font-size:0.75rem; color:var(--text-muted); }
+    .perm-save-bar {
+      display:flex; align-items:center; gap:1rem;
+      margin-top:1.5rem; padding-top:1rem; border-top:1px solid var(--border);
+    }
+    .perm-note {
+      font-size:0.8rem; color:var(--text-muted);
+      background:var(--bg-card); border:1px solid var(--border);
+      border-radius:6px; padding:0.6rem 0.9rem; margin-bottom:1.25rem;
+    }
+  </style>
+</head>
+<body>
+  {{template "sidebar" .}}
+  <div class="page-wrap">
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/system">System</a>
+        <h1>Role Permissions</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+
+  <main class="sessions-main">
+
+    {{if .Saved}}
+    <div class="form-success" style="margin-bottom:1rem">Permissions saved.</div>
+    {{end}}
+
+    <div class="perm-note">
+      <strong>System Admin</strong> bypasses all permission checks and always has full access.
+      Configure permissions for the other roles below.
+    </div>
+
+    <div class="perm-tabs" role="tablist">
+      {{range .Roles}}{{if ne . "SystemAdmin"}}
+      <button type="button" class="perm-tab" role="tab" data-role="{{.}}" aria-selected="false">{{.}}</button>
+      {{end}}{{end}}
+    </div>
+
+    {{range .Roles}}{{if ne . "SystemAdmin"}}
+    {{$role := .}}
+    <div class="perm-panel" id="panel-{{$role}}" role="tabpanel">
+      <form method="POST" action="/system/permissions">
+        <input type="hidden" name="role" value="{{$role}}">
+        {{range $.Groups}}
+        <div class="perm-group">
+          <div class="perm-group-name">{{.Name}}</div>
+          {{range .Permissions}}
+          {{$key := .Key}}
+          {{$checked := index (index $.Current $role) $key}}
+          <div class="perm-row">
+            <input type="checkbox" id="{{$role}}-{{$key}}" name="{{$key}}" value="1"{{if $checked}} checked{{end}}>
+            <label for="{{$role}}-{{$key}}">
+              {{.Description}}
+              <span class="perm-key"> — {{$key}}</span>
+            </label>
+          </div>
+          {{end}}
+        </div>
+        {{end}}
+        <div class="perm-save-bar">
+          <button type="submit" class="btn-primary">Save {{$role}} permissions</button>
+        </div>
+      </form>
+    </div>
+    {{end}}{{end}}
+
+  </main>
+  </div>
+
+  <script>
+  (function(){
+    var tabs  = document.querySelectorAll('.perm-tab');
+    var key   = 'nvims-perm-role';
+
+    function activate(role) {
+      tabs.forEach(function(t) {
+        var active = t.dataset.role === role;
+        t.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      document.querySelectorAll('.perm-panel').forEach(function(p) {
+        p.classList.toggle('active', p.id === 'panel-' + role);
+      });
+      sessionStorage.setItem(key, role);
+    }
+
+    tabs.forEach(function(t) {
+      t.addEventListener('click', function(){ activate(t.dataset.role); });
+    });
+
+    var saved = sessionStorage.getItem(key);
+    var first = tabs[0] && tabs[0].dataset.role;
+    activate(saved || first);
+  })();
+  </script>
+</body>
+</html>
+{{end}}

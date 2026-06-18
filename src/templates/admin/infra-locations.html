@@ -238,10 +238,12 @@
     document.getElementById('map-search-input').value  = '';
 
     const panel = document.getElementById('loc-map-panel');
-    panel.style.display = 'block';
+    panel.classList.remove('hidden');
     panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-    setTimeout(() => {
+    // Double rAF: first frame schedules paint, second runs after it completes.
+    // This guarantees Leaflet measures a non-zero container dimension.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
       if (!leafletMap) {
         leafletMap = L.map('map-container');
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -249,9 +251,8 @@
           maxZoom: 19
         }).addTo(leafletMap);
         leafletMap.on('click', e => placeMarker(e.latlng.lat, e.latlng.lng));
-      } else {
-        leafletMap.invalidateSize();
       }
+      leafletMap.invalidateSize();
 
       if (hasCoords) {
         leafletMap.setView([parseFloat(latVal), parseFloat(lngVal)], 16);
@@ -260,7 +261,7 @@
         leafletMap.setView([-25.27, 133.78], 5);
         if (marker) { marker.remove(); marker = null; }
       }
-    }, 50);
+    }));
   }
 
   // pending = false when restoring existing coords (don't enable Save button)
@@ -286,7 +287,7 @@
 
   function closeMapPanel() {
     if (currentMapRow) currentMapRow.classList.remove('loc-selected');
-    document.getElementById('loc-map-panel').style.display = 'none';
+    document.getElementById('loc-map-panel').classList.add('hidden');
     document.getElementById('map-search-results').innerHTML = '';
     currentMapRow = null;
   }

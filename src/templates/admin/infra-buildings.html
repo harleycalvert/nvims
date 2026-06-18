@@ -31,15 +31,18 @@
 
   <main class="sessions-main">
     <p class="page-desc">Buildings belong to a delivery location (campus) and contain the rooms used for class delivery. Filter by campus using the buttons below, then click a row to edit or add a new building.</p>
-    <div class="bld-filter">
-      <div id="campus-radios" class="bld-filter-row"></div>
-    </div>
-
+    <div class="bld-layout">
+      <div class="bld-campus-panel">
+        <div class="bld-campus-search">
+          <input id="campus-search" type="search" placeholder="Search campuses…" autocomplete="off">
+        </div>
+        <ul id="campus-list"></ul>
+      </div>
+      <div class="bld-content">
     <div class="table-wrap">
       <table class="sessions-table">
         <thead>
           <tr>
-            <th class="td-left">Location</th>
             <th class="td-left">Building Name</th>
             <th class="td-left">Address</th>
             <th class="td-left">Suburb</th>
@@ -52,12 +55,8 @@
           {{range .Buildings}}
           <tr class="sess-row" data-id="{{.ID}}" data-location-id="{{.LocationID}}">
             <td>
-              <select class="sess-input bld-col-loc" name="delivery_location_id">
-                {{$lid := .LocationID}}
-                {{range $.Locations}}<option value="{{.ID}}"{{if eq .ID $lid}} selected{{end}}>{{.Name}}</option>{{end}}
-              </select>
-            </td>
-            <td><input class="sess-input bld-col-name" type="text" name="building_name" value="{{.BuildingName}}" maxlength="50"></td>
+              <input type="hidden" name="delivery_location_id" value="{{.LocationID}}">
+              <input class="sess-input bld-col-name" type="text" name="building_name" value="{{.BuildingName}}" maxlength="50"></td>
             <td><input class="sess-input bld-col-addr" type="text" name="address"       value="{{.Address}}"      maxlength="200"></td>
             <td><input class="sess-input bld-col-suburb" type="text" name="suburb"      value="{{.Suburb}}"       maxlength="50"></td>
             <td>
@@ -81,9 +80,11 @@
         </tbody>
       </table>
     </div>
-    <div class="sess-add-bar">
-      <button class="btn-primary btn-sm" id="btn-add-building" type="button">+ Add Building</button>
-    </div>
+      <div class="sess-add-bar">
+        <button class="btn-primary btn-sm" id="btn-add-building" type="button">+ Add Building</button>
+      </div>
+      </div>{{/* end .bld-content */}}
+    </div>{{/* end .bld-layout */}}
 
     {{/* ── Inline map panel ── */}}
     <div id="bld-map-panel" class="hidden">
@@ -115,25 +116,42 @@
   const auStates = [{{range $i,$s := .States}}{{if $i}},{{end}}"{{$s}}"{{end}}];
 
   // ── Campus radio filter ───────────────────────────────────────────────────
-  const radioRow = document.getElementById('campus-radios');
-  locs.forEach((loc, i) => {
-    const lbl = document.createElement('label');
-    lbl.innerHTML = `<input type="radio" name="campus" value="${loc.id}"${i === 0 ? ' checked' : ''}> ${loc.name}`;
-    radioRow.appendChild(lbl);
-  });
+  // ── Campus list filter ────────────────────────────────────────────────────
+  const CAMPUS_KEY  = 'nvims-bld-campus';
+  const campusList  = document.getElementById('campus-list');
+  const campusSearch = document.getElementById('campus-search');
+  let activeCampusId = parseInt(sessionStorage.getItem(CAMPUS_KEY) ?? '0') || locs[0]?.id || 0;
 
-  function selectedLocId() {
-    return parseInt(document.querySelector('input[name=campus]:checked')?.value ?? 0);
-  }
-
-  function filterRows() {
-    const locId = selectedLocId();
-    document.querySelectorAll('#buildings-tbody .sess-row:not(.sess-new)').forEach(tr => {
-      tr.style.display = parseInt(tr.dataset.locationId) === locId ? '' : 'none';
+  function renderCampusList(filter) {
+    const q = (filter || '').toLowerCase();
+    campusList.innerHTML = '';
+    locs.forEach(loc => {
+      if (q && !loc.name.toLowerCase().includes(q)) return;
+      const li = document.createElement('li');
+      li.dataset.id = loc.id;
+      li.textContent = loc.name;
+      if (loc.id === activeCampusId) li.classList.add('campus-active');
+      li.addEventListener('click', () => {
+        activeCampusId = loc.id;
+        campusList.querySelectorAll('li').forEach(el => el.classList.remove('campus-active'));
+        li.classList.add('campus-active');
+        filterRows();
+      });
+      campusList.appendChild(li);
     });
   }
 
-  radioRow.addEventListener('change', filterRows);
+  function selectedLocId() { return activeCampusId; }
+
+  function filterRows() {
+    sessionStorage.setItem(CAMPUS_KEY, activeCampusId);
+    document.querySelectorAll('#buildings-tbody .sess-row:not(.sess-new)').forEach(tr => {
+      tr.style.display = parseInt(tr.dataset.locationId) === activeCampusId ? '' : 'none';
+    });
+  }
+
+  campusSearch.addEventListener('input', () => renderCampusList(campusSearch.value));
+  renderCampusList('');
   filterRows();
 
   function setInd(tr, state) {
@@ -181,10 +199,6 @@
   function attachListeners(tr) {
     tr.querySelectorAll('input[type=text]').forEach(el => el.addEventListener('blur', () => saveRow(tr)));
     tr.querySelectorAll('select').forEach(el => el.addEventListener('change', () => saveRow(tr)));
-    tr.querySelector('[name=delivery_location_id]')?.addEventListener('change', e => {
-      tr.dataset.locationId = e.target.value;
-      filterRows();
-    });
     tr.querySelector('[data-map]')?.addEventListener('click', () => openMapPanel(tr));
     tr.querySelector('[data-delete]')?.addEventListener('click', () => deleteRow(tr));
   }
@@ -194,13 +208,12 @@
     const tbody = document.getElementById('buildings-tbody');
     tbody.querySelector('.sess-new')?.remove();
     const activeLoc = selectedLocId();
-    const locOpts   = locs.map(l => `<option value="${l.id}"${l.id === activeLoc ? ' selected' : ''}>${l.name}</option>`).join('');
     const stateOpts = [''].concat(auStates).map(s => `<option value="${s}">${s}</option>`).join('');
     const tr = document.createElement('tr');
     tr.className = 'sess-row sess-new'; tr.dataset.id = 'new'; tr.dataset.locationId = activeLoc;
     tr.innerHTML = `
-      <td><select class="sess-input bld-col-loc"    name="delivery_location_id">${locOpts}</select></td>
-      <td><input class="sess-input bld-col-name"   type="text" name="building_name" placeholder="e.g. Building A" maxlength="50"></td>
+      <td><input type="hidden" name="delivery_location_id" value="${activeLoc}">
+          <input class="sess-input bld-col-name"   type="text" name="building_name" placeholder="e.g. Building A" maxlength="50"></td>
       <td><input class="sess-input bld-col-addr"   type="text" name="address"       placeholder="Street address"   maxlength="200"></td>
       <td><input class="sess-input bld-col-suburb" type="text" name="suburb"        placeholder="Suburb"           maxlength="50"></td>
       <td><select class="sess-input bld-col-state" name="state_code">${stateOpts}</select></td>
@@ -252,10 +265,10 @@
     document.getElementById('map-search-input').value  = '';
 
     const panel = document.getElementById('bld-map-panel');
-    panel.style.display = 'block';
+    panel.classList.remove('hidden');
     panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-    setTimeout(() => {
+    requestAnimationFrame(() => requestAnimationFrame(() => {
       if (!leafletMap) {
         leafletMap = L.map('map-container');
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -263,9 +276,8 @@
           maxZoom: 19
         }).addTo(leafletMap);
         leafletMap.on('click', e => placeMarker(e.latlng.lat, e.latlng.lng));
-      } else {
-        leafletMap.invalidateSize();
       }
+      leafletMap.invalidateSize();
 
       if (hasCoords) {
         leafletMap.setView([parseFloat(latVal), parseFloat(lngVal)], 17);
@@ -274,7 +286,7 @@
         leafletMap.setView([-25.27, 133.78], 5);
         if (marker) { marker.remove(); marker = null; }
       }
-    }, 50);
+    }));
   }
 
   function placeMarker(lat, lng, pending = true) {
@@ -299,7 +311,7 @@
 
   function closeMapPanel() {
     if (currentMapRow) currentMapRow.classList.remove('bld-selected');
-    document.getElementById('bld-map-panel').style.display = 'none';
+    document.getElementById('bld-map-panel').classList.add('hidden');
     document.getElementById('map-search-results').innerHTML = '';
     currentMapRow = null;
   }

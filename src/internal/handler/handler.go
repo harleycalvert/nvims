@@ -23,6 +23,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"nvims/internal/auth"
+	"nvims/internal/perm"
 	"nvims/internal/storage"
 	"nvims/internal/store"
 )
@@ -35,6 +36,8 @@ type Handler struct {
 	mu       sync.RWMutex
 	lmsName  string
 	lmsURL   string
+	perms   map[string]map[string]bool
+	permsMu sync.RWMutex
 }
 
 func New(st *store.Store, sessions *auth.Sessions, stor *storage.Client) *Handler {
@@ -183,6 +186,7 @@ func New(st *store.Store, sessions *auth.Sessions, stor *storage.Client) *Handle
 			"templates/admin/enrollments.html",
 			"templates/system/lms.html",
 			"templates/system/users.html",
+			"templates/system/permissions.html",
 			"templates/assessment/menu.html",
 			"templates/taf/tas.html",
 			"templates/system/menu.html",
@@ -197,6 +201,36 @@ func New(st *store.Store, sessions *auth.Sessions, stor *storage.Client) *Handle
 	h.lmsName, _ = st.GetSetting(ctx, "lms.name")
 	h.lmsURL, _  = st.GetSetting(ctx, "lms.url")
 	return h
+}
+
+// LoadPermissions fetches role→permission grants from the DB into the in-memory cache.
+func (h *Handler) LoadPermissions(ctx context.Context) error {
+	p, err := h.store.ListRolePermissions(ctx)
+	if err != nil {
+		return err
+	}
+	h.permsMu.Lock()
+	h.perms = p
+	h.permsMu.Unlock()
+	return nil
+}
+
+// HasPerm reports whether the user holds the given permission.
+// SystemAdmin bypasses all permission checks.
+func (h *Handler) HasPerm(user auth.User, perm string) bool {
+	for _, role := range strings.Split(user.Role, ", ") {
+		role = strings.TrimSpace(role)
+		if role == "SystemAdmin" {
+			return true
+		}
+		h.permsMu.RLock()
+		has := h.perms[role][perm]
+		h.permsMu.RUnlock()
+		if has {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Handler) Menu(w http.ResponseWriter, r *http.Request) {
@@ -692,6 +726,9 @@ type personForm struct {
 	Gender             string
 	Email              string
 	PhoneMobile        string
+	UnitDetails        string
+	StreetNumber       string
+	StreetName         string
 	Suburb             string
 	StateCode          string
 	Postcode           string
@@ -700,6 +737,10 @@ type personForm struct {
 	WWCCExpiryStr      string
 	PoliceCheckStatus  string
 	PoliceCheckDateStr string
+	EmergencyName         string
+	EmergencyPhone        string
+	EmergencyRelationship string
+	Username           string
 }
 
 func personFormFrom(d store.PersonDetail) personForm {
@@ -707,9 +748,12 @@ func personFormFrom(d store.PersonDetail) personForm {
 		ID: d.ID, Title: d.Title, FirstName: d.FirstName, FamilyName: d.FamilyName,
 		PreferredName: d.PreferredName, DOBStr: d.DOB.Format("2006-01-02"),
 		Gender: d.Gender, Email: d.Email, PhoneMobile: d.PhoneMobile,
+		UnitDetails: d.UnitDetails, StreetNumber: d.StreetNumber, StreetName: d.StreetName,
 		Suburb: d.Suburb, StateCode: d.StateCode, Postcode: d.Postcode,
 		PhotoURL: d.PhotoURL, WWCCNumber: d.WWCCNumber, WWCCExpiryStr: d.WWCCExpiryStr,
 		PoliceCheckStatus: d.PoliceCheckStatus, PoliceCheckDateStr: d.PoliceCheckDateStr,
+		EmergencyName: d.EmergencyContactName, EmergencyPhone: d.EmergencyContactPhone,
+		EmergencyRelationship: d.EmergencyContactRelationship,
 	}
 }
 
@@ -726,10 +770,17 @@ func personFormFromPost(r *http.Request, id int64) personForm {
 		StateCode:   r.FormValue("state_code"),
 		Postcode:    strings.TrimSpace(r.FormValue("postcode")),
 		PhotoURL:           strings.TrimSpace(r.FormValue("photo_url")),
+		UnitDetails:  strings.TrimSpace(r.FormValue("unit_details")),
+		StreetNumber: strings.TrimSpace(r.FormValue("street_number")),
+		StreetName:   strings.TrimSpace(r.FormValue("street_name")),
 		WWCCNumber:         strings.TrimSpace(r.FormValue("wwcc_number")),
 		WWCCExpiryStr:      r.FormValue("wwcc_expiry"),
 		PoliceCheckStatus:  r.FormValue("police_check_status"),
 		PoliceCheckDateStr: r.FormValue("police_check_date"),
+		EmergencyName:         strings.TrimSpace(r.FormValue("emergency_name")),
+		EmergencyPhone:        strings.TrimSpace(r.FormValue("emergency_phone")),
+		EmergencyRelationship: strings.TrimSpace(r.FormValue("emergency_relationship")),
+		Username:           strings.TrimSpace(r.FormValue("username")),
 	}
 }
 
@@ -1007,12 +1058,38 @@ func (h *Handler) AdminPersonCreate(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	newPw := r.FormValue("new_password")
+	confirmPw := r.FormValue("confirm_password")
+	wantsAccount := f.Username != "" || newPw != ""
+	if wantsAccount {
+		if f.Username == "" {
+			h.render(w, "admin-person", map[string]any{
+				"IsNew": true, "Form": f, "Error": "Please enter a username for the login account.", "States": auStates, "User": user,
+			})
+			return
+		}
+		if len(newPw) < 8 {
+			h.render(w, "admin-person", map[string]any{
+				"IsNew": true, "Form": f, "Error": "Password must be at least 8 characters.", "States": auStates, "User": user,
+			})
+			return
+		}
+		if newPw != confirmPw {
+			h.render(w, "admin-person", map[string]any{
+				"IsNew": true, "Form": f, "Error": "Passwords do not match.", "States": auStates, "User": user,
+			})
+			return
+		}
+	}
+
 	id, err := h.store.CreatePerson(r.Context(),
 		f.Title, f.FirstName, f.FamilyName, f.PreferredName,
 		f.DOBStr, f.Gender, f.Email, f.PhoneMobile,
+		f.UnitDetails, f.StreetNumber, f.StreetName,
 		f.Suburb, f.StateCode, f.Postcode,
 		f.WWCCNumber, f.WWCCExpiryStr, f.PhotoURL,
-		f.PoliceCheckStatus, f.PoliceCheckDateStr)
+		f.PoliceCheckStatus, f.PoliceCheckDateStr,
+		f.EmergencyName, f.EmergencyPhone, f.EmergencyRelationship)
 	if err != nil {
 		log.Printf("CreatePerson: %v", err)
 		h.render(w, "admin-person", map[string]any{
@@ -1022,6 +1099,16 @@ func (h *Handler) AdminPersonCreate(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	if wantsAccount {
+		hash, err := bcrypt.GenerateFromPassword([]byte(newPw), bcrypt.DefaultCost)
+		if err == nil {
+			if err := h.store.CreateAdminUserForPerson(r.Context(), id, f.Username, string(hash)); err != nil {
+				log.Printf("CreateAdminUserForPerson(person=%d): %v", id, err)
+			}
+		}
+	}
+
 	http.Redirect(w, r, fmt.Sprintf("/admin/people/%d", id), http.StatusSeeOther)
 }
 
@@ -1051,6 +1138,8 @@ func (h *Handler) AdminPersonView(w http.ResponseWriter, r *http.Request) {
 	}
 	locationPrefs, _ := h.store.GetPersonLocationPrefs(r.Context(), id)
 	data["LocationPrefs"] = locationPrefs
+	appUsers, _ := h.store.ListPersonAppUsers(r.Context(), id)
+	data["AppUsers"] = appUsers
 	h.render(w, "admin-person", data)
 }
 
@@ -1078,9 +1167,11 @@ func (h *Handler) AdminPersonUpdate(w http.ResponseWriter, r *http.Request) {
 	if err := h.store.UpdatePerson(r.Context(), id,
 		f.Title, f.FirstName, f.FamilyName, f.PreferredName,
 		f.DOBStr, f.Gender, f.Email, f.PhoneMobile,
+		f.UnitDetails, f.StreetNumber, f.StreetName,
 		f.Suburb, f.StateCode, f.Postcode,
 		f.WWCCNumber, f.WWCCExpiryStr, f.PhotoURL,
-		f.PoliceCheckStatus, f.PoliceCheckDateStr); err != nil {
+		f.PoliceCheckStatus, f.PoliceCheckDateStr,
+		f.EmergencyName, f.EmergencyPhone, f.EmergencyRelationship); err != nil {
 		log.Printf("UpdatePerson(%d): %v", id, err)
 		person, _ := h.store.GetPerson(r.Context(), id)
 		h.render(w, "admin-person", map[string]any{
@@ -1091,6 +1182,50 @@ func (h *Handler) AdminPersonUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/admin/people/%d?saved=1", id), http.StatusSeeOther)
+}
+
+func (h *Handler) AdminPersonChangePassword(w http.ResponseWriter, r *http.Request) {
+	personID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || personID == 0 {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	userID, err := strconv.ParseInt(r.FormValue("user_id"), 10, 64)
+	if err != nil || userID == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error":"No account selected."}`))
+		return
+	}
+	newPw := r.FormValue("new_password")
+	confirm := r.FormValue("confirm_password")
+	if len(newPw) < 8 {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error":"Password must be at least 8 characters."}`))
+		return
+	}
+	if newPw != confirm {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error":"Passwords do not match."}`))
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPw), bcrypt.DefaultCost)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error":"Internal error."}`))
+		return
+	}
+	if err := h.store.UpdateUserPassword(r.Context(), userID, personID, string(hash)); err != nil {
+		log.Printf("UpdateUserPassword(user=%d person=%d): %v", userID, personID, err)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error":"Account not found for this person."}`))
+		return
+	}
+	w.Write([]byte(`{"ok":true}`))
 }
 
 func (h *Handler) AdminPersonLocationPrefSave(w http.ResponseWriter, r *http.Request) {
@@ -1145,10 +1280,30 @@ func (h *Handler) AdminRoleForm(w http.ResponseWriter, r *http.Request) {
 	roleType := r.URL.Query().Get("type")
 	role, _ := h.store.GetRoleDetail(r.Context(), id, roleType)
 	user, _ := auth.Current(r)
-	h.render(w, "admin-role-form", map[string]any{
+
+	var orgDomains []string
+	if roleType == "staff" || roleType == "teacher" {
+		if orgs, err := h.store.ListTrainingOrgs(r.Context()); err == nil {
+			for _, o := range orgs {
+				if o.Domain != "" {
+					orgDomains = append(orgDomains, o.Domain)
+				}
+			}
+		}
+	}
+
+	data := map[string]any{
 		"Person": person, "RoleType": roleType,
 		"Role": role, "Error": "", "User": user,
-	})
+		"OrgDomains": orgDomains,
+	}
+
+	if roleType == "staff" && person.IsStaff {
+		data["OrgRoles"], _ = h.store.ListStaffOrgRoles(r.Context(), id)
+		data["RoleTypes"], _ = h.store.ListRoleTypes(r.Context())
+	}
+
+	h.render(w, "admin-role-form", data)
 }
 
 func (h *Handler) AdminRoleAdd(w http.ResponseWriter, r *http.Request) {
@@ -4805,12 +4960,16 @@ func (h *Handler) AdminOrgCreate(w http.ResponseWriter, r *http.Request) {
 	contact    := strings.TrimSpace(r.FormValue("contact_name"))
 	telephone  := strings.TrimSpace(r.FormValue("telephone"))
 	email      := strings.TrimSpace(r.FormValue("email"))
+	domain     := strings.TrimSpace(r.FormValue("domain"))
+	abn        := strings.TrimSpace(r.FormValue("abn"))
+	teqsa      := strings.TrimSpace(r.FormValue("teqsa"))
+	cricos     := strings.TrimSpace(r.FormValue("cricos"))
 
 	if code == "" || name == "" || orgType == "" || address == "" || suburb == "" || stateCode == "" || postcode == "" {
 		http.Error(w, `{"error":"missing required fields"}`, http.StatusBadRequest)
 		return
 	}
-	_, err := h.store.CreateTrainingOrg(r.Context(), code, name, orgType, address, suburb, stateCode, postcode, contact, telephone, email)
+	_, err := h.store.CreateTrainingOrg(r.Context(), code, name, orgType, address, suburb, stateCode, postcode, contact, telephone, email, domain, abn, teqsa, cricos)
 	if err != nil {
 		log.Printf("CreateTrainingOrg: %v", err)
 		http.Error(w, `{"error":"could not save — org code may already be in use"}`, http.StatusConflict)
@@ -4840,12 +4999,16 @@ func (h *Handler) AdminOrgUpdate(w http.ResponseWriter, r *http.Request) {
 	contact   := strings.TrimSpace(r.FormValue("contact_name"))
 	telephone := strings.TrimSpace(r.FormValue("telephone"))
 	email     := strings.TrimSpace(r.FormValue("email"))
+	domain    := strings.TrimSpace(r.FormValue("domain"))
+	abn       := strings.TrimSpace(r.FormValue("abn"))
+	teqsa     := strings.TrimSpace(r.FormValue("teqsa"))
+	cricos    := strings.TrimSpace(r.FormValue("cricos"))
 
 	if code == "" || name == "" || orgType == "" || address == "" || suburb == "" || stateCode == "" || postcode == "" {
 		http.Error(w, `{"error":"missing required fields"}`, http.StatusBadRequest)
 		return
 	}
-	if err := h.store.UpdateTrainingOrg(r.Context(), id, code, name, orgType, address, suburb, stateCode, postcode, contact, telephone, email); err != nil {
+	if err := h.store.UpdateTrainingOrg(r.Context(), id, code, name, orgType, address, suburb, stateCode, postcode, contact, telephone, email, domain, abn, teqsa, cricos); err != nil {
 		log.Printf("UpdateTrainingOrg(%d): %v", id, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
@@ -5450,6 +5613,48 @@ func (h *Handler) SystemLMSSave(w http.ResponseWriter, r *http.Request) {
 	h.lmsURL  = url
 	h.mu.Unlock()
 	http.Redirect(w, r, "/system/lms?saved=1", http.StatusSeeOther)
+}
+
+func (h *Handler) SystemPermissions(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	h.permsMu.RLock()
+	current := h.perms
+	h.permsMu.RUnlock()
+	h.render(w, "system-permissions", map[string]any{
+		"User":    user,
+		"Groups":  perm.Groups,
+		"Roles":   perm.Roles,
+		"Current": current,
+		"Saved":   r.URL.Query().Get("saved") == "1",
+	})
+}
+
+func (h *Handler) SystemPermissionsSave(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	role := r.FormValue("role")
+	if role == "" || role == "SystemAdmin" {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	// Collect checked permissions from checkbox form values
+	var perms []string
+	for _, p := range perm.All() {
+		if r.FormValue(p) == "1" {
+			perms = append(perms, p)
+		}
+	}
+	if err := h.store.SetRolePermissions(r.Context(), role, perms); err != nil {
+		log.Printf("SetRolePermissions(%s): %v", role, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	if err := h.LoadPermissions(r.Context()); err != nil {
+		log.Printf("LoadPermissions after save: %v", err)
+	}
+	http.Redirect(w, r, "/system/permissions?saved=1", http.StatusSeeOther)
 }
 
 // ── Admin Exceptions ──────────────────────────────────────────────────────────

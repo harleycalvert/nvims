@@ -180,7 +180,7 @@ CREATE TABLE IF NOT EXISTS public.app_user_roles (
     PRIMARY KEY (id),
     CONSTRAINT fk_aur_user FOREIGN KEY (user_id) REFERENCES public.app_users(id) ON DELETE CASCADE,
     CONSTRAINT chk_aur_role CHECK (role IN (
-        'Admin','Trainer','Compliance','Reception','SupportStaff','System','Staff','Student'
+        'SystemAdmin','Trainer','Compliance','Reception','SupportStaff','System','Staff','Student'
     ))
 );
 
@@ -586,6 +586,10 @@ CREATE TABLE IF NOT EXISTS public.training_orgs (
     telephone varchar(20) NULL,
     facsimile varchar(20) NULL,
     email varchar(100) NULL,
+    domain varchar(100) NULL,
+    abn varchar(11) NULL,
+    teqsa varchar(20) NULL,
+    cricos varchar(10) NULL,
     PRIMARY KEY (id),
     CONSTRAINT fk_org_state FOREIGN KEY (state_code) REFERENCES public.australian_states(state_code),
     CONSTRAINT uq_training_org_code UNIQUE (training_org_id)
@@ -2854,5 +2858,51 @@ CREATE INDEX IF NOT EXISTS idx_vse_vcc_id
     ON public.teacher_vcc_subject_evidence(vcc_id);
 CREATE INDEX IF NOT EXISTS idx_vse_subject_id
     ON public.teacher_vcc_subject_evidence(subject_id);
+
+-- ── RBAC role-permission grants ───────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.role_permissions (
+    role       varchar(30)  NOT NULL,
+    permission varchar(100) NOT NULL,
+    PRIMARY KEY (role, permission),
+    CONSTRAINT chk_rp_role CHECK (role IN (
+        'SystemAdmin','Trainer','Compliance','Reception','SupportStaff','System','Staff','Student'
+    ))
+);
+
+-- Default permission seeds (idempotent).
+INSERT INTO public.role_permissions (role, permission) VALUES
+    -- Trainer
+    ('Trainer','people:view'),
+    ('Trainer','enrolments:view'),
+    ('Trainer','programs:view'),
+    ('Trainer','sessions:view'),('Trainer','sessions:manage'),
+    ('Trainer','attendance:view'),('Trainer','attendance:mark'),
+    ('Trainer','results:view'),('Trainer','results:manage'),
+    ('Trainer','vcc:access'),('Trainer','vcc:manage'),
+    ('Trainer','workplan:view'),('Trainer','workplan:manage'),
+    ('Trainer','student:panel'),
+    -- Compliance
+    ('Compliance','people:view'),
+    ('Compliance','enrolments:view'),
+    ('Compliance','programs:view'),
+    ('Compliance','sessions:view'),
+    ('Compliance','attendance:view'),
+    ('Compliance','results:view'),
+    ('Compliance','student:panel'),
+    -- Reception
+    ('Reception','people:view'),('Reception','people:manage'),
+    ('Reception','enrolments:view'),('Reception','enrolments:manage'),
+    ('Reception','programs:view'),
+    ('Reception','sessions:view'),
+    ('Reception','student:panel'),
+    -- SupportStaff
+    ('SupportStaff','people:view'),
+    ('SupportStaff','sessions:view'),
+    -- Staff
+    ('Staff','sessions:view'),
+    ('Staff','workplan:view'),('Staff','workplan:manage'),
+    -- Student
+    ('Student','student:panel')
+ON CONFLICT DO NOTHING;
 
 COMMIT;

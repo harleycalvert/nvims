@@ -332,7 +332,7 @@ func (s *Store) BootstrapAdmin(ctx context.Context, username, passwordHash strin
 	}
 	_, err = s.pool.Exec(ctx, `
 		INSERT INTO public.app_user_roles (user_id, role, granted_at)
-		VALUES ($1, 'Admin', NOW())
+		VALUES ($1, 'SystemAdmin', NOW())
 	`, id)
 	return err == nil, err
 }
@@ -367,7 +367,7 @@ func (s *Store) ListAdminUsers(ctx context.Context) ([]AdminUserRow, error) {
 		       r.granted_at,
 		       r.revoked_at
 		FROM public.app_users u
-		JOIN public.app_user_roles r ON r.user_id = u.id AND r.role = 'Admin'
+		JOIN public.app_user_roles r ON r.user_id = u.id AND r.role = 'SystemAdmin'
 		LEFT JOIN public.people p ON p.id = u.person_id
 		LEFT JOIN public.staff sf ON sf.id = u.person_id
 		ORDER BY r.revoked_at NULLS FIRST, r.granted_at
@@ -431,20 +431,117 @@ func (s *Store) SearchCurrentStaff(ctx context.Context, q string) ([]StaffSearch
 }
 
 func (s *Store) CreateAdminUserForPerson(ctx context.Context, personID int64, username, passwordHash string) error {
-	var id int64
-	err := s.pool.QueryRow(ctx, `
-		INSERT INTO public.app_users (person_id, username, password_hash, is_active)
-		VALUES ($1, $2, $3, true)
-		RETURNING id
-	`, personID, username, passwordHash).Scan(&id)
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	_, err = s.pool.Exec(ctx, `
+	defer tx.Rollback(ctx)
+	var id int64
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO public.app_users (person_id, username, password_hash, is_active)
+		VALUES ($1, $2, $3, true)
+		RETURNING id
+	`, personID, username, passwordHash).Scan(&id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
 		INSERT INTO public.app_user_roles (user_id, role, granted_at)
-		VALUES ($1, 'Admin', NOW())
-	`, id)
-	return err
+		VALUES ($1, 'SystemAdmin', NOW())
+	`, id); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+type PersonAppUser struct {
+	ID       int64
+	Username string
+	Roles    []string
+}
+
+func (s *Store) ListPersonAppUsers(ctx context.Context, personID int64) ([]PersonAppUser, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT u.id, u.username,
+		       COALESCE(string_agg(r.role, ',' ORDER BY r.role), '')
+		FROM public.app_users u
+		LEFT JOIN public.app_user_roles r ON r.user_id = u.id AND r.revoked_at IS NULL
+		WHERE u.person_id = $1 AND u.is_active = true
+		GROUP BY u.id, u.username
+		ORDER BY u.id
+	`, personID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PersonAppUser
+	for rows.Next() {
+		var u PersonAppUser
+		var rolesStr string
+		if err := rows.Scan(&u.ID, &u.Username, &rolesStr); err != nil {
+			return nil, err
+		}
+		if rolesStr != "" {
+			u.Roles = strings.Split(rolesStr, ",")
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// ListRolePermissions returns a map of role → set-of-permissions loaded from DB.
+func (s *Store) ListRolePermissions(ctx context.Context) (map[string]map[string]bool, error) {
+	rows, err := s.pool.Query(ctx, `SELECT role, permission FROM public.role_permissions`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]map[string]bool)
+	for rows.Next() {
+		var role, perm string
+		if err := rows.Scan(&role, &perm); err != nil {
+			return nil, err
+		}
+		if out[role] == nil {
+			out[role] = make(map[string]bool)
+		}
+		out[role][perm] = true
+	}
+	return out, rows.Err()
+}
+
+// SetRolePermissions replaces all permissions for a role atomically.
+func (s *Store) SetRolePermissions(ctx context.Context, role string, perms []string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `DELETE FROM public.role_permissions WHERE role = $1`, role); err != nil {
+		return err
+	}
+	for _, p := range perms {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO public.role_permissions (role, permission) VALUES ($1, $2)
+			ON CONFLICT DO NOTHING
+		`, role, p); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+func (s *Store) UpdateUserPassword(ctx context.Context, userID, personID int64, passwordHash string) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE public.app_users SET password_hash = $1
+		WHERE id = $2 AND person_id = $3 AND is_active = true
+	`, passwordHash, userID, personID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("user %d not found for person %d", userID, personID)
+	}
+	return nil
 }
 
 // AutoRevokeNonStaffAdmins revokes Admin roles for users linked to a person who is no longer
@@ -456,7 +553,7 @@ func (s *Store) AutoRevokeNonStaffAdmins(ctx context.Context) ([]string, error) 
 		SET revoked_at = NOW()
 		FROM public.app_users u
 		WHERE r.user_id = u.id
-		  AND r.role = 'Admin'
+		  AND r.role = 'SystemAdmin'
 		  AND r.revoked_at IS NULL
 		  AND u.person_id IS NOT NULL
 		  AND NOT EXISTS (SELECT 1 FROM public.staff WHERE id = u.person_id)
@@ -481,7 +578,7 @@ func (s *Store) RevokeAdminRole(ctx context.Context, roleID int64) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE public.app_user_roles
 		SET revoked_at = NOW()
-		WHERE id = $1 AND role = 'Admin' AND revoked_at IS NULL
+		WHERE id = $1 AND role = 'SystemAdmin' AND revoked_at IS NULL
 	`, roleID)
 	return err
 }
@@ -747,6 +844,9 @@ type PersonDetail struct {
 	Gender        string
 	Email         string
 	PhoneMobile   string
+	UnitDetails   string
+	StreetNumber  string
+	StreetName    string
 	Suburb        string
 	StateCode     string
 	Postcode      string
@@ -755,6 +855,9 @@ type PersonDetail struct {
 	WWCCExpiryStr string
 	PoliceCheckStatus  string
 	PoliceCheckDateStr string
+	EmergencyContactName         string
+	EmergencyContactPhone        string
+	EmergencyContactRelationship string
 	IsStudent     bool
 	IsTeacher     bool
 	IsStaff       bool
@@ -844,12 +947,16 @@ func (s *Store) GetPerson(ctx context.Context, id int64) (PersonDetail, error) {
 		       COALESCE(p.title,''), p.first_given_name, p.family_name,
 		       COALESCE(p.preferred_name,''), p.dob, p.gender,
 		       p.primary_email, COALESCE(p.phone_mobile,''),
+		       COALESCE(p.unit_details,''), COALESCE(p.street_number,''), COALESCE(p.street_name,''),
 		       p.suburb, p.state_code, p.postcode,
 		       COALESCE(p.photo_url,''),
 		       COALESCE(p.wwcc_number,''),
 		       COALESCE(TO_CHAR(p.wwcc_expiry,'YYYY-MM-DD'),''),
 		       COALESCE(p.police_check_status,''),
 		       COALESCE(TO_CHAR(p.police_check_date,'YYYY-MM-DD'),''),
+		       COALESCE(p.emergency_contact_name,''),
+		       COALESCE(p.emergency_contact_phone,''),
+		       COALESCE(p.emergency_contact_relationship,''),
 		       EXISTS(SELECT 1 FROM public.students st WHERE st.id = p.id AND st.deleted_at IS NULL),
 		       EXISTS(SELECT 1 FROM public.teachers t  WHERE t.id  = p.id),
 		       EXISTS(SELECT 1 FROM public.staff   sf WHERE sf.id  = p.id),
@@ -859,9 +966,11 @@ func (s *Store) GetPerson(ctx context.Context, id int64) (PersonDetail, error) {
 	`, id).Scan(
 		&d.ID, &d.Title, &d.FirstName, &d.FamilyName, &d.PreferredName,
 		&d.DOB, &d.Gender, &d.Email, &d.PhoneMobile,
+		&d.UnitDetails, &d.StreetNumber, &d.StreetName,
 		&d.Suburb, &d.StateCode, &d.Postcode,
 		&d.PhotoURL, &d.WWCCNumber, &d.WWCCExpiryStr,
 		&d.PoliceCheckStatus, &d.PoliceCheckDateStr,
+		&d.EmergencyContactName, &d.EmergencyContactPhone, &d.EmergencyContactRelationship,
 		&d.IsStudent, &d.IsTeacher, &d.IsStaff,
 		&d.StudentNumber, &d.StaffNumber,
 	)
@@ -905,34 +1014,40 @@ func (s *Store) GetStudentPanel(ctx context.Context, studentID int64) (StudentPa
 	return d, err
 }
 
-func (s *Store) CreatePerson(ctx context.Context, title, firstName, familyName, preferredName, dob, gender, email, phoneMobile, suburb, stateCode, postcode, wwccNumber, wwccExpiry, photoURL, policeCheckStatus, policeCheckDate string) (int64, error) {
+func (s *Store) CreatePerson(ctx context.Context, title, firstName, familyName, preferredName, dob, gender, email, phoneMobile, unitDetails, streetNumber, streetName, suburb, stateCode, postcode, wwccNumber, wwccExpiry, photoURL, policeCheckStatus, policeCheckDate, emergencyName, emergencyPhone, emergencyRelationship string) (int64, error) {
 	var id int64
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO public.people
 		    (title, first_given_name, family_name, preferred_name,
 		     dob, gender, primary_email, phone_mobile,
+		     unit_details, street_number, street_name,
 		     suburb, state_code, postcode,
 		     wwcc_number, wwcc_expiry,
 		     photo_url, photo_uploaded_at,
-		     police_check_status, police_check_date)
+		     police_check_status, police_check_date,
+		     emergency_contact_name, emergency_contact_phone, emergency_contact_relationship)
 		VALUES
 		    (NULLIF($1,''), $2, $3, NULLIF($4,''),
 		     $5::date, $6, $7, NULLIF($8,''),
-		     $9, $10, $11,
-		     NULLIF($12,''), NULLIF($13,'')::date,
-		     NULLIF($14,''), CASE WHEN NULLIF($14,'') IS NOT NULL THEN NOW() ELSE NULL END,
-		     NULLIF($15,''), NULLIF($16,'')::date)
+		     NULLIF($9,''), NULLIF($10,''), NULLIF($11,''),
+		     $12, $13, $14,
+		     NULLIF($15,''), NULLIF($16,'')::date,
+		     NULLIF($17,''), CASE WHEN NULLIF($17,'') IS NOT NULL THEN NOW() ELSE NULL END,
+		     NULLIF($18,''), NULLIF($19,'')::date,
+		     NULLIF($20,''), NULLIF($21,''), NULLIF($22,''))
 		RETURNING id
 	`, title, firstName, familyName, preferredName,
 		dob, gender, email, phoneMobile,
+		unitDetails, streetNumber, streetName,
 		suburb, stateCode, postcode,
 		wwccNumber, wwccExpiry, photoURL,
 		policeCheckStatus, policeCheckDate,
+		emergencyName, emergencyPhone, emergencyRelationship,
 	).Scan(&id)
 	return id, err
 }
 
-func (s *Store) UpdatePerson(ctx context.Context, id int64, title, firstName, familyName, preferredName, dob, gender, email, phoneMobile, suburb, stateCode, postcode, wwccNumber, wwccExpiry, photoURL, policeCheckStatus, policeCheckDate string) error {
+func (s *Store) UpdatePerson(ctx context.Context, id int64, title, firstName, familyName, preferredName, dob, gender, email, phoneMobile, unitDetails, streetNumber, streetName, suburb, stateCode, postcode, wwccNumber, wwccExpiry, photoURL, policeCheckStatus, policeCheckDate, emergencyName, emergencyPhone, emergencyRelationship string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE public.people SET
 		    title               = NULLIF($2,''),
@@ -943,24 +1058,32 @@ func (s *Store) UpdatePerson(ctx context.Context, id int64, title, firstName, fa
 		    gender              = $7,
 		    primary_email       = $8,
 		    phone_mobile        = NULLIF($9,''),
-		    suburb              = $10,
-		    state_code          = $11,
-		    postcode            = $12,
-		    wwcc_number         = NULLIF($13,''),
-		    wwcc_expiry         = NULLIF($14,'')::date,
-		    photo_url           = NULLIF($15,''),
+		    unit_details        = NULLIF($10,''),
+		    street_number       = NULLIF($11,''),
+		    street_name         = NULLIF($12,''),
+		    suburb              = $13,
+		    state_code          = $14,
+		    postcode            = $15,
+		    wwcc_number         = NULLIF($16,''),
+		    wwcc_expiry         = NULLIF($17,'')::date,
+		    photo_url           = NULLIF($18,''),
 		    photo_uploaded_at   = CASE
-		        WHEN NULLIF($15,'') IS NOT NULL THEN COALESCE(photo_uploaded_at, NOW())
+		        WHEN NULLIF($18,'') IS NOT NULL THEN COALESCE(photo_uploaded_at, NOW())
 		        ELSE NULL END,
-		    police_check_status = NULLIF($16,''),
-		    police_check_date   = NULLIF($17,'')::date,
+		    police_check_status = NULLIF($19,''),
+		    police_check_date   = NULLIF($20,'')::date,
+		    emergency_contact_name         = NULLIF($21,''),
+		    emergency_contact_phone        = NULLIF($22,''),
+		    emergency_contact_relationship = NULLIF($23,''),
 		    updated_at          = NOW()
 		WHERE id = $1
 	`, id, title, firstName, familyName, preferredName,
 		dob, gender, email, phoneMobile,
+		unitDetails, streetNumber, streetName,
 		suburb, stateCode, postcode,
 		wwccNumber, wwccExpiry, photoURL,
 		policeCheckStatus, policeCheckDate,
+		emergencyName, emergencyPhone, emergencyRelationship,
 	)
 	return err
 }
@@ -1449,6 +1572,10 @@ type TrainingOrgRow struct {
 	ContactName string
 	Telephone   string
 	Email       string
+	Domain      string
+	ABN         string
+	TEQSA       string
+	CRICOS      string
 }
 
 type DeliveryLocationFull struct {
@@ -1717,7 +1844,8 @@ func (s *Store) ListTrainingOrgs(ctx context.Context) ([]TrainingOrgRow, error) 
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, training_org_id, training_org_name, training_org_type,
 		       address_first_line, suburb, state_code, postcode,
-		       COALESCE(contact_name,''), COALESCE(telephone,''), COALESCE(email,'')
+		       COALESCE(contact_name,''), COALESCE(telephone,''), COALESCE(email,''),
+		       COALESCE(domain,''), COALESCE(abn,''), COALESCE(teqsa,''), COALESCE(cricos,'')
 		FROM public.training_orgs
 		ORDER BY training_org_name
 	`)
@@ -1730,7 +1858,8 @@ func (s *Store) ListTrainingOrgs(ctx context.Context) ([]TrainingOrgRow, error) 
 		var r TrainingOrgRow
 		if err := rows.Scan(&r.ID, &r.Code, &r.Name, &r.OrgType,
 			&r.Address, &r.Suburb, &r.StateCode, &r.Postcode,
-			&r.ContactName, &r.Telephone, &r.Email); err != nil {
+			&r.ContactName, &r.Telephone, &r.Email,
+			&r.Domain, &r.ABN, &r.TEQSA, &r.CRICOS); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -1738,22 +1867,24 @@ func (s *Store) ListTrainingOrgs(ctx context.Context) ([]TrainingOrgRow, error) 
 	return out, rows.Err()
 }
 
-func (s *Store) CreateTrainingOrg(ctx context.Context, code, name, orgType, address, suburb, stateCode, postcode, contactName, telephone, email string) (int64, error) {
+func (s *Store) CreateTrainingOrg(ctx context.Context, code, name, orgType, address, suburb, stateCode, postcode, contactName, telephone, email, domain, abn, teqsa, cricos string) (int64, error) {
 	var id int64
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO public.training_orgs
 		    (training_org_id, training_org_name, training_org_type,
 		     address_first_line, suburb, state_code, postcode,
-		     contact_name, telephone, email)
+		     contact_name, telephone, email,
+		     domain, abn, teqsa, cricos)
 		VALUES ($1, $2, $3, $4, $5, $6, $7,
-		        NULLIF($8,''), NULLIF($9,''), NULLIF($10,''))
+		        NULLIF($8,''), NULLIF($9,''), NULLIF($10,''),
+		        NULLIF($11,''), NULLIF($12,''), NULLIF($13,''), NULLIF($14,''))
 		RETURNING id
 	`, code, name, orgType, address, suburb, stateCode, postcode,
-		contactName, telephone, email).Scan(&id)
+		contactName, telephone, email, domain, abn, teqsa, cricos).Scan(&id)
 	return id, err
 }
 
-func (s *Store) UpdateTrainingOrg(ctx context.Context, id int64, code, name, orgType, address, suburb, stateCode, postcode, contactName, telephone, email string) error {
+func (s *Store) UpdateTrainingOrg(ctx context.Context, id int64, code, name, orgType, address, suburb, stateCode, postcode, contactName, telephone, email, domain, abn, teqsa, cricos string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE public.training_orgs SET
 		    training_org_id   = $2,
@@ -1765,10 +1896,14 @@ func (s *Store) UpdateTrainingOrg(ctx context.Context, id int64, code, name, org
 		    postcode          = $8,
 		    contact_name      = NULLIF($9,''),
 		    telephone         = NULLIF($10,''),
-		    email             = NULLIF($11,'')
+		    email             = NULLIF($11,''),
+		    domain            = NULLIF($12,''),
+		    abn               = NULLIF($13,''),
+		    teqsa             = NULLIF($14,''),
+		    cricos            = NULLIF($15,'')
 		WHERE id = $1
 	`, id, code, name, orgType, address, suburb, stateCode, postcode,
-		contactName, telephone, email)
+		contactName, telephone, email, domain, abn, teqsa, cricos)
 	return err
 }
 

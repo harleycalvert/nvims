@@ -74,6 +74,51 @@
             </select>
           </div>
         </div>
+
+        {{if not .IsNew}}
+        <div class="pw-change-bar">
+          <button type="button" class="btn-secondary btn-sm" id="btn-show-pw-change">Change Password</button>
+        </div>
+        <div id="pw-change-form" class="hidden pw-change-form">
+          {{if .AppUsers}}
+          <div class="form-row">
+            {{if gt (len .AppUsers) 1}}
+            <div class="form-group fg-260">
+              <label>Account <span class="req">*</span></label>
+              <select id="pw-user-id">
+                {{range .AppUsers}}
+                <option value="{{.ID}}">{{.Username}}{{if .Roles}} ({{range $i,$r := .Roles}}{{if $i}}, {{end}}{{$r}}{{end}}){{end}}</option>
+                {{end}}
+              </select>
+            </div>
+            {{else}}
+            <input type="hidden" id="pw-user-id" value="{{(index .AppUsers 0).ID}}">
+            {{end}}
+            <div class="form-group fg-220">
+              <label>New Password <span class="req">*</span></label>
+              <input type="password" id="pw-new" autocomplete="new-password" placeholder="min. 8 characters">
+            </div>
+            <div class="form-group fg-220">
+              <label>Confirm Password <span class="req">*</span></label>
+              <input type="password" id="pw-confirm" autocomplete="new-password">
+            </div>
+            <div class="form-group pw-change-actions">
+              <label>&nbsp;</label>
+              <div>
+                <button type="button" class="btn-primary btn-sm" id="btn-pw-save">Save</button>
+                <button type="button" class="btn-secondary btn-sm" id="btn-pw-cancel">Cancel</button>
+              </div>
+            </div>
+          </div>
+          {{else}}
+          <p class="pw-change-error" style="margin:0">This person has no active login account.</p>
+          <div style="margin-top:8px">
+            <button type="button" class="btn-secondary btn-sm" id="btn-pw-cancel">Close</button>
+          </div>
+          {{end}}
+          <p id="pw-change-msg" class="hidden"></p>
+        </div>
+        {{end}}
       </div>
 
       <div class="form-section">
@@ -109,6 +154,20 @@
       <div class="form-section">
         <h2 class="form-section-title">Address</h2>
         <div class="form-row">
+          <div class="form-group fg-160">
+            <label>Unit / Apt</label>
+            <input type="text" name="unit_details" value="{{.Form.UnitDetails}}" placeholder="e.g. Unit 4">
+          </div>
+          <div class="form-group fg-120">
+            <label>Street Number</label>
+            <input type="text" name="street_number" value="{{.Form.StreetNumber}}" placeholder="e.g. 12A">
+          </div>
+          <div class="form-group form-group-grow">
+            <label>Street Name</label>
+            <input type="text" name="street_name" value="{{.Form.StreetName}}" placeholder="e.g. Collins Street">
+          </div>
+        </div>
+        <div class="form-row">
           <div class="form-group fg-260">
             <label>Suburb <span class="req">*</span></label>
             <input type="text" name="suburb" value="{{.Form.Suburb}}" required>
@@ -126,6 +185,24 @@
             <label>Postcode <span class="req">*</span></label>
             <input type="text" name="postcode" value="{{.Form.Postcode}}"
                    pattern="[0-9]{4}" maxlength="4" required>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h2 class="form-section-title">Emergency Contact</h2>
+        <div class="form-row">
+          <div class="form-group form-group-grow">
+            <label>Name</label>
+            <input type="text" name="emergency_name" value="{{.Form.EmergencyName}}" placeholder="Full name">
+          </div>
+          <div class="form-group fg-200">
+            <label>Phone</label>
+            <input type="text" name="emergency_phone" value="{{.Form.EmergencyPhone}}" placeholder="Mobile or home">
+          </div>
+          <div class="form-group fg-200">
+            <label>Relationship</label>
+            <input type="text" name="emergency_relationship" value="{{.Form.EmergencyRelationship}}" placeholder="e.g. Spouse, Parent">
           </div>
         </div>
       </div>
@@ -162,6 +239,27 @@
           </div>
         </div>
       </div>
+
+      {{if .IsNew}}
+      <div class="form-section">
+        <h2 class="form-section-title">Login Account</h2>
+        <p class="form-hint">Optional — set up a login now, or add one later via System → Users.</p>
+        <div class="form-row">
+          <div class="form-group fg-260">
+            <label>Username</label>
+            <input type="text" name="username" id="new-username" value="{{.Form.Username}}" autocomplete="off" placeholder="e.g. Bob.Smith">
+          </div>
+          <div class="form-group fg-220">
+            <label>Password</label>
+            <input type="password" name="new_password" autocomplete="new-password" placeholder="min. 8 characters">
+          </div>
+          <div class="form-group fg-220">
+            <label>Confirm Password</label>
+            <input type="password" name="confirm_password" autocomplete="new-password">
+          </div>
+        </div>
+      </div>
+      {{end}}
 
       <div class="form-actions">
         <button type="submit" class="btn-primary">
@@ -228,74 +326,33 @@
     </div>
     {{end}}
 
-    {{if .Person.IsStaff}}
-    <div class="form-section form-section--spaced" id="org-roles-section">
-      <h2 class="form-section-title">Organisational Roles</h2>
-      <p class="form-hint">Roles this person holds or has held within the organisation. Both dates are editable after the fact.</p>
-
-      <div class="table-wrap">
-        <table class="sessions-table" id="org-roles-table">
-          <thead>
-            <tr>
-              <th class="td-left">Role</th>
-              <th class="orole-col-date">From</th>
-              <th class="orole-col-date">To</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="org-roles-tbody">
-            {{range .OrgRoles}}
-            <tr class="sess-row orole-row" data-id="{{.ID}}" data-staff-id="{{.StaffID}}">
-              <td class="orole-name">{{.RoleTypeName}}</td>
-              <td><input class="sess-input orole-date" type="date" name="started_on"
-                         value="{{.StartedOn.Format "2006-01-02"}}" readonly></td>
-              <td><input class="sess-input orole-date orole-ended" type="date" name="ended_on"
-                         value="{{if .EndedOn}}{{.EndedOn.Format "2006-01-02"}}{{end}}"
-                         placeholder="current"></td>
-              <td class="sess-actions">
-                <span class="sess-status"></span>
-                <button class="btn-danger-sm orole-delete" type="button" title="Delete">✕</button>
-              </td>
-            </tr>
-            {{end}}
-          </tbody>
-        </table>
-      </div>
-
-      <div class="orole-add-bar">
-        <button class="btn-primary btn-sm" id="btn-add-orole" type="button">+ Add Role</button>
-      </div>
-
-      <div id="orole-add-form" class="hidden orole-add-form">
-        <div class="form-row">
-          <div class="form-group fg-220">
-            <label>Role <span class="req">*</span></label>
-            <select id="orole-type-select">
-              <option value="">— select —</option>
-              {{range .RoleTypes}}
-              <option value="{{.ID}}">{{.RoleName}}</option>
-              {{end}}
-            </select>
-          </div>
-          <div class="form-group fg-180">
-            <label>Start Date <span class="req">*</span></label>
-            <input type="date" id="orole-started-on">
-          </div>
-          <div class="form-group orole-add-actions">
-            <label>&nbsp;</label>
-            <div>
-              <button class="btn-primary btn-sm" id="btn-orole-save" type="button">Save</button>
-              <button class="btn-secondary btn-sm" id="btn-orole-cancel" type="button">Cancel</button>
-            </div>
-          </div>
-        </div>
-        <p id="orole-add-error" class="form-error hidden"></p>
-      </div>
-    </div>
-    {{end}}
-
     {{end}}
   </main>
+{{if .IsNew}}
+<script>
+(function () {
+  const usernameEl  = document.getElementById('new-username');
+  const firstNameEl = document.querySelector('[name=first_name]');
+  const familyEl    = document.querySelector('[name=family_name]');
+  if (!usernameEl) return;
+  let userEdited = false;
+  usernameEl.addEventListener('input', () => { userEdited = true; });
+  function titleCase(s) {
+    return s.split(/\s+/).filter(Boolean)
+            .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join('');
+  }
+  function suggest() {
+    if (userEdited) return;
+    const f = titleCase(firstNameEl.value);
+    const l = titleCase(familyEl.value);
+    usernameEl.value = f && l ? f + '.' + l : f || l;
+  }
+  firstNameEl?.addEventListener('input', suggest);
+  familyEl?.addEventListener('input', suggest);
+})();
+</script>
+{{end}}
+
 <script>
   const urlInput = document.getElementById('photo-url-input');
   const img      = document.getElementById('photo-img');
@@ -310,6 +367,59 @@
 </script>
 
 {{if not .IsNew}}
+<script>
+(function () {
+  const personID  = {{.Form.ID}};
+  const showBtn   = document.getElementById('btn-show-pw-change');
+  const pwForm    = document.getElementById('pw-change-form');
+  const saveBtn   = document.getElementById('btn-pw-save');
+  const cancelBtn = document.getElementById('btn-pw-cancel');
+  const msgEl     = document.getElementById('pw-change-msg');
+
+  showBtn?.addEventListener('click', () => {
+    pwForm.classList.remove('hidden');
+    showBtn.classList.add('hidden');
+    document.getElementById('pw-new').focus();
+  });
+
+  cancelBtn?.addEventListener('click', () => {
+    pwForm.classList.add('hidden');
+    showBtn.classList.remove('hidden');
+    document.getElementById('pw-new').value = '';
+    document.getElementById('pw-confirm').value = '';
+    msgEl.className = 'hidden';
+  });
+
+  saveBtn?.addEventListener('click', async () => {
+    msgEl.className = 'hidden';
+    const userIdEl = document.getElementById('pw-user-id');
+    const body = new URLSearchParams({
+      user_id:          userIdEl?.value ?? '',
+      new_password:     document.getElementById('pw-new').value,
+      confirm_password: document.getElementById('pw-confirm').value,
+    });
+    saveBtn.disabled = true;
+    try {
+      const res = await fetch(`/admin/people/${personID}/change-password`, { method: 'POST', body });
+      const d   = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        msgEl.textContent = d.error || 'Could not save.';
+        msgEl.className = 'pw-change-error';
+      } else {
+        msgEl.textContent = 'Password updated.';
+        msgEl.className = 'pw-change-ok';
+        document.getElementById('pw-new').value = '';
+        document.getElementById('pw-confirm').value = '';
+      }
+    } catch {
+      msgEl.textContent = 'Network error.';
+      msgEl.className = 'pw-change-error';
+    }
+    saveBtn.disabled = false;
+  });
+})();
+</script>
+
 <script>
 (function () {
   const personID = {{.Form.ID}};

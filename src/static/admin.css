@@ -81,18 +81,47 @@
                     border-radius:4px; cursor:pointer; font-size:13px; }
 .btn-map-save:disabled { background:#9ca3af; cursor:not-allowed; }
 
-/* ── Buildings filter ── */
-.bld-filter       { margin-bottom:14px; }
-.bld-filter-row   { display:flex; flex-wrap:wrap; gap:16px; align-items:center; min-height:24px; }
-.bld-filter-row label { display:flex; align-items:center; gap:5px; font-size:13px; cursor:pointer; }
+/* ── Buildings layout ── */
+.bld-layout { display:flex; gap:16px; align-items:flex-start; }
+.bld-campus-panel {
+  flex-shrink:0; width:200px;
+  border:1px solid #e5e7eb; border-radius:8px;
+  overflow:hidden; background:#fff;
+  position:sticky; top:16px;
+}
+.bld-campus-search { padding:8px; border-bottom:1px solid #e5e7eb; }
+.bld-campus-search input {
+  width:100%; box-sizing:border-box;
+  padding:5px 8px; border:1px solid #d1d5db; border-radius:4px;
+  font-size:12px;
+}
+#campus-list {
+  list-style:none; margin:0; padding:0;
+  max-height:340px; overflow-y:auto;
+}
+#campus-list li {
+  padding:7px 12px; font-size:13px; color:#374151;
+  cursor:pointer; border-bottom:1px solid #f3f4f6;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+#campus-list li:last-child { border-bottom:none; }
+#campus-list li:hover { background:#f0f9ff; }
+#campus-list li.campus-active { background:#eff6ff; color:#1d4ed8; font-weight:600; }
+.bld-content { flex:1; min-width:0; }
 
 /* ── Buildings column-scoped input widths ── */
-.bld-col-loc  { width: 180px; }
+.bld-col-name { width: 160px; }
 .bld-col-name { width: 160px; }
 .bld-col-addr { width: 180px; }
 .bld-col-suburb { width: 110px; }
 .bld-col-state  { width: 62px; }
 .bld-col-post   { width: 52px; }
+
+/* ── Orgs extra columns ── */
+.org-col-domain { width: 140px; }
+.org-col-abn    { width: 88px; font-family: monospace; }
+.org-col-teqsa  { width: 80px; font-family: monospace; }
+.org-col-cricos { width: 70px; font-family: monospace; }
 
 /* ── Locations column-scoped input widths ── */
 .loc-col-org    { width: 100px; }

@@ -32,12 +32,15 @@
 
     <p class="page-desc">Rooms belong to buildings and are assigned to class slots and sessions. Filter by campus and building to find a room, then click a row to edit its details or capacity. Rooms marked as computer labs can have software requirements recorded.</p>
 
-    {{/* ── Campus / building filter ── */}}
-    <div class="rooms-filter">
-      <div class="rooms-filter-row" id="campus-radios"></div>
-      <div class="rooms-filter-row" id="building-cbs"></div>
-    </div>
-
+    <div class="bld-layout">
+      <div class="bld-campus-panel">
+        <div class="bld-campus-search">
+          <input id="campus-search" type="search" placeholder="Search campuses…" autocomplete="off">
+        </div>
+        <ul id="campus-list"></ul>
+      </div>
+      <div class="bld-content">
+        <div class="rooms-filter-row" id="building-cbs" style="margin-bottom:12px"></div>
     <div class="table-wrap">
       <table class="sessions-table">
         <thead>
@@ -78,9 +81,11 @@
         </tbody>
       </table>
     </div>
-    <div class="sess-add-bar">
-      <button class="btn-primary btn-sm" id="btn-add-room" type="button">+ Add Room</button>
-    </div>
+      <div class="sess-add-bar">
+        <button class="btn-primary btn-sm" id="btn-add-room" type="button">+ Add Room</button>
+      </div>
+      </div>{{/* end .bld-content */}}
+    </div>{{/* end .bld-layout */}}
   </main>
 
 {{/* ── Room detail modal ── */}}
@@ -137,17 +142,36 @@
   // ── Derive unique campuses from buildings ─────────────────────────────────
   const locMap = new Map();
   allBuildings.forEach(b => { if (!locMap.has(b.locationId)) locMap.set(b.locationId, b.locationName); });
-  const campuses = [...locMap.entries()].map(([id, name]) => ({ id, name }));
+  const campuses = [...locMap.entries()].map(([id, name]) => ({ id, name })).sort((a,b) => a.name.localeCompare(b.name));
 
-  // ── Build campus radio buttons ────────────────────────────────────────────
-  const radioRow = document.getElementById('campus-radios');
-  campuses.forEach((loc, i) => {
-    const lbl = document.createElement('label');
-    lbl.innerHTML = `<input type="radio" name="campus" value="${loc.id}"${i === 0 ? ' checked' : ''}> ${loc.name}`;
-    radioRow.appendChild(lbl);
-  });
+  // ── Campus searchable list ────────────────────────────────────────────────
+  const CAMPUS_KEY    = 'nvims-rooms-campus';
+  const campusList    = document.getElementById('campus-list');
+  const campusSearch  = document.getElementById('campus-search');
+  let activeCampusId  = parseInt(sessionStorage.getItem(CAMPUS_KEY) ?? '0') || campuses[0]?.id || 0;
 
-  // ── Build building checkboxes ─────────────────────────────────────────────
+  function renderCampusList(filter) {
+    const q = (filter || '').toLowerCase();
+    campusList.innerHTML = '';
+    campuses.forEach(loc => {
+      if (q && !loc.name.toLowerCase().includes(q)) return;
+      const li = document.createElement('li');
+      li.dataset.id  = loc.id;
+      li.textContent = loc.name;
+      if (loc.id === activeCampusId) li.classList.add('campus-active');
+      li.addEventListener('click', () => {
+        activeCampusId = loc.id;
+        campusList.querySelectorAll('li').forEach(el => el.classList.remove('campus-active'));
+        li.classList.add('campus-active');
+        onCampusChange();
+      });
+      campusList.appendChild(li);
+    });
+  }
+
+  campusSearch.addEventListener('input', () => renderCampusList(campusSearch.value));
+
+  // ── Building checkboxes ───────────────────────────────────────────────────
   const cbRow = document.getElementById('building-cbs');
   allBuildings.forEach(b => {
     const lbl = document.createElement('label');
@@ -157,9 +181,7 @@
   });
 
   // ── Filter logic ──────────────────────────────────────────────────────────
-  function selectedLocId() {
-    return parseInt(document.querySelector('input[name=campus]:checked')?.value ?? 0);
-  }
+  function selectedLocId() { return activeCampusId; }
 
   function filterRows() {
     const checked = new Set(
@@ -171,19 +193,19 @@
   }
 
   function onCampusChange() {
-    const locId = selectedLocId();
+    sessionStorage.setItem(CAMPUS_KEY, activeCampusId);
     document.querySelectorAll('#building-cbs label').forEach(lbl => {
-      const match = parseInt(lbl.dataset.locationId) === locId;
+      const match = parseInt(lbl.dataset.locationId) === activeCampusId;
       lbl.style.display = match ? '' : 'none';
       lbl.querySelector('input').checked = match;
     });
     filterRows();
   }
 
-  radioRow.addEventListener('change', onCampusChange);
   cbRow.addEventListener('change', filterRows);
 
   // Apply initial state
+  renderCampusList('');
   onCampusChange();
 
   // ── Row save / delete ─────────────────────────────────────────────────────
