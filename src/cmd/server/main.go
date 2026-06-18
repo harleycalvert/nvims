@@ -248,6 +248,7 @@ func main() {
 	mux.HandleFunc("POST /result/publish", protect(h.PublishResult))
 	mux.HandleFunc("POST /result/publish-sc", protect(h.PublishSCColumn))
 	mux.HandleFunc("GET /system/users", protect(h.SystemUsers))
+	mux.HandleFunc("GET /system/users/staff-search", protect(h.SystemUsersStaffSearch))
 	mux.HandleFunc("POST /system/users/new", protect(h.SystemUserCreate))
 	mux.HandleFunc("POST /system/users/{id}/revoke", protect(h.SystemUserRevoke))
 	mux.HandleFunc("GET /system/lms", protect(h.SystemLMSConfig))

@@ -358,7 +358,7 @@ CREATE TABLE IF NOT EXISTS public.teacher_yearly_balances (
     CONSTRAINT chk_balance_cap CHECK (booked_hours <= allocated_max_hours)  -- hard cap backstop
 );
 
--- NEW v11: per-period (semester/trimester/block) hour allocations for HE and
+-- per-period (semester/trimester/block) hour allocations for HE and
 -- DUAL-sector teachers. Auto-created on first session booking when the teacher has
 -- max_hours_per_period set; also supports explicit pre-allocation by admins.
 CREATE TABLE IF NOT EXISTS public.teacher_period_allocations (
@@ -466,7 +466,7 @@ CREATE TABLE IF NOT EXISTS public.student_prior_achievements (
 -- 3. CURRICULUM
 -- =========================================================================
 
--- NEW v11: he_flag distinguishes HE qualifications from VET programs.
+-- he_flag distinguishes HE qualifications from VET programs.
 -- credit_points holds the total credit point value of the qualification
 -- (e.g. 192 cp for a Bachelor, 48 cp for a Graduate Certificate).
 -- A program can have both vet_flag and he_flag true for dual-sector offerings.
@@ -499,7 +499,7 @@ CREATE TABLE IF NOT EXISTS public.programs (
     ))
 );
 
--- NEW v11: credit_points is the HE credit point value of one unit/subject
+-- credit_points is the HE credit point value of one unit/subject
 -- (e.g. 6 cp, 12 cp, 24 cp). NULL for VET-only units.
 CREATE TABLE IF NOT EXISTS public.subjects (
     id bigserial NOT NULL,

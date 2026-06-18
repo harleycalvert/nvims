@@ -4616,6 +4616,10 @@ func (h *Handler) SystemMenu(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) SystemUsers(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.Current(r)
+	revoked, err := h.store.AutoRevokeNonStaffAdmins(r.Context())
+	if err != nil {
+		log.Printf("AutoRevokeNonStaffAdmins: %v", err)
+	}
 	admins, err := h.store.ListAdminUsers(r.Context())
 	if err != nil {
 		log.Printf("ListAdminUsers: %v", err)
@@ -4623,17 +4627,23 @@ func (h *Handler) SystemUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.render(w, "system-users", map[string]any{
-		"User":    user,
-		"Admins":  admins,
-		"Saved":   r.URL.Query().Get("saved") == "1",
-		"ErrDup":  r.URL.Query().Get("err") == "dup",
-		"ErrPwd":  r.URL.Query().Get("err") == "pwd",
+		"User":           user,
+		"Admins":         admins,
+		"Saved":          r.URL.Query().Get("saved") == "1",
+		"ErrDup":         r.URL.Query().Get("err") == "dup",
+		"ErrPwd":         r.URL.Query().Get("err") == "pwd",
+		"AutoRevoked":    revoked,
 	})
 }
 
 func (h *Handler) SystemUserCreate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	personID, _ := strconv.ParseInt(r.FormValue("person_id"), 10, 64)
+	if personID == 0 {
+		http.Redirect(w, r, "/system/users?err=nostaff", http.StatusSeeOther)
 		return
 	}
 	username := strings.TrimSpace(r.FormValue("username"))
@@ -4652,12 +4662,34 @@ func (h *Handler) SystemUserCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	if err := h.store.CreateAdminUser(r.Context(), username, string(hash)); err != nil {
-		log.Printf("CreateAdminUser: %v", err)
+	if err := h.store.CreateAdminUserForPerson(r.Context(), personID, username, string(hash)); err != nil {
+		log.Printf("CreateAdminUserForPerson: %v", err)
 		http.Redirect(w, r, "/system/users?err=dup", http.StatusSeeOther)
 		return
 	}
 	http.Redirect(w, r, "/system/users?saved=1", http.StatusSeeOther)
+}
+
+func (h *Handler) SystemUsersStaffSearch(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	results, err := h.store.SearchCurrentStaff(r.Context(), q)
+	if err != nil {
+		log.Printf("SearchCurrentStaff: %v", err)
+		http.Error(w, `[]`, http.StatusInternalServerError)
+		return
+	}
+	type row struct {
+		ID          int64  `json:"id"`
+		FullName    string `json:"full_name"`
+		StaffNumber string `json:"staff_number"`
+		StaffEmail  string `json:"staff_email"`
+	}
+	out := make([]row, len(results))
+	for i, r := range results {
+		out[i] = row{r.ID, r.FullName, r.StaffNumber, r.StaffEmail}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 func (h *Handler) SystemUserRevoke(w http.ResponseWriter, r *http.Request) {

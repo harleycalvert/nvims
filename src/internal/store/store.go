@@ -340,19 +340,28 @@ func (s *Store) BootstrapAdmin(ctx context.Context, username, passwordHash strin
 // ── System Admin Users ─────────────────────────────────────────────────────
 
 type AdminUserRow struct {
-	UserID    int64
-	Username  string
-	FullName  string
-	IsActive  bool
-	RoleID    int64
-	GrantedAt time.Time
-	RevokedAt *time.Time
+	UserID      int64
+	Username    string
+	FullName    string
+	StaffNumber string
+	IsActive    bool
+	RoleID      int64
+	GrantedAt   time.Time
+	RevokedAt   *time.Time
+}
+
+type StaffSearchRow struct {
+	ID          int64
+	FullName    string
+	StaffNumber string
+	StaffEmail  string
 }
 
 func (s *Store) ListAdminUsers(ctx context.Context) ([]AdminUserRow, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT u.id, u.username,
 		       COALESCE(p.first_given_name || ' ' || p.family_name, u.username),
+		       COALESCE(sf.staff_number, ''),
 		       u.is_active,
 		       r.id,
 		       r.granted_at,
@@ -360,6 +369,7 @@ func (s *Store) ListAdminUsers(ctx context.Context) ([]AdminUserRow, error) {
 		FROM public.app_users u
 		JOIN public.app_user_roles r ON r.user_id = u.id AND r.role = 'Admin'
 		LEFT JOIN public.people p ON p.id = u.person_id
+		LEFT JOIN public.staff sf ON sf.id = u.person_id
 		ORDER BY r.revoked_at NULLS FIRST, r.granted_at
 	`)
 	if err != nil {
@@ -369,7 +379,7 @@ func (s *Store) ListAdminUsers(ctx context.Context) ([]AdminUserRow, error) {
 	var out []AdminUserRow
 	for rows.Next() {
 		var row AdminUserRow
-		if err := rows.Scan(&row.UserID, &row.Username, &row.FullName, &row.IsActive,
+		if err := rows.Scan(&row.UserID, &row.Username, &row.FullName, &row.StaffNumber, &row.IsActive,
 			&row.RoleID, &row.GrantedAt, &row.RevokedAt); err != nil {
 			return nil, err
 		}
@@ -378,13 +388,55 @@ func (s *Store) ListAdminUsers(ctx context.Context) ([]AdminUserRow, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) CreateAdminUser(ctx context.Context, username, passwordHash string) error {
+// SearchCurrentStaff returns current staff matching q. When q is empty, returns all (up to 100).
+func (s *Store) SearchCurrentStaff(ctx context.Context, q string) ([]StaffSearchRow, error) {
+	sql := `
+		SELECT p.id,
+		       p.first_given_name || ' ' || p.family_name,
+		       sf.staff_number,
+		       sf.staff_email
+		FROM public.staff sf
+		JOIN public.people p ON p.id = sf.id
+		ORDER BY p.family_name, p.first_given_name
+		LIMIT 100`
+	args := []any{}
+	if q != "" {
+		sql = `
+		SELECT p.id,
+		       p.first_given_name || ' ' || p.family_name,
+		       sf.staff_number,
+		       sf.staff_email
+		FROM public.staff sf
+		JOIN public.people p ON p.id = sf.id
+		WHERE (p.first_given_name ILIKE $1 OR p.family_name ILIKE $1
+		    OR sf.staff_email ILIKE $1 OR sf.staff_number ILIKE $1)
+		ORDER BY p.family_name, p.first_given_name
+		LIMIT 50`
+		args = append(args, "%"+q+"%")
+	}
+	rows, err := s.pool.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []StaffSearchRow
+	for rows.Next() {
+		var row StaffSearchRow
+		if err := rows.Scan(&row.ID, &row.FullName, &row.StaffNumber, &row.StaffEmail); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) CreateAdminUserForPerson(ctx context.Context, personID int64, username, passwordHash string) error {
 	var id int64
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO public.app_users (username, password_hash, is_active)
-		VALUES ($1, $2, true)
+		INSERT INTO public.app_users (person_id, username, password_hash, is_active)
+		VALUES ($1, $2, $3, true)
 		RETURNING id
-	`, username, passwordHash).Scan(&id)
+	`, personID, username, passwordHash).Scan(&id)
 	if err != nil {
 		return err
 	}
@@ -393,6 +445,36 @@ func (s *Store) CreateAdminUser(ctx context.Context, username, passwordHash stri
 		VALUES ($1, 'Admin', NOW())
 	`, id)
 	return err
+}
+
+// AutoRevokeNonStaffAdmins revokes Admin roles for users linked to a person who is no longer
+// in the staff table. Returns the usernames that were revoked. The bootstrap admin
+// (person_id IS NULL) is never touched.
+func (s *Store) AutoRevokeNonStaffAdmins(ctx context.Context) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `
+		UPDATE public.app_user_roles r
+		SET revoked_at = NOW()
+		FROM public.app_users u
+		WHERE r.user_id = u.id
+		  AND r.role = 'Admin'
+		  AND r.revoked_at IS NULL
+		  AND u.person_id IS NOT NULL
+		  AND NOT EXISTS (SELECT 1 FROM public.staff WHERE id = u.person_id)
+		RETURNING u.username
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var username string
+		if err := rows.Scan(&username); err != nil {
+			return nil, err
+		}
+		out = append(out, username)
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) RevokeAdminRole(ctx context.Context, roleID int64) error {

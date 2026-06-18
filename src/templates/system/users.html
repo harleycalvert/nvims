@@ -30,24 +30,32 @@
 
   <main class="sessions-main">
 
+    {{if .AutoRevoked}}
+    <div class="form-error" style="margin-bottom:1rem">
+      Admin access automatically revoked — no longer current staff:
+      {{range .AutoRevoked}}<strong>{{.}}</strong> {{end}}
+    </div>
+    {{end}}
     {{if .Saved}}
-    <div class="form-success">Admin user created successfully.</div>
+    <div class="form-success" style="margin-bottom:1rem">Admin user created successfully.</div>
     {{end}}
     {{if .ErrDup}}
-    <div class="form-error">That username is already taken — choose a different one.</div>
+    <div class="form-error" style="margin-bottom:1rem">That username is already taken — choose a different one.</div>
     {{end}}
     {{if .ErrPwd}}
-    <div class="form-error">Passwords did not match or were empty.</div>
+    <div class="form-error" style="margin-bottom:1rem">Passwords did not match or were empty.</div>
     {{end}}
 
-    <p class="page-desc">Admin users can log in and access all areas of NVIMS. The bootstrap admin defined in <code>nvims.env</code> always appears here.</p>
-
+    {{/* ── Admin Users ── */}}
+    <h2 class="section-heading">Admin Users</h2>
+    <p class="page-desc">The bootstrap admin defined in <code>nvims.env</code> is always retained. Admin access is automatically revoked if a linked staff member is removed.</p>
     <div class="table-wrap">
-      <table class="sessions-table" id="users-table">
+      <table class="sessions-table">
         <thead>
           <tr>
             <th class="td-left">Username</th>
             <th class="td-left">Full Name</th>
+            <th class="td-left">Staff No.</th>
             <th class="td-left">Admin Since</th>
             <th class="td-left">Admin Until</th>
             <th></th>
@@ -55,17 +63,17 @@
         </thead>
         <tbody>
           {{range .Admins}}
-          <tr class="sess-row{{if .RevokedAt}} row-revoked{{end}}" data-role-id="{{.RoleID}}">
+          <tr class="sess-row{{if .RevokedAt}} row-revoked{{end}}">
             <td>{{.Username}}</td>
             <td>{{if ne .FullName .Username}}{{.FullName}}{{end}}</td>
-            <td>{{.GrantedAt.Format "2 Jan 2006"}}</td>
-            <td>{{if .RevokedAt}}{{.RevokedAt.Format "2 Jan 2006"}}{{else}}<span class="badge-active">Current</span>{{end}}</td>
+            <td>{{.StaffNumber}}</td>
+            <td>{{.GrantedAt.Format "2 Jan 2006 15:04"}}</td>
+            <td>{{if .RevokedAt}}{{.RevokedAt.Format "2 Jan 2006 15:04"}}{{else}}<span class="badge-active">Current</span>{{end}}</td>
             <td class="sess-actions">
               <span class="sess-status" id="status-{{.RoleID}}"></span>
               {{if not .RevokedAt}}
               <button class="btn-danger-sm revoke-btn" type="button"
-                      data-role-id="{{.RoleID}}" data-username="{{.Username}}"
-                      title="Revoke admin access">Revoke</button>
+                      data-role-id="{{.RoleID}}" data-username="{{.Username}}">Revoke</button>
               {{end}}
             </td>
           </tr>
@@ -74,26 +82,53 @@
       </table>
     </div>
 
-    <div class="form-section form-section--spaced">
-      <h2 class="form-section-title">Add Admin User</h2>
+    {{/* ── Current Staff ── */}}
+    <h2 class="section-heading" style="margin-top:2rem">Current Staff</h2>
+    <p class="page-desc">Select a staff member to grant them an admin login. Staff may have a separate admin account in addition to their normal role account.</p>
+
+    <form id="staff-search-form" class="admin-search" style="margin-bottom:1rem">
+      <input id="staff-q" type="search" placeholder="Search by name, email, or staff number…" autocomplete="off">
+    </form>
+
+    <div class="table-wrap">
+      <table class="sessions-table">
+        <thead>
+          <tr>
+            <th class="td-left col-name">Name</th>
+            <th class="td-left">Staff No.</th>
+            <th class="td-left">Email</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="staff-tbody">
+          <tr><td colspan="4" class="hint" style="padding:1rem">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    {{/* Inline add form — hidden until Add is clicked */}}
+    <div id="add-panel" class="form-section form-section--spaced hidden" style="margin-top:1.5rem">
+      <h2 class="form-section-title">New Admin Account — <span id="add-panel-name"></span></h2>
       <form method="POST" action="/system/users/new" id="add-user-form">
+        <input type="hidden" name="person_id" id="add-person-id">
         <div class="form-row form-row--mt">
-          <div class="form-group fg-220">
+          <div class="form-group fg-240">
             <label>Username</label>
-            <input type="text" name="username" required maxlength="100" autocomplete="off">
+            <input type="text" name="username" id="add-username" required maxlength="100" autocomplete="off">
           </div>
-          <div class="form-group fg-220">
+          <div class="form-group fg-200">
             <label>Password</label>
-            <input type="password" name="password" id="pwd" required autocomplete="new-password">
+            <input type="password" name="password" id="add-pwd" required autocomplete="new-password">
           </div>
-          <div class="form-group fg-220">
+          <div class="form-group fg-200">
             <label>Confirm Password</label>
-            <input type="password" name="confirm" id="pwd-confirm" required autocomplete="new-password">
-            <span class="field-hint" id="pwd-match-hint"></span>
+            <input type="password" name="confirm" id="add-confirm" required autocomplete="new-password">
+            <span class="field-hint" id="pwd-hint"></span>
           </div>
         </div>
         <div class="form-actions form-actions--mt">
-          <button type="submit" class="btn-primary" id="btn-add-user">Add Admin User</button>
+          <button type="submit" class="btn-primary" id="add-submit">Add Admin User</button>
+          <button type="button" class="btn-secondary" id="add-cancel">Cancel</button>
         </div>
       </form>
     </div>
@@ -102,41 +137,97 @@
   </div>
 
 <style>
-.row-revoked td { opacity: 0.5; }
+.section-heading { font-size: 1rem; font-weight: 600; color: #111827; margin: 0 0 0.25rem; }
+.row-revoked td  { opacity: 0.5; }
 .badge-active {
-  display: inline-block;
-  padding: 1px 8px;
-  border-radius: 10px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  background: #d1fae5;
-  color: #065f46;
+  display: inline-block; padding: 1px 8px; border-radius: 10px;
+  font-size: 0.75rem; font-weight: 600; background: #d1fae5; color: #065f46;
 }
 .field-hint { font-size: 0.78rem; color: #dc2626; margin-top: 2px; display: block; min-height: 1em; }
 </style>
 
 <script>
 (function () {
-  // Password match hint
-  const pwd = document.getElementById('pwd');
-  const confirm = document.getElementById('pwd-confirm');
-  const hint = document.getElementById('pwd-match-hint');
-  const submitBtn = document.getElementById('btn-add-user');
+  // ── Staff table ──────────────────────────────────────────────────────────
+  const tbody   = document.getElementById('staff-tbody');
+  const qInput  = document.getElementById('staff-q');
+  let debounce;
 
-  function checkMatch() {
-    if (!confirm.value) { hint.textContent = ''; submitBtn.disabled = false; return; }
-    if (pwd.value !== confirm.value) {
-      hint.textContent = 'Passwords do not match';
-      submitBtn.disabled = true;
-    } else {
-      hint.textContent = '';
-      submitBtn.disabled = false;
+  function renderStaff(rows) {
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="hint" style="padding:1rem">No matching staff.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(s => `
+      <tr class="sess-row">
+        <td class="col-name">${s.full_name}</td>
+        <td>${s.staff_number}</td>
+        <td>${s.staff_email}</td>
+        <td class="sess-actions">
+          <button class="btn-row-action add-btn" type="button"
+                  data-id="${s.id}" data-name="${s.full_name}" data-email="${s.staff_email}">Add</button>
+        </td>
+      </tr>`).join('');
+    tbody.querySelectorAll('.add-btn').forEach(btn => {
+      btn.addEventListener('click', () => openAddPanel(btn.dataset.id, btn.dataset.name, btn.dataset.email));
+    });
+  }
+
+  async function loadStaff(q) {
+    try {
+      const res  = await fetch('/system/users/staff-search?q=' + encodeURIComponent(q));
+      const data = await res.json();
+      renderStaff(data);
+    } catch {
+      tbody.innerHTML = '<tr><td colspan="4" class="hint" style="padding:1rem">Error loading staff.</td></tr>';
     }
   }
-  pwd.addEventListener('input', checkMatch);
-  confirm.addEventListener('input', checkMatch);
 
-  // Revoke buttons
+  qInput.addEventListener('input', () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => loadStaff(qInput.value.trim()), 300);
+  });
+
+  loadStaff(''); // load all on page open
+
+  // ── Add panel ────────────────────────────────────────────────────────────
+  const panel     = document.getElementById('add-panel');
+  const panelName = document.getElementById('add-panel-name');
+
+  function openAddPanel(id, name, email) {
+    document.getElementById('add-person-id').value = id;
+    document.getElementById('add-username').value  = email;
+    panelName.textContent = name;
+    panel.classList.remove('hidden');
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    document.getElementById('add-pwd').focus();
+  }
+
+  document.getElementById('add-cancel').addEventListener('click', () => {
+    panel.classList.add('hidden');
+    document.getElementById('add-person-id').value = '';
+    document.getElementById('add-username').value  = '';
+    document.getElementById('add-pwd').value        = '';
+    document.getElementById('add-confirm').value    = '';
+    document.getElementById('pwd-hint').textContent = '';
+  });
+
+  // ── Password match ───────────────────────────────────────────────────────
+  const pwd          = document.getElementById('add-pwd');
+  const confirmInput = document.getElementById('add-confirm');
+  const hint         = document.getElementById('pwd-hint');
+  const submit       = document.getElementById('add-submit');
+
+  function checkMatch() {
+    if (!confirmInput.value) { hint.textContent = ''; submit.disabled = false; return; }
+    const ok = pwd.value === confirmInput.value;
+    hint.textContent = ok ? '' : 'Passwords do not match';
+    submit.disabled  = !ok;
+  }
+  pwd.addEventListener('input', checkMatch);
+  confirmInput.addEventListener('input', checkMatch);
+
+  // ── Revoke buttons ───────────────────────────────────────────────────────
   document.querySelectorAll('.revoke-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const roleID   = btn.dataset.roleId;

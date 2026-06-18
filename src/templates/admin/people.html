@@ -30,7 +30,7 @@
     <p class="page-desc">All people recorded in the system — teachers, students, and staff. Search by name or student/staff number, then click a name to view or edit their record. Use <strong>Add Person</strong> to create a new entry before assigning a role.</p>
     <div class="admin-toolbar">
       <form id="people-search" class="admin-search" method="GET" action="/admin/people">
-        <input id="q" type="search" name="q" value="{{.Search}}" placeholder="Search by name or ID…" autocomplete="off">
+        <input id="q" type="search" name="q" value="{{.Search}}" placeholder="Search by name, email, or ID…" autocomplete="off">
         <select id="role-filter" name="role" class="search-role-select">
           <option value=""{{if eq .Role ""}} selected{{end}}>All roles</option>
           <optgroup label="System">
