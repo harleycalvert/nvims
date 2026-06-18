@@ -11,15 +11,23 @@
   <link rel="stylesheet" href="/static/admin.css">
   <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
   <style>
-    .perm-tabs { display:flex; gap:0.25rem; flex-wrap:wrap; margin-bottom:1.25rem; }
+    .perm-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:20px; }
     .perm-tab {
-      padding:0.35rem 0.9rem; border-radius:6px; border:1px solid var(--border);
-      background:var(--bg-card); color:var(--text); cursor:pointer; font-size:0.875rem;
-      font-family:inherit;
+      display:flex; align-items:stretch;
+      background:#fff; border:1px solid #dde1e7; border-radius:5px; overflow:hidden;
+      font-size:12.5px; font-weight:500; color:#444; white-space:nowrap;
+      cursor:pointer; font-family:inherit; transition:box-shadow .12s,border-color .12s;
     }
-    .perm-tab[aria-selected="true"] {
-      background:var(--accent); color:#fff; border-color:var(--accent);
-    }
+    .perm-tab:hover { border-color:#aab4c8; box-shadow:0 2px 8px rgba(0,0,0,.08); color:#111; }
+    .perm-tab[aria-selected="true"] { border-color:currentColor; background:#f5f7fb; font-weight:600; }
+    .perm-tab-bar { width:3px; flex-shrink:0; }
+    .perm-tab-label { padding:6px 11px; }
+    .perm-bar-trainer    { background:#1a4480; }
+    .perm-bar-compliance { background:#0a7a7a; }
+    .perm-bar-reception  { background:#155724; }
+    .perm-bar-support    { background:#334155; }
+    .perm-bar-staff      { background:#92400e; }
+    .perm-bar-student    { background:#5b21b6; }
     .perm-panel { display:none; }
     .perm-panel.active { display:block; }
     .perm-group { margin-bottom:1.25rem; }
@@ -75,9 +83,12 @@
     </div>
 
     <div class="perm-tabs" role="tablist">
-      {{range .Roles}}{{if ne . "SystemAdmin"}}
-      <button type="button" class="perm-tab" role="tab" data-role="{{.}}" aria-selected="false">{{.}}</button>
-      {{end}}{{end}}
+      <button type="button" class="perm-tab" role="tab" data-role="Trainer"    aria-selected="false"><span class="perm-tab-bar perm-bar-trainer"></span><span class="perm-tab-label">Trainer</span></button>
+      <button type="button" class="perm-tab" role="tab" data-role="Compliance" aria-selected="false"><span class="perm-tab-bar perm-bar-compliance"></span><span class="perm-tab-label">Compliance</span></button>
+      <button type="button" class="perm-tab" role="tab" data-role="Reception"  aria-selected="false"><span class="perm-tab-bar perm-bar-reception"></span><span class="perm-tab-label">Reception</span></button>
+      <button type="button" class="perm-tab" role="tab" data-role="SupportStaff" aria-selected="false"><span class="perm-tab-bar perm-bar-support"></span><span class="perm-tab-label">Support Staff</span></button>
+      <button type="button" class="perm-tab" role="tab" data-role="Staff"      aria-selected="false"><span class="perm-tab-bar perm-bar-staff"></span><span class="perm-tab-label">Staff</span></button>
+      <button type="button" class="perm-tab" role="tab" data-role="Student"    aria-selected="false"><span class="perm-tab-bar perm-bar-student"></span><span class="perm-tab-label">Student</span></button>
     </div>
 
     {{range .Roles}}{{if ne . "SystemAdmin"}}
