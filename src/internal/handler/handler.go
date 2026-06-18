@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -181,6 +182,7 @@ func New(st *store.Store, sessions *auth.Sessions, stor *storage.Client) *Handle
 			"templates/admin/infra-rooms.html",
 			"templates/admin/enrollments.html",
 			"templates/system/lms.html",
+			"templates/system/users.html",
 			"templates/assessment/menu.html",
 			"templates/taf/tas.html",
 			"templates/system/menu.html",
@@ -761,9 +763,49 @@ func (h *Handler) BackupPage(w http.ResponseWriter, r *http.Request) {
 	}
 	user, _ := auth.Current(r)
 	h.render(w, "backup", map[string]any{
-		"Tables": tables,
-		"User":   user,
+		"Tables":       tables,
+		"User":         user,
+		"Restored":     r.URL.Query().Get("restored") == "1",
+		"RestoreFailed": r.URL.Query().Get("restore_failed") == "1",
 	})
+}
+
+func (h *Handler) RestoreSQL(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(256 << 20); err != nil {
+		http.Error(w, "file too large (max 256 MB)", http.StatusBadRequest)
+		return
+	}
+	f, _, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "no file uploaded", http.StatusBadRequest)
+		return
+	}
+	defer f.Close()
+
+	tmp, err := os.CreateTemp("", "nvims-restore-*.sql")
+	if err != nil {
+		log.Printf("RestoreSQL: create temp: %v", err)
+		http.Error(w, "server error", http.StatusInternalServerError)
+		return
+	}
+	defer os.Remove(tmp.Name())
+
+	if _, err := io.Copy(tmp, f); err != nil {
+		log.Printf("RestoreSQL: write temp: %v", err)
+		http.Error(w, "server error", http.StatusInternalServerError)
+		return
+	}
+	tmp.Close()
+
+	cmd := exec.CommandContext(r.Context(), "psql", backupDSN(), "-f", tmp.Name())
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("RestoreSQL: psql failed: %v\n%s", err, string(out))
+		http.Redirect(w, r, "/backup?restore_failed=1", http.StatusSeeOther)
+		return
+	}
+	log.Printf("RestoreSQL: completed\n%s", string(out))
+	http.Redirect(w, r, "/backup?restored=1", http.StatusSeeOther)
 }
 
 func (h *Handler) BackupSQL(w http.ResponseWriter, r *http.Request) {
@@ -2276,19 +2318,13 @@ func (h *Handler) AdminRoleTypeUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
 		return
 	}
-	isSystem := r.FormValue("is_system") == "true"
-	description := strings.TrimSpace(r.FormValue("description"))
-
-	if isSystem {
-		err = h.store.UpdateSystemRoleType(r.Context(), id, description)
-	} else {
-		name := strings.TrimSpace(r.FormValue("role_name"))
-		if name == "" {
-			http.Error(w, `{"error":"role name is required"}`, http.StatusBadRequest)
-			return
-		}
-		err = h.store.UpdateRoleType(r.Context(), id, name, description)
+	name := strings.TrimSpace(r.FormValue("role_name"))
+	if name == "" {
+		http.Error(w, `{"error":"role name is required"}`, http.StatusBadRequest)
+		return
 	}
+	description := strings.TrimSpace(r.FormValue("description"))
+	err = h.store.UpdateRoleType(r.Context(), id, name, description)
 	if err != nil {
 		log.Printf("UpdateRoleType(%d): %v", id, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
@@ -4576,6 +4612,67 @@ func (h *Handler) TAFTas(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) SystemMenu(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.Current(r)
 	h.render(w, "system-menu", map[string]any{"User": user})
+}
+
+func (h *Handler) SystemUsers(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	admins, err := h.store.ListAdminUsers(r.Context())
+	if err != nil {
+		log.Printf("ListAdminUsers: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	h.render(w, "system-users", map[string]any{
+		"User":    user,
+		"Admins":  admins,
+		"Saved":   r.URL.Query().Get("saved") == "1",
+		"ErrDup":  r.URL.Query().Get("err") == "dup",
+		"ErrPwd":  r.URL.Query().Get("err") == "pwd",
+	})
+}
+
+func (h *Handler) SystemUserCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	username := strings.TrimSpace(r.FormValue("username"))
+	password := r.FormValue("password")
+	confirm  := r.FormValue("confirm")
+	if username == "" || password == "" {
+		http.Redirect(w, r, "/system/users?err=pwd", http.StatusSeeOther)
+		return
+	}
+	if password != confirm {
+		http.Redirect(w, r, "/system/users?err=pwd", http.StatusSeeOther)
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if err := h.store.CreateAdminUser(r.Context(), username, string(hash)); err != nil {
+		log.Printf("CreateAdminUser: %v", err)
+		http.Redirect(w, r, "/system/users?err=dup", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/system/users?saved=1", http.StatusSeeOther)
+}
+
+func (h *Handler) SystemUserRevoke(w http.ResponseWriter, r *http.Request) {
+	roleID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.RevokeAdminRole(r.Context(), roleID); err != nil {
+		log.Printf("RevokeAdminRole(%d): %v", roleID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
 func (h *Handler) AdminInfraOrgs(w http.ResponseWriter, r *http.Request) {

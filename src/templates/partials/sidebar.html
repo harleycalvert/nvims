@@ -101,7 +101,7 @@
         <a class="sidebar-item sidebar-subitem" href="/vcc/vocational-evidence" data-path="/vcc/vocational-evidence">Vocational Evidence</a>
         <a class="sidebar-item sidebar-subitem" href="/vcc/industry-currency" data-path="/vcc/industry-currency">Industry Currency</a>
         <a class="sidebar-item sidebar-subitem" href="/vcc/detail#programs" data-path="/vcc/detail#programs" data-exact="true">My TCCP</a>
-        <a class="sidebar-item sidebar-subitem" href="/vcc/detail#history" data-path="/vcc/detail#history" data-exact="true">VCC History</a>
+        <a class="sidebar-item sidebar-subitem" href="/vcc/detail#history" data-path="/vcc/detail#history" data-exact="true">TCCP History</a>
         <a class="sidebar-item sidebar-subitem" href="/vcc/documents" data-path="/vcc/documents">Document Library</a>
       </div>
 
@@ -198,6 +198,7 @@
         <a class="sidebar-item sidebar-subitem" href="/admin/infrastructure/locations" data-path="/admin/infrastructure/locations">Delivery Locations</a>
         <a class="sidebar-item sidebar-subitem" href="/admin/infrastructure/buildings" data-path="/admin/infrastructure/buildings">Buildings</a>
         <a class="sidebar-item sidebar-subitem" href="/admin/infrastructure/rooms" data-path="/admin/infrastructure/rooms">Rooms</a>
+        <a class="sidebar-item sidebar-subitem" href="/system/lms" data-path="/system/lms">LMS Config</a>
       </div>
 
     </div>
@@ -269,10 +270,9 @@
       </a>
 
       <div class="sidebar-subnav" id="subnav-system">
-        <span class="sidebar-item sidebar-subitem sidebar-disabled">System Users</span>
+        <a class="sidebar-item sidebar-subitem" href="/system/users" data-path="/system/users">System Users</a>
         <span class="sidebar-item sidebar-subitem sidebar-disabled">File Storage</span>
-        <a class="sidebar-item sidebar-subitem" href="/system/lms" data-path="/system/lms">LMS Config</a>
-        <a class="sidebar-item sidebar-subitem" href="/backup" data-path="/backup">Database Backup</a>
+        <a class="sidebar-item sidebar-subitem" href="/backup" data-path="/backup">Backup &amp; Restore</a>
       </div>
 
     </div>
@@ -297,12 +297,16 @@
   toggle.addEventListener('click', () => setState(html.dataset.sidebar !== 'open'));
 
   // Active highlighting
-  const path = location.pathname + location.hash;
-  document.querySelectorAll('.sidebar-item[data-path]').forEach(item => {
-    const p     = item.dataset.path;
-    const exact = item.dataset.exact === 'true';
-    if (exact ? path === p : location.pathname.startsWith(p)) item.classList.add('active');
-  });
+  function applyActive() {
+    const path = location.pathname + location.hash;
+    document.querySelectorAll('.sidebar-item[data-path]').forEach(item => {
+      const p     = item.dataset.path;
+      const exact = item.dataset.exact === 'true';
+      item.classList.toggle('active', exact ? path === p : location.pathname.startsWith(p));
+    });
+  }
+  applyActive();
+  window.addEventListener('hashchange', applyActive);
 
   // Keep label in sync with restored state (set in <head> before body)
   if (html.dataset.sidebar !== 'open') label.textContent = 'Expand';

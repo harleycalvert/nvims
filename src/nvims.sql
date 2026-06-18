@@ -27,7 +27,6 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'timerange') THEN
         CREATE TYPE public.timerange AS RANGE (subtype = time);
     END IF;
-    -- NEW v11: distinguishes VET-only, HE-only, and dual-sector teachers.
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'teacher_sector') THEN
         CREATE TYPE public.teacher_sector AS ENUM ('VET', 'HE', 'DUAL');
     END IF;
@@ -53,9 +52,6 @@ INSERT INTO public.australian_states (state_code, state_name, state_training_aut
 ('ACT', 'Australian Capital Territory', 'Skills Canberra', '08')
 ON CONFLICT (state_code) DO NOTHING;
 
--- NEW v11: BLOCK and ROLLING added to support 6-8 week intensive blocks and
--- rolling monthly intakes used by some RTOs and private HE colleges.
--- sequence_number orders periods within a year (Semester 1 = 1, Block 3 = 3, etc.).
 CREATE TABLE IF NOT EXISTS public.academic_periods (
     id bigserial NOT NULL,
     period_code varchar(20) NOT NULL,
@@ -141,7 +137,7 @@ CREATE TABLE IF NOT EXISTS public.people (
     emergency_contact_phone varchar(15) NULL,
     emergency_contact_relationship varchar(30) NULL,
     preferred_contact_method varchar(20) NULL,
-    wwcc_number text NULL,                           -- NEW v18: Working with Children Check
+    wwcc_number text NULL,
     wwcc_expiry date NULL,
     police_check_status text NULL,                   -- 'Pending', 'Clear', 'Not Required', or NULL
     police_check_date date NULL,

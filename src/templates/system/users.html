@@ -1,0 +1,158 @@
+{{define "system-users"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS — System Users</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/sessions.css">
+  <link rel="stylesheet" href="/static/sidebar.css">
+  <link rel="stylesheet" href="/static/admin.css">
+  <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
+</head>
+<body>
+  {{template "sidebar" .}}
+  <div class="page-wrap">
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/system">System</a>
+        <h1>System Users</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+
+  <main class="sessions-main">
+
+    {{if .Saved}}
+    <div class="form-success">Admin user created successfully.</div>
+    {{end}}
+    {{if .ErrDup}}
+    <div class="form-error">That username is already taken — choose a different one.</div>
+    {{end}}
+    {{if .ErrPwd}}
+    <div class="form-error">Passwords did not match or were empty.</div>
+    {{end}}
+
+    <p class="page-desc">Admin users can log in and access all areas of NVIMS. The bootstrap admin defined in <code>nvims.env</code> always appears here.</p>
+
+    <div class="table-wrap">
+      <table class="sessions-table" id="users-table">
+        <thead>
+          <tr>
+            <th class="td-left">Username</th>
+            <th class="td-left">Full Name</th>
+            <th class="td-left">Admin Since</th>
+            <th class="td-left">Admin Until</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Admins}}
+          <tr class="sess-row{{if .RevokedAt}} row-revoked{{end}}" data-role-id="{{.RoleID}}">
+            <td>{{.Username}}</td>
+            <td>{{if ne .FullName .Username}}{{.FullName}}{{end}}</td>
+            <td>{{.GrantedAt.Format "2 Jan 2006"}}</td>
+            <td>{{if .RevokedAt}}{{.RevokedAt.Format "2 Jan 2006"}}{{else}}<span class="badge-active">Current</span>{{end}}</td>
+            <td class="sess-actions">
+              <span class="sess-status" id="status-{{.RoleID}}"></span>
+              {{if not .RevokedAt}}
+              <button class="btn-danger-sm revoke-btn" type="button"
+                      data-role-id="{{.RoleID}}" data-username="{{.Username}}"
+                      title="Revoke admin access">Revoke</button>
+              {{end}}
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="form-section form-section--spaced">
+      <h2 class="form-section-title">Add Admin User</h2>
+      <form method="POST" action="/system/users/new" id="add-user-form">
+        <div class="form-row form-row--mt">
+          <div class="form-group fg-220">
+            <label>Username</label>
+            <input type="text" name="username" required maxlength="100" autocomplete="off">
+          </div>
+          <div class="form-group fg-220">
+            <label>Password</label>
+            <input type="password" name="password" id="pwd" required autocomplete="new-password">
+          </div>
+          <div class="form-group fg-220">
+            <label>Confirm Password</label>
+            <input type="password" name="confirm" id="pwd-confirm" required autocomplete="new-password">
+            <span class="field-hint" id="pwd-match-hint"></span>
+          </div>
+        </div>
+        <div class="form-actions form-actions--mt">
+          <button type="submit" class="btn-primary" id="btn-add-user">Add Admin User</button>
+        </div>
+      </form>
+    </div>
+
+  </main>
+  </div>
+
+<style>
+.row-revoked td { opacity: 0.5; }
+.badge-active {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #d1fae5;
+  color: #065f46;
+}
+.field-hint { font-size: 0.78rem; color: #dc2626; margin-top: 2px; display: block; min-height: 1em; }
+</style>
+
+<script>
+(function () {
+  // Password match hint
+  const pwd = document.getElementById('pwd');
+  const confirm = document.getElementById('pwd-confirm');
+  const hint = document.getElementById('pwd-match-hint');
+  const submitBtn = document.getElementById('btn-add-user');
+
+  function checkMatch() {
+    if (!confirm.value) { hint.textContent = ''; submitBtn.disabled = false; return; }
+    if (pwd.value !== confirm.value) {
+      hint.textContent = 'Passwords do not match';
+      submitBtn.disabled = true;
+    } else {
+      hint.textContent = '';
+      submitBtn.disabled = false;
+    }
+  }
+  pwd.addEventListener('input', checkMatch);
+  confirm.addEventListener('input', checkMatch);
+
+  // Revoke buttons
+  document.querySelectorAll('.revoke-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const roleID   = btn.dataset.roleId;
+      const username = btn.dataset.username;
+      if (!confirm(`Revoke admin access for ${username}?`)) return;
+      const statusEl = document.getElementById('status-' + roleID);
+      if (statusEl) { statusEl.className = 'sess-status sess-status-saving'; statusEl.textContent = '…'; }
+      try {
+        const res = await fetch(`/system/users/${roleID}/revoke`, { method: 'POST' });
+        if (!res.ok) { if (statusEl) { statusEl.className = 'sess-status sess-status-error'; statusEl.textContent = '!'; } return; }
+        location.reload();
+      } catch { if (statusEl) { statusEl.className = 'sess-status sess-status-error'; statusEl.textContent = '!'; } }
+    });
+  });
+})();
+</script>
+
+</body>
+</html>{{end}}

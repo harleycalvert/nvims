@@ -337,6 +337,73 @@ func (s *Store) BootstrapAdmin(ctx context.Context, username, passwordHash strin
 	return err == nil, err
 }
 
+// ── System Admin Users ─────────────────────────────────────────────────────
+
+type AdminUserRow struct {
+	UserID    int64
+	Username  string
+	FullName  string
+	IsActive  bool
+	RoleID    int64
+	GrantedAt time.Time
+	RevokedAt *time.Time
+}
+
+func (s *Store) ListAdminUsers(ctx context.Context) ([]AdminUserRow, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT u.id, u.username,
+		       COALESCE(p.first_given_name || ' ' || p.family_name, u.username),
+		       u.is_active,
+		       r.id,
+		       r.granted_at,
+		       r.revoked_at
+		FROM public.app_users u
+		JOIN public.app_user_roles r ON r.user_id = u.id AND r.role = 'Admin'
+		LEFT JOIN public.people p ON p.id = u.person_id
+		ORDER BY r.revoked_at NULLS FIRST, r.granted_at
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AdminUserRow
+	for rows.Next() {
+		var row AdminUserRow
+		if err := rows.Scan(&row.UserID, &row.Username, &row.FullName, &row.IsActive,
+			&row.RoleID, &row.GrantedAt, &row.RevokedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) CreateAdminUser(ctx context.Context, username, passwordHash string) error {
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO public.app_users (username, password_hash, is_active)
+		VALUES ($1, $2, true)
+		RETURNING id
+	`, username, passwordHash).Scan(&id)
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx, `
+		INSERT INTO public.app_user_roles (user_id, role, granted_at)
+		VALUES ($1, 'Admin', NOW())
+	`, id)
+	return err
+}
+
+func (s *Store) RevokeAdminRole(ctx context.Context, roleID int64) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.app_user_roles
+		SET revoked_at = NOW()
+		WHERE id = $1 AND role = 'Admin' AND revoked_at IS NULL
+	`, roleID)
+	return err
+}
+
 // ── Results ────────────────────────────────────────────────────────────────
 
 type ResultCol struct {
@@ -4372,23 +4439,14 @@ func (s *Store) UpdateRoleType(ctx context.Context, id int64, roleName, descript
 	_, err := s.pool.Exec(ctx, `
 		UPDATE public.role_types
 		SET role_name = $2, description = NULLIF($3,'')
-		WHERE id = $1 AND is_system = FALSE
+		WHERE id = $1
 	`, id, roleName, description)
-	return err
-}
-
-func (s *Store) UpdateSystemRoleType(ctx context.Context, id int64, description string) error {
-	_, err := s.pool.Exec(ctx, `
-		UPDATE public.role_types
-		SET description = NULLIF($2,'')
-		WHERE id = $1 AND is_system = TRUE
-	`, id, description)
 	return err
 }
 
 func (s *Store) DeleteRoleType(ctx context.Context, id int64) error {
 	_, err := s.pool.Exec(ctx, `
-		DELETE FROM public.role_types WHERE id = $1 AND is_system = FALSE
+		DELETE FROM public.role_types WHERE id = $1
 	`, id)
 	return err
 }

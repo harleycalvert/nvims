@@ -212,10 +212,10 @@
       {{end}}
     </div>
 
-    {{/* ── VCC History panel ── */}}
+    {{/* ── TCCP History panel ── */}}
     <div class="vcc-panel hidden" id="panel-history">
       <div class="vcc-panel-header">
-        <h2>VCC History</h2>
+        <h2>TCCP History</h2>
         <p class="vcc-panel-desc">Published Trainer Competency &amp; Currency Profile snapshots</p>
       </div>
       <div id="history-list">
@@ -1115,7 +1115,7 @@
     } catch { pitSetInd(pitPublishInd, 'error'); pitPublishBtn.disabled = false; }
   });
 
-  // ── VCC History panel ─────────────────────────────────────────────────────
+  // ── TCCP History panel ────────────────────────────────────────────────────
   function historyRenderRow(p) {
     return `<div class="pit-pub-row" data-pub-id="${p.id}">
       <div class="pit-pub-info">

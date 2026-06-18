@@ -44,21 +44,16 @@
         </thead>
         <tbody id="roles-tbody">
           {{range .RoleTypes}}
-          <tr class="sess-row" data-id="{{.ID}}" data-system="{{.IsSystem}}">
+          <tr class="sess-row" data-id="{{.ID}}">
             <td>
-              {{if .IsSystem}}
-                <span class="role-system-name">{{.RoleName}} <span class="role-system-lock" title="System role — cannot be renamed">🔒</span></span>
-                <input type="hidden" name="role_name" value="{{.RoleName}}">
-              {{else}}
-                <input class="sess-input role-input-name" type="text" name="role_name"
-                       value="{{.RoleName}}" maxlength="80">
-              {{end}}
+              <input class="sess-input role-input-name" type="text" name="role_name"
+                     value="{{.RoleName}}" maxlength="80">
             </td>
             <td><input class="sess-input role-input-desc" type="text" name="description"
                        value="{{.Description}}" maxlength="200" placeholder="Optional description"></td>
             <td class="sess-actions">
               <span class="sess-status"></span>
-              {{if not .IsSystem}}<button class="btn-danger-sm role-delete" type="button" title="Delete">✕</button>{{end}}
+              <button class="btn-danger-sm role-delete" type="button" title="Delete">✕</button>
             </td>
           </tr>
           {{end}}
@@ -82,15 +77,14 @@
   }
 
   async function saveRow(tr) {
-    const id       = tr.dataset.id;
-    const isSystem = tr.dataset.system === 'true';
-    const name     = tr.querySelector('[name=role_name]')?.value?.trim() ?? '';
-    const desc     = tr.querySelector('[name=description]').value.trim();
-    if (!isSystem && !name) return;
+    const id   = tr.dataset.id;
+    const name = tr.querySelector('[name=role_name]')?.value?.trim() ?? '';
+    const desc = tr.querySelector('[name=description]').value.trim();
+    if (!name) return;
 
     setStatus(tr, 'saving');
     const url  = id === 'new' ? '/admin/role-types/new' : `/admin/role-types/${id}`;
-    const body = new URLSearchParams({ role_name: name, description: desc, is_system: isSystem });
+    const body = new URLSearchParams({ role_name: name, description: desc });
     try {
       const res = await fetch(url, { method: 'POST', body });
       if (!res.ok) { setStatus(tr, 'error'); return; }

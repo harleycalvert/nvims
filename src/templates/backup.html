@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>NVIMS — Database Backup</title>
+  <title>NVIMS — Backup &amp; Restore</title>
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/people.css">
   <link rel="stylesheet" href="/static/admin.css">
@@ -17,7 +17,7 @@
     <div class="header-top">
       <div class="header-title-group">
         <a class="header-home" href="/">Home</a>
-        <h1>Database Backup</h1>
+        <h1>Backup &amp; Restore</h1>
       </div>
       <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
     </div>
@@ -29,6 +29,31 @@
 
   <main>
     <div class="backup-wrap">
+
+      {{if .Restored}}
+      <div class="form-success">Restore completed successfully. The database has been updated.</div>
+      {{end}}
+      {{if .RestoreFailed}}
+      <div class="form-error">Restore failed — the SQL file could not be applied. Check the server log for details.</div>
+      {{end}}
+
+      {{/* ── Restore from SQL Backup ── */}}
+      <div class="form-section form-section--spaced">
+        <h2 class="form-section-title">Restore from SQL Backup</h2>
+        <p class="hint">Upload a <code>.sql</code> file produced by the Full SQL Backup below. <strong>This will modify the database.</strong></p>
+        <form method="POST" action="/backup/restore" enctype="multipart/form-data"
+              onsubmit="return confirm('Restore from this file? This will modify the database and cannot be undone.')">
+          <div class="form-row form-row--mt">
+            <div class="form-group fg-360">
+              <label>SQL backup file</label>
+              <input type="file" name="file" accept=".sql" required>
+            </div>
+          </div>
+          <div class="form-actions form-actions--mt">
+            <button type="submit" class="btn-primary">Restore Database</button>
+          </div>
+        </form>
+      </div>
 
       {{/* ── Full SQL Backup ── */}}
       <div class="form-section form-section--spaced">
