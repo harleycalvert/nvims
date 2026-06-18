@@ -1,8 +1,8 @@
-# A National VET Information Management System (NVIMS), Student Management System (SMS) — Database Design v0.46, 2026-06-17
+# A National VET Information Management System (NVIMS), Student Management System (SMS) — Database Design v0.48, 2026-06-18
 
 PostgreSQL schema for a national, AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.46` (2026-06-17): its entities, relationships, business rules, and the
+describes the design of `v0.48` (2026-06-18): its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -41,7 +41,7 @@ mapping to the AVETMISS NAT reporting files.
   - Holidays: [`holiday_rules`](#holiday_rules) · [`holiday_observances`](#holiday_observances)
   - Communications: [`message_templates`](#message_templates) · [`message_campaigns`](#message_campaigns) · [`message_deliveries`](#message_deliveries) · [`messages`](#messages) · [`message_recipients`](#message_recipients)
   - Compliance & audit: [`program_completions`](#program_completions) · [`student_progress_reports`](#student_progress_reports) · [`student_notes`](#student_notes) · [`avetmiss_submissions`](#avetmiss_submissions) · [`audit_log`](#audit_log)
-  - Workplan: [`workplans`](#workplans) · [`workplan_approvals`](#workplan_approvals) · [`workplan_entries`](#workplan_entries) · [`leave_requests`](#leave_requests) · [`leave_request_dates`](#leave_request_dates)
+  - Workplan: [`workplans`](#workplans) · [`workplan_approvals`](#workplan_approvals) · [`workplan_entries`](#workplan_entries) · [`leave_requests`](#leave_requests) · [`leave_request_dates`](#leave_request_dates) · [`workplan_period_semesters`](#workplan_period_semesters)
   - Timesheet: [`pay_periods`](#pay_periods) · [`timesheets`](#timesheets) · [`timesheet_entries`](#timesheet_entries)
   - Employment services: [`student_employment_services`](#student_employment_services) · [`student_employment_registrations`](#student_employment_registrations)
   - VCC: [`teacher_vccs`](#teacher_vccs) · [`teacher_vcc_professional_qualifications`](#teacher_vcc_professional_qualifications) · [`teacher_vcc_vocational_qualifications`](#teacher_vcc_vocational_qualifications) · [`teacher_vcc_vocational_evidence`](#teacher_vcc_vocational_evidence) · [`teacher_vcc_professional_evidence`](#teacher_vcc_professional_evidence) · [`teacher_vcc_industry_evidence`](#teacher_vcc_industry_evidence) · [`teacher_vcc_subject_evidence`](#teacher_vcc_subject_evidence) · [`teacher_vcc_publications`](#teacher_vcc_publications) · [`teacher_vcc_courses`](#teacher_vcc_courses) · [`teacher_vcc_units`](#teacher_vcc_units) · [`teacher_vcc_unit_elements`](#teacher_vcc_unit_elements) · [`teacher_documents`](#teacher_documents) · [`teacher_document_connections`](#teacher_document_connections) · [`teacher_currency_activities`](#teacher_currency_activities) · [`teacher_currency_unit_links`](#teacher_currency_unit_links) · [`teacher_vcc_profiling`](#teacher_vcc_profiling)
@@ -56,6 +56,16 @@ mapping to the AVETMISS NAT reporting files.
 ---
 
 ## Changelog
+
+> **`nvims.sql` is a single fresh-install script** — run it once on an empty PostgreSQL database to create the complete schema. It contains no `ALTER TABLE` migration blocks; all columns and constraints are defined inline in their `CREATE TABLE` statements.
+
+### v0.48 — 2026-06-18
+
+1. **SQL restructured as a clean fresh-install schema.** All incremental `ALTER TABLE ADD COLUMN` and deferred `ALTER TABLE ADD CONSTRAINT` migration blocks removed. All affected columns (`classes.delivery_mode`, `classes.delivery_activity`, `classes.attendance_method`, `classes.tas_version`, `class_subjects.assessment_tool_version`) and all previously-deferred foreign key constraints are now inlined in their `CREATE TABLE` definitions. `role_types` and `staff_roles` moved from migration section into the main body. `teacher_document_connections` column additions consolidated.
+
+2. **New table `workplan_period_semesters`.** Maps academic periods to Semester 1 or 2 for workplan reporting. See [workplan_period_semesters](#workplan_period_semesters).
+
+3. **New `system_settings` keys for workplan configuration.** `workplan.state`, `workplan.vic.max_teaching_weekly`, `workplan.vic.annual_teaching_cap`, `workplan.vic.annual_supervision_cap`, `workplan.vic.total_accountable_hours`. Managed via Workplan → Settings.
 
 ### v0.46 — 2026-06-17
 
@@ -974,6 +984,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | `workplan_entries` | Teaching Delivery / CAPPS / ERD line items on a workplan. | → `workplans`, `subjects`, `programs`, `academic_periods`, `class_sessions` |
 | `leave_requests` | Teacher leave requests with leave type, optional partial-day times, and a Pending → Approved / Declined / Cancelled approval workflow. | → `teachers`, `people` (approver) |
 | `leave_request_dates` | Individual calendar dates belonging to a leave request. Supports non-contiguous date selection and date-range expansion. | → `leave_requests` |
+| `workplan_period_semesters` | Maps academic periods to Semester 1 or 2 for workplan reporting. Managed via Workplan Settings. | → `academic_periods` |
 
 ### Timesheet
 
@@ -1021,7 +1032,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 
 ## Data dictionary
 
-Every table and column, generated from `v0.46`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
+Every table and column, current as of `v0.48`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
 
 ### Identity & reference
 
@@ -2854,6 +2865,21 @@ Individual calendar dates that make up a leave request. One row per date per req
 
 *Indexes:* `idx_leave_dates_date (leave_date)`
 
+#### `workplan_period_semesters`
+
+Maps academic periods to Semester 1 or Semester 2 for workplan reporting. A period may appear in both semesters (unusual but permitted) or neither (unassigned). Managed via the Workplan → Settings page. Cascade-deletes when its parent `academic_periods` row is deleted.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `academic_period_id` | `bigint` | no | | PK, FK&nbsp;&rarr;&nbsp;academic_periods |
+| `semester` | `smallint` | no | | PK |
+
+*Constraints:*
+
+- `PRIMARY KEY (academic_period_id, semester)`
+- `CONSTRAINT fk_wps_period FOREIGN KEY (academic_period_id) REFERENCES public.academic_periods(id) ON DELETE CASCADE`
+- `CONSTRAINT CHECK (semester IN (1, 2))`
+
 ### Timesheet
 
 #### `pay_periods`
@@ -3463,6 +3489,11 @@ Generic key-value store for application-level configuration. Each setting is ide
 |---|---|
 | `lms.name` | Display name for the LMS link in the sidebar (e.g. `Canvas`, `Moodle`) |
 | `lms.url` | Full URL to the LMS (e.g. `https://lms.example.edu.au`) |
+| `workplan.state` | State/territory code for workplan rules (e.g. `VIC`) |
+| `workplan.vic.max_teaching_weekly` | Victoria: maximum teaching hours per week (default `21`) |
+| `workplan.vic.annual_teaching_cap` | Victoria: annual teaching delivery cap in hours (default `1200`) |
+| `workplan.vic.annual_supervision_cap` | Victoria: annual supervision cap in hours (default `800`) |
+| `workplan.vic.total_accountable_hours` | Victoria: total accountable hours per year (default `1748`) |
 
 ---
 

@@ -188,6 +188,8 @@ func main() {
 	mux.HandleFunc("GET /workplan/teaching-delivery", protect(h.WorkplanTeachingDelivery))
 	mux.HandleFunc("POST /workplan/td/class/{id}", protect(h.WorkplanTDClassSave))
 	mux.HandleFunc("POST /workplan/td/class/{class_id}/subject/{subject_id}", protect(h.WorkplanTDSubjectSave))
+	mux.HandleFunc("GET /workplan/settings", protect(h.WorkplanSettings))
+	mux.HandleFunc("POST /workplan/settings", protect(h.WorkplanSettingsSave))
 	mux.HandleFunc("GET /vcc", protect(h.VCCMenu))
 	mux.HandleFunc("GET /vcc/understand", protect(h.VCCUnderstand))
 	mux.HandleFunc("GET /vcc/professional-evidence", protect(h.VCCProfessionalEvidence))

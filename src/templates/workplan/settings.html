@@ -1,0 +1,181 @@
+{{define "workplan-settings"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS — Workplan Settings</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/sidebar.css">
+  <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
+  <style>
+    .wp-settings-form { max-width: 700px; }
+    .wp-section { background:#fff; border:1px solid #ddd; border-radius:6px; padding:20px 24px; margin-bottom:16px; }
+    .wp-section-title { font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:#555; margin-bottom:16px; }
+    .wp-field-row { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:12px; align-items:flex-end; }
+    .wp-field { display:flex; flex-direction:column; gap:4px; }
+    .wp-field label { font-size:12px; font-weight:600; color:#444; }
+    .wp-field input[type=number], .wp-field select {
+      padding:6px 10px; border:1px solid #ccc; border-radius:4px; font-size:13px;
+      background:#fff; width:100%;
+    }
+    .wp-field input[type=number]:focus, .wp-field select:focus {
+      outline:2px solid #1a4480; outline-offset:-1px; border-color:#1a4480;
+    }
+    .wp-field-w120 { width:120px; }
+    .wp-field-w160 { width:160px; }
+    .wp-field-hint { font-size:11px; color:#888; margin-top:2px; }
+    .wp-periods-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .wp-periods-table th { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#666; padding:6px 10px; border-bottom:2px solid #e2e8f0; text-align:left; }
+    .wp-periods-table th.col-check { text-align:center; width:80px; }
+    .wp-periods-table td { padding:7px 10px; border-bottom:1px solid #f1f5f9; vertical-align:middle; }
+    .wp-periods-table td.col-check { text-align:center; }
+    .wp-periods-table tbody tr:hover td { background:#f8fafc; }
+    .wp-year-header td { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#94a3b8; padding:10px 10px 4px; border-bottom:none; background:#f8fafc; }
+    .wp-period-name { font-weight:500; color:#334155; }
+    .wp-check { width:16px; height:16px; cursor:pointer; accent-color:#1a4480; }
+    .wp-save-row { display:flex; align-items:center; gap:12px; margin-top:4px; }
+    .wp-saved-msg { font-size:13px; color:#16a34a; font-weight:500; }
+    .wp-state-dependent { display:none; }
+    .wp-state-dependent.visible { display:block; }
+  </style>
+</head>
+<body>
+  {{template "sidebar" .}}
+  <div class="page-wrap">
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/workplan">Workplan</a>
+        <h1>Settings</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+
+  <main>
+    {{if .Saved}}<p class="form-success">Settings saved.</p>{{end}}
+
+    <form method="POST" action="/workplan/settings" class="wp-settings-form">
+
+      <div class="wp-section">
+        <div class="wp-section-title">State</div>
+        <div class="wp-field-row">
+          <div class="wp-field wp-field-w160">
+            <label for="wp-state">State / Territory</label>
+            <select id="wp-state" name="state" onchange="onStateChange()">
+              <option value="">— Select —</option>
+              {{range .States}}
+              <option value="{{.}}"{{if eq . $.Settings.State}} selected{{end}}>{{.}}</option>
+              {{end}}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="wp-section wp-state-dependent" id="vic-section">
+        <div class="wp-section-title">Victoria — Teaching Hours</div>
+        <div class="wp-field-row">
+          <div class="wp-field wp-field-w120">
+            <label for="wp-max-weekly">Max teaching/week</label>
+            <input type="number" id="wp-max-weekly" name="max_teaching_weekly" min="1" max="60"
+                   value="{{.Settings.MaxTeachingWeekly}}">
+            <span class="wp-field-hint">hours/week</span>
+          </div>
+          <div class="wp-field wp-field-w120">
+            <label for="wp-annual-teaching">Annual teaching cap</label>
+            <input type="number" id="wp-annual-teaching" name="annual_teaching_cap" min="1" max="9999"
+                   value="{{.Settings.AnnualTeachingCap}}">
+            <span class="wp-field-hint">hours/year</span>
+          </div>
+          <div class="wp-field wp-field-w120">
+            <label for="wp-annual-supervision">Annual supervision cap</label>
+            <input type="number" id="wp-annual-supervision" name="annual_supervision_cap" min="1" max="9999"
+                   value="{{.Settings.AnnualSupervisionCap}}">
+            <span class="wp-field-hint">hours/year</span>
+          </div>
+          <div class="wp-field wp-field-w120">
+            <label for="wp-accountable">Total accountable hours</label>
+            <input type="number" id="wp-accountable" name="total_accountable_hours" min="1" max="9999"
+                   value="{{.Settings.TotalAccountableHours}}">
+            <span class="wp-field-hint">hours/year</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="wp-section">
+        <div class="wp-section-title">Academic Periods — Semester Mapping</div>
+        {{if .Groups}}
+        <div class="wp-field-row" style="margin-bottom:14px;">
+          <div class="wp-field wp-field-w120">
+            <label for="wp-year-filter">Year</label>
+            <select id="wp-year-filter" onchange="filterPeriodYear(this.value)">
+              {{range .Groups}}
+              <option value="{{.Year}}">{{.Year}}</option>
+              {{end}}
+            </select>
+          </div>
+        </div>
+        <table class="wp-periods-table">
+          <thead>
+            <tr>
+              <th>Period</th>
+              <th class="col-check">Semester 1</th>
+              <th class="col-check">Semester 2</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .Groups}}{{$year := .Year}}
+            {{range .Periods}}
+            <tr data-year="{{$year}}">
+              <td class="wp-period-name">{{.PeriodName}}</td>
+              <td class="col-check">
+                <input type="checkbox" class="wp-check" name="semester1" value="{{.ID}}"{{if .Semester1}} checked{{end}}>
+              </td>
+              <td class="col-check">
+                <input type="checkbox" class="wp-check" name="semester2" value="{{.ID}}"{{if .Semester2}} checked{{end}}>
+              </td>
+            </tr>
+            {{end}}{{end}}
+          </tbody>
+        </table>
+        {{else}}
+        <p class="hint">No academic periods defined yet.</p>
+        {{end}}
+      </div>
+
+      <div class="wp-save-row">
+        <button type="submit" class="btn-primary">Save Settings</button>
+        {{if .Saved}}<span class="wp-saved-msg">Saved</span>{{end}}
+      </div>
+
+    </form>
+  </main>
+  </div>
+<script>
+function onStateChange() {
+  var state = document.getElementById('wp-state').value;
+  document.getElementById('vic-section').classList.toggle('visible', state === 'VIC');
+}
+onStateChange();
+
+function filterPeriodYear(year) {
+  document.querySelectorAll('#wp-periods-tbody tr').forEach(function(tr) {
+    tr.style.display = tr.dataset.year === year ? '' : 'none';
+  });
+}
+(function() {
+  var sel = document.getElementById('wp-year-filter');
+  if (sel) {
+    var tbody = document.querySelector('.wp-periods-table tbody');
+    if (tbody) tbody.id = 'wp-periods-tbody';
+    filterPeriodYear(sel.value);
+  }
+})();
+</script>
+</body>
+</html>{{end}}

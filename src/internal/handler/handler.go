@@ -163,6 +163,7 @@ func New(st *store.Store, sessions *auth.Sessions, stor *storage.Client) *Handle
 			"templates/workplan/menu.html",
 			"templates/workplan/availability.html",
 			"templates/workplan/teaching-delivery.html",
+			"templates/workplan/settings.html",
 			"templates/vcc/menu.html",
 			"templates/vcc/document-library.html",
 			"templates/vcc/professional-evidence.html",
@@ -3002,6 +3003,102 @@ func (h *Handler) WorkplanTDSubjectSave(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+// ── Workplan / Settings ───────────────────────────────────────────────────────
+
+func (h *Handler) WorkplanSettings(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+
+	settings, err := h.store.GetWorkplanSettings(r.Context())
+	if err != nil {
+		log.Printf("GetWorkplanSettings: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	periods, err := h.store.GetPeriodSemesters(r.Context())
+	if err != nil {
+		log.Printf("GetPeriodSemesters: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+
+	// Group periods by year for display.
+	type yearGroup struct {
+		Year    int
+		Periods []store.PeriodSemesterRow
+	}
+	var groups []yearGroup
+	yearIdx := map[int]int{}
+	for _, p := range periods {
+		if _, ok := yearIdx[p.Year]; !ok {
+			yearIdx[p.Year] = len(groups)
+			groups = append(groups, yearGroup{Year: p.Year})
+		}
+		i := yearIdx[p.Year]
+		groups[i].Periods = append(groups[i].Periods, p)
+	}
+
+	saved := r.URL.Query().Get("saved") == "1"
+
+	h.render(w, "workplan-settings", map[string]any{
+		"User":     user,
+		"Settings": settings,
+		"Groups":   groups,
+		"States":   auStates,
+		"Saved":    saved,
+	})
+}
+
+func (h *Handler) WorkplanSettingsSave(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	parseInt := func(key string, def int) int {
+		v := r.FormValue(key)
+		if v == "" {
+			return def
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			return def
+		}
+		return n
+	}
+
+	ws := store.WorkplanSettings{
+		State:                 r.FormValue("state"),
+		MaxTeachingWeekly:     parseInt("max_teaching_weekly", 21),
+		AnnualTeachingCap:     parseInt("annual_teaching_cap", 1200),
+		AnnualSupervisionCap:  parseInt("annual_supervision_cap", 800),
+		TotalAccountableHours: parseInt("total_accountable_hours", 1748),
+	}
+	if err := h.store.SaveWorkplanSettings(r.Context(), ws); err != nil {
+		log.Printf("SaveWorkplanSettings: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+
+	parseIDs := func(key string) []int64 {
+		var out []int64
+		for _, s := range r.Form[key] {
+			if id, err := strconv.ParseInt(s, 10, 64); err == nil && id > 0 {
+				out = append(out, id)
+			}
+		}
+		return out
+	}
+	s1 := parseIDs("semester1")
+	s2 := parseIDs("semester2")
+	if err := h.store.SetPeriodSemesters(r.Context(), s1, s2); err != nil {
+		log.Printf("SetPeriodSemesters: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/workplan/settings?saved=1", http.StatusSeeOther)
 }
 
 // VCCMenu — landing page with section tiles.

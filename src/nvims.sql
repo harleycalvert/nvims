@@ -1,240 +1,9 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.47, 2026-06-17
+-- AVETMISS-compliant SMS schema  --  version 0.48, 2026-06-18
 -- =========================================================================
--- Changes from v0.47:
---   1.  subjects: added assessment_tool_version varchar(50) NULL.
--- Changes from v0.46:
---   1.  classes: added delivery_mode varchar(20), delivery_activity varchar(50),
---       attendance_method varchar(50), tas_version varchar(50) (all NULL).
---   2.  class_subjects: added assessment_tool_version varchar(50) NULL.
--- Changes from v0.45:
---   1.  role_types: lookup table for organisational staff roles
---       (Teacher, Education Manager, Head of Department, …).
---   2.  staff_roles: date-ranged assignment of a role_type to a staff member.
---       ended_on NULL = current; no unique constraint to allow same role
---       held twice over time.
--- Changes from v0.44:
---   1.  teacher_vcc_industry_evidence: new table for Industry Currency.
---       Columns: activity_title, organisation, month, year, status, approved_at, notes.
---   2.  teacher_document_connections: added vcc_industry_evidence_id bigint NULL FK →
---       teacher_vcc_industry_evidence(id) ON DELETE CASCADE; num_nonnulls check now 8.
--- Changes from v0.41:
---   1.  teacher_vcc_credentials renamed → teacher_vcc_vocational_evidence.
---   2.  teacher_vcc_professional_evidence: new table for VET Knowledge Currency.
---       Same schema as teacher_vcc_vocational_evidence.
---   3.  teacher_document_connections: vcc_credential_id renamed →
---       vcc_vocational_evidence_id; new vcc_professional_evidence_id column added.
--- Changes from v0.40:
---   1.  teacher_vcc_credentials: new table for Certifications & Micro-Credentials.
---       Columns: credential_code, credential_title, issuing_organisation, month (1–12),
---       year, status, approved_at, notes. FK → teacher_vccs. No aqf_level.
---   2.  teacher_document_connections: added vcc_credential_id bigint NULL FK →
---       teacher_vcc_credentials(id) ON DELETE CASCADE; updated num_nonnulls check.
--- Changes from v0.39:
---   1.  teacher_vcc_professional_qualifications: replaced date_of_completion
---       with year smallint NULL (year the qualification was awarded).
---   2.  teacher_vcc_vocational_qualifications: same — replaced date_of_completion
---       with year smallint NULL.
--- Changes from v0.37:
---   3.  teacher_currency_activities: added external_url varchar(2048) NULL.
--- Changes from v0.36:
---   1.  class_sessions: added building_id bigint NULL FK → buildings(id)
---       ON DELETE SET NULL. Allows a session to be assigned directly to a
---       building without requiring a room (e.g. Building W at Frankston).
---       The application resolves the effective building as
---       COALESCE(cs.building_id, r.building_id) for map display and
---       session admin.
--- Changes from v0.34:
---   1.  leave_requests: new table — teacher leave requests with leave type,
---       optional partial-day times, status workflow (Pending → Approved /
---       Declined / Cancelled), and approver fields.
---   2.  leave_request_dates: new table — individual calendar dates per
---       leave request (supports non-contiguous day selection and date-range
---       expansion). Indexed on leave_date.
--- Changes from v0.33:
---   1.  teacher_availability: added start_time time NOT NULL DEFAULT '08:00',
---       end_time time NOT NULL DEFAULT '22:00', and notes text NULL.
---   2.  teacher_availability.chk_teacher_avail_day: range corrected to
---       BETWEEN 1 AND 6 (Mon–Sat; Sunday excluded).
---   3.  teacher_availability: added chk_teacher_avail_times CHECK
---       (end_time > start_time).
--- Changes from v0.32:
---   1.  people → staff → teachers chain (was people → teachers directly).
---       teachers.id now references staff.id (ON DELETE CASCADE) instead of
---       people.id. staff must be created before teachers in schema order.
---   2.  teachers: removed teacher_number (now inherited as staff.staff_number).
---   3.  teachers: removed teacher_email, employment_status, fte (now on staff).
---   4.  staff: now an optional extension of people; staff.id references
---       people.id. Holds staff_number, staff_email, employment_status, fte.
--- Changes from v0.31:
---   1.  teacher_vcc_professional_qualifications: added aqf_level smallint NULL.
---   2.  teacher_vcc_vocational_qualifications: added aqf_level smallint NULL.
--- Changes from v0.30:
---   1.  Replaced qual_type discriminator with a dedicated
---       teacher_vcc_vocational_qualifications table (same schema as
---       teacher_vcc_professional_qualifications, no qual_type column).
---   2.  teacher_document_connections: added vcc_vocational_qual_id FK and
---       updated num_nonnulls check to include it.
--- Changes from v0.29:
---   1.  teacher_vcc_professional_qualifications: added qual_type (now removed).
--- Changes from v0.28:
---   1.  teacher_documents: document_url and file_name made nullable to
---       support link-only documents (title + external_url, no file upload)
---       for VCC evidence records.
--- Changes from v0.27:
---   1.  buildings: added address text NULL, suburb varchar(50) NULL,
---       state_code varchar(3) NULL (FK → australian_states), and
---       postcode varchar(4) NULL for buildings at distinct street addresses.
--- Changes from v0.26:
---   1.  delivery_locations: added latitude numeric(9,6) NULL and
---       longitude numeric(9,6) NULL for GPS coordinates.
---   2.  buildings: added latitude numeric(9,6) NULL and
---       longitude numeric(9,6) NULL for GPS coordinates.
--- Changes from v0.25:
---   1.  teacher_documents: added external_url varchar(2048) NULL for linking
---       to digital badges, eQuals transcripts, or other verification pages.
---   2.  rooms: added is_computer_lab boolean NOT NULL DEFAULT false.
---   3.  room_computer_lab_specs: new table — hardware profile for lab rooms
---       (workstations, ram_gb, has_microphone, has_webcam).
---   4.  room_lab_software: new table — software titles installed per lab room.
---   5.  room_issues: new table — fault/maintenance issues per room with
---       Open/Investigating/Resolved workflow.
---   6.  person_location_preferences: new table — per-person ranked delivery
---       location preferences; equal ranks permitted.
--- Changes from v0.24:
---   1.  app_users.role (single varchar) replaced by app_user_roles table.
---       A user may hold multiple roles simultaneously (e.g. Trainer + Student).
---       Roleless accounts are valid (service accounts, pending onboarding).
---       app_users.is_active remains as an account-level lock.
---       app_user_roles.revoked_at is NULL while the role is active; set to the
---       revocation timestamp when removed. The surrogate PK allows re-granting
---       a previously revoked role while preserving audit history. A partial
---       unique index (uq_aur_active_role) prevents duplicate active grants for
---       the same (user_id, role) pair. Login evaluation: account must be active
---       AND at least one role row must have revoked_at IS NULL.
--- Changes from v0.23:
---   1.  police_check_status / police_check_date moved from teachers and staff
---       to people. Any person (student, teacher, staff, guardian) may be subject
---       to a police check; storing it on people avoids duplication across role
---       tables and is consistent with the existing wwcc_number / wwcc_expiry
---       pattern.
--- Changes from v0.22:
---   1.  program_intakes gains graded_assessment boolean NOT NULL DEFAULT false.
---       When true, the results UI requires a grade value (e.g. P, CR, D, HD)
---       in addition to the standard VET competency outcome (SC / NS) for all
---       subjects in the intake. The actual grade is stored in
---       client_subject_enrolments.grade.
--- Changes from v0.21:
---   1.  program_intakes.intake_name widened varchar(100) → varchar(150) to
---       accommodate long program names with a term suffix appended.
--- Changes from v0.20:
---   1.  duration_years numeric(3,1) added to program_intakes — the calendar
---       duration of the program in years (e.g. 1.0, 1.5, 2.0). Nullable so
---       existing rows are unaffected; constrained > 0 when set.
--- Changes from v0.19:
---   1.  program_intakes and intake_groups tables added (section 4.5).
---       A program may be offered as multiple scheduled intakes (one per term,
---       per year, etc.). Each intake may have one or more groups — sub-cohorts
---       that attend classes together. intake_group_id (nullable FK) added to
---       student_course_enrollments and classes.
--- Changes from v0.18:
---   1.  photo_url varchar(2048) and photo_uploaded_at timestamptz moved from
---       public.students to public.people (both nullable). Photos belong to the
---       identity record, not the student role — teachers and staff can also
---       have profile photos without holding a student row.
--- Changes from v0.17:
---   1.  people gains wwcc_number text and wwcc_expiry date for Working with
---       Children Check details. Any person (student, teacher, staff) may hold
---       a WWCC card; storing it on people avoids duplication across role tables.
---   2.  teachers gains police_check_status text and police_check_date date
---       (moved to people in v0.24).
---   3.  staff gains the same police_check_status / police_check_date columns
---       (moved to people in v0.24).
--- Changes from v0.16:
---   1.  preferred_contact_method varchar(20) added to people.
---   2.  is_emergency_contact boolean added to student_guardians: marks a
---       guardian row as also being the primary emergency contact, superseding
---       the inline emergency_contact_* fields on people for multi-contact use.
---   3.  session_attendance extended: units_nominated smallint, arrived_at /
---       departed_at time (partial-attendance support), break_minutes smallint,
---       absence_reason varchar(100), absence_is_acceptable boolean,
---       has_childcare boolean, is_note_private boolean. chk_attendance_status
---       extended with 'Not-Applicable'.
---   4.  keywords text[] added to student_progress_reports.
---   5.  subject_programs gains is_core boolean, group_code varchar(20), and
---       group_title varchar(100) to record Core/Elective classification and
---       the TGA component group (e.g. "Specialisation — Cloud Technology").
---   6.  student_notes.chk_note_type extended to include 'Communication'.
---   7.  student_employment_services: Centrelink CRN, job seeker ID,
---       participation hours/type/comment — one row per student.
---   8.  student_employment_registrations: provider registration rows, child
---       of student_employment_services.
---   9.  programs gains program_type varchar(20): distinguishes Qualification,
---       Skill Set, Course in a Package, Statement of Attainment. Skill sets
---       and other enrolable products are rows in programs, differentiated by
---       this column. Specialisations are captured by group_code / group_title
---       on subject_programs (added in item 5).
---  10.  teacher_vccs: Vocational Competency & Currency document, versioned per year,
---       with approval workflow (Draft → Submitted → Approved).
---  11.  teacher_vcc_professional_qualifications: teacher's own credentials
---       (TAE, degrees, industry certs) recorded against a VCC version.
---  12.  teacher_vcc_courses: courses covered in a VCC (may link to programs).
---  13.  teacher_vcc_units: units the teacher has currency for, with competency
---       method and justification text. Multiple rows per unit allowed (one per
---       method). Standalone or grouped under a VCC course.
---  14.  teacher_documents: per-teacher document library (testamurs,
---       transcripts, credentials, and other supporting evidence).
---  15.  teacher_document_connections: M2M linking documents to exactly one VCC
---       entity — professional qualification, unit, or currency activity.
---  16.  teacher_currency_activities: vocational and professional currency
---       point records with activity detail and approval tracking.
---  17.  teacher_currency_unit_links: units related to a currency activity.
---  18.  teacher_vcc_profiling: spider-chart dimension scores (self, supervisor,
---       business ideal) stored per VCC version.
--- Changes from v0.15:
---   1.  classes.group_code varchar(20): optional cohort label (G1, G2 …).
---       Groups multiple subject-level classes into one student cohort.
---       Index idx_classes_group on (academic_period_id, group_code).
--- Changes from v0.14:
---   2.  fn_upper_family_name / trg_upper_family_name: BEFORE INSERT OR UPDATE
---       OF family_name ON people normalises family_name to UPPER() at the
---       database level so every insert path (seed, API, import) stores
---       consistent uppercase surnames without caller discipline.
--- Changes from v0.13:
---   1.  messages table: teacher-composed individual messages. Separate from
---       the campaign system. Status workflow Draft -> Sent -> Failed.
---       sender_id FK to app_users (must hold Teacher role).
---   2.  message_recipients table: per-recipient delivery rows for direct
---       messages. Mirrors message_deliveries but adds teacher_id FK and an
---       is_cc boolean. recipient_type covers Student/Guardian/Staff/Teacher.
---       Exactly one of the four nullable recipient FKs is set, enforced by
---       num_nonnulls(). read_at records inbox acknowledgement.
---   3.  fn_cc_sender_on_send / trg_cc_sender_on_send: after messages.status
---       transitions to 'Sent', automatically inserts a message_recipients
---       row with is_cc = true pointing back to the sender. Sender resolved
---       as Teacher first, then Staff; service accounts produce no CC row.
---   4.  trg_touch_messages wired to fn_set_updated_at().
---   5.  Indexes on messages(sender_id, status) and
---       message_recipients(message_id), (teacher_id).
--- Changes from v0.12 (retained as v0.13):
---   6.  pay_periods table: administrator-defined pay periods (typically
---       fortnightly). Unique on period_start and on (calendar_year,
---       period_name). Provides an ordered, named sequence for timesheet
---       generation and payroll export.
---   7.  timesheets table: one timesheet per teacher per pay period. Status
---       workflow Draft -> Submitted -> Approved -> Exported. Stores who
---       submitted and approved, export timestamp and format. No banking,
---       super, or rate data -- this record carries hours only.
---   8.  timesheet_entries table: individual hour lines. entry_type mirrors
---       workplan categories plus Other. class_session_id links
---       auto-populated Teaching Delivery rows to their source session;
---       workplan_entry_id optionally links to the annual plan for
---       reconciliation. is_overtime flag separates ordinary from overtime.
---   9.  Indexes on timesheets(teacher_id), (pay_period_id), (status) and
---       timesheet_entries(timesheet_id), (class_session_id).
---  10.  trg_touch_timesheets wired to fn_set_updated_at().
---  11.  vw_timesheet_summary: per-timesheet ordinary/overtime totals and
---       per-category breakdowns (teaching, CAPPS, ERD, other).
+-- Tables: people, students, staff, teachers, programs, subjects, classes,
+--         sessions, timetabling, workplans, timesheets, VCC, system_settings.
+-- Run once on a fresh PostgreSQL database to create the complete schema.
 -- =========================================================================
 
 BEGIN;
@@ -520,6 +289,40 @@ CREATE TABLE IF NOT EXISTS public.staff_availability (
     CONSTRAINT uq_staff_avail_day UNIQUE (staff_id, day_of_week),
     CONSTRAINT chk_staff_avail_day CHECK (day_of_week BETWEEN 0 AND 6)
 );
+
+-- Lookup table for organisational staff roles (Teacher, Education Manager, etc.).
+CREATE TABLE IF NOT EXISTS public.role_types (
+    id          bigserial NOT NULL,
+    role_name   text      NOT NULL,
+    is_system   boolean   NOT NULL DEFAULT FALSE,
+    description text      NULL,
+    sort_order  integer   NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    CONSTRAINT uq_role_types_name UNIQUE (role_name)
+);
+
+INSERT INTO public.role_types (role_name, is_system, sort_order) VALUES
+    ('Teacher',            TRUE, 10),
+    ('Education Manager',  TRUE, 20),
+    ('Head of Department', TRUE, 30)
+ON CONFLICT (role_name) DO NOTHING;
+
+-- Date-ranged assignment of a role_type to a staff member.
+-- ended_on NULL = current; no unique constraint to allow same role held twice over time.
+CREATE TABLE IF NOT EXISTS public.staff_roles (
+    id           bigserial NOT NULL,
+    staff_id     bigint    NOT NULL,
+    role_type_id bigint    NOT NULL,
+    started_on   date      NOT NULL,
+    ended_on     date      NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_sr_staff     FOREIGN KEY (staff_id)     REFERENCES public.staff(id)       ON DELETE CASCADE,
+    CONSTRAINT fk_sr_role_type FOREIGN KEY (role_type_id) REFERENCES public.role_types(id)  ON DELETE RESTRICT,
+    CONSTRAINT chk_sr_dates    CHECK (ended_on IS NULL OR ended_on >= started_on)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sr_staff_id      ON public.staff_roles(staff_id);
+CREATE INDEX IF NOT EXISTS idx_sr_role_type_id  ON public.staff_roles(role_type_id);
 
 -- A teacher is an optional extension of staff: one person → one staff → one teacher.
 -- Number, email, phone, employment status, and FTE are all on the staff record.
@@ -807,6 +610,7 @@ CREATE TABLE IF NOT EXISTS public.delivery_locations (
     latitude        numeric(9,6) NULL,
     longitude       numeric(9,6) NULL,
     PRIMARY KEY (id),
+    CONSTRAINT fk_delivery_loc_parent FOREIGN KEY (training_org_id) REFERENCES public.training_orgs(id) ON DELETE CASCADE,
     CONSTRAINT fk_loc_state          FOREIGN KEY (state_code) REFERENCES public.australian_states(state_code),
     CONSTRAINT uq_delivery_loc_per_org UNIQUE (training_org_id, delivery_loc_id),
     CONSTRAINT chk_loc_physical_fields CHECK (
@@ -840,7 +644,9 @@ CREATE TABLE IF NOT EXISTS public.buildings (
     latitude             numeric(9,6) NULL,
     longitude            numeric(9,6) NULL,
     PRIMARY KEY (id),
-    CONSTRAINT uq_building_per_campus UNIQUE (delivery_location_id, building_name)
+    CONSTRAINT uq_building_per_campus UNIQUE (delivery_location_id, building_name),
+    CONSTRAINT fk_building_parent FOREIGN KEY (delivery_location_id) REFERENCES public.delivery_locations(id) ON DELETE CASCADE,
+    CONSTRAINT fk_building_state  FOREIGN KEY (state_code)           REFERENCES public.australian_states(state_code)
 );
 
 CREATE TABLE IF NOT EXISTS public.rooms (
@@ -853,6 +659,7 @@ CREATE TABLE IF NOT EXISTS public.rooms (
     is_computer_lab boolean      NOT NULL DEFAULT false,
     PRIMARY KEY (id),
     CONSTRAINT uq_room_per_building UNIQUE (building_id, room_name),
+    CONSTRAINT fk_room_parent FOREIGN KEY (building_id) REFERENCES public.buildings(id) ON DELETE CASCADE,
     CONSTRAINT chk_rooms_capacity CHECK (capacity > 0)
 );
 
@@ -977,6 +784,8 @@ CREATE TABLE IF NOT EXISTS public.student_course_enrollments (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
+    CONSTRAINT fk_se_student          FOREIGN KEY (student_id)         REFERENCES public.students(id)           ON DELETE RESTRICT,
+    CONSTRAINT fk_se_program          FOREIGN KEY (program_id)         REFERENCES public.programs(id)           ON DELETE RESTRICT,
     CONSTRAINT fk_enrollment_state    FOREIGN KEY (funding_state_code) REFERENCES public.australian_states(state_code),
     CONSTRAINT fk_sce_deleted_by      FOREIGN KEY (deleted_by)         REFERENCES public.app_users(id)    ON DELETE SET NULL,
     CONSTRAINT fk_sce_intake_group    FOREIGN KEY (intake_group_id)    REFERENCES public.intake_groups(id) ON DELETE SET NULL,
@@ -1039,6 +848,8 @@ CREATE TABLE IF NOT EXISTS public.client_subject_enrolments (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
+    CONSTRAINT fk_cse_student     FOREIGN KEY (student_id)                    REFERENCES public.students(id)                       ON DELETE RESTRICT,
+    CONSTRAINT fk_cse_subject     FOREIGN KEY (subject_id)                    REFERENCES public.subjects(id)                       ON DELETE RESTRICT,
     CONSTRAINT fk_cse_enrollment FOREIGN KEY (student_course_enrollment_id) REFERENCES public.student_course_enrollments(id) ON DELETE RESTRICT,
     CONSTRAINT fk_cse_delivery_loc FOREIGN KEY (delivery_location_id) REFERENCES public.delivery_locations(id) ON DELETE RESTRICT,
     CONSTRAINT fk_cse_finalised_by FOREIGN KEY (result_finalised_by) REFERENCES public.app_users(id) ON DELETE SET NULL,
@@ -1135,8 +946,9 @@ CREATE TABLE IF NOT EXISTS public.learning_access_plans (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    CONSTRAINT fk_lap_student FOREIGN KEY (student_id) REFERENCES public.students(id) ON DELETE CASCADE,
+    CONSTRAINT fk_lap_student    FOREIGN KEY (student_id)                    REFERENCES public.students(id)                      ON DELETE CASCADE,
     CONSTRAINT fk_lap_enrollment FOREIGN KEY (student_course_enrollment_id) REFERENCES public.student_course_enrollments(id) ON DELETE SET NULL,
+    CONSTRAINT fk_lap_assessor   FOREIGN KEY (assessor_id)                  REFERENCES public.staff(id)                         ON DELETE RESTRICT,
     CONSTRAINT chk_lap_status CHECK (status IN ('Draft', 'Active', 'Under Review', 'Closed'))
 );
 
@@ -1210,6 +1022,10 @@ CREATE TABLE IF NOT EXISTS public.classes (
     delivery_location_id bigint       NOT NULL,
     enrolment_cap        integer      NULL,
     department_id        bigint       NULL,
+    delivery_mode        varchar(20)  NULL,
+    delivery_activity    varchar(50)  NULL,
+    attendance_method    varchar(50)  NULL,
+    tas_version          varchar(50)  NULL,
     created_at           timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at           timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -1223,10 +1039,13 @@ CREATE TABLE IF NOT EXISTS public.classes (
 
 -- The set of subjects/units a class delivers.
 CREATE TABLE IF NOT EXISTS public.class_subjects (
-    class_id bigint NOT NULL,
-    subject_id bigint NOT NULL,
+    class_id   bigint       NOT NULL,
+    subject_id bigint       NOT NULL,
     subject_label varchar(100) NOT NULL,
-    PRIMARY KEY (class_id, subject_id)
+    assessment_tool_version varchar(50) NULL,
+    PRIMARY KEY (class_id, subject_id),
+    CONSTRAINT fk_cl_class   FOREIGN KEY (class_id)   REFERENCES public.classes(id)   ON DELETE CASCADE,
+    CONSTRAINT fk_cl_subject FOREIGN KEY (subject_id) REFERENCES public.subjects(id)  ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS public.class_enrollments (
@@ -1235,7 +1054,9 @@ CREATE TABLE IF NOT EXISTS public.class_enrollments (
     client_subject_enrolment_id bigint NOT NULL,
     enrolled_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    CONSTRAINT uq_class_enrolment_map UNIQUE (class_id, client_subject_enrolment_id)
+    CONSTRAINT uq_class_enrolment_map UNIQUE (class_id, client_subject_enrolment_id),
+    CONSTRAINT fk_ce_class             FOREIGN KEY (class_id)                    REFERENCES public.classes(id)                      ON DELETE CASCADE,
+    CONSTRAINT fk_ce_subject_enrolment FOREIGN KEY (client_subject_enrolment_id) REFERENCES public.client_subject_enrolments(id)     ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS public.class_slots (
@@ -1248,6 +1069,10 @@ CREATE TABLE IF NOT EXISTS public.class_slots (
     start_time time WITHOUT TIME ZONE NOT NULL,
     end_time time WITHOUT TIME ZONE NOT NULL,
     PRIMARY KEY (id),
+    CONSTRAINT fk_cs_class   FOREIGN KEY (class_id)           REFERENCES public.classes(id)          ON DELETE CASCADE,
+    CONSTRAINT fk_cs_period  FOREIGN KEY (academic_period_id) REFERENCES public.academic_periods(id),
+    CONSTRAINT fk_cs_teacher FOREIGN KEY (teacher_id)         REFERENCES public.teachers(id)         ON DELETE RESTRICT,
+    CONSTRAINT fk_cs_room    FOREIGN KEY (room_id)            REFERENCES public.rooms(id)            ON DELETE SET NULL,
     CONSTRAINT chk_slots_day CHECK (day_of_week BETWEEN 1 AND 7),
     CONSTRAINT chk_slots_times CHECK (end_time > start_time),
     -- Period-scoped: same weekday/time in a DIFFERENT term is no longer a false clash.
@@ -1354,7 +1179,8 @@ CREATE TABLE IF NOT EXISTS public.class_exceptions (
     exception_date date NOT NULL,
     reason varchar(255) NULL,
     PRIMARY KEY (id),
-    CONSTRAINT uq_exception_per_class UNIQUE (class_id, exception_date)
+    CONSTRAINT uq_exception_per_class UNIQUE (class_id, exception_date),
+    CONSTRAINT fk_cx_class FOREIGN KEY (class_id) REFERENCES public.classes(id) ON DELETE CASCADE
 );
 
 -- Holiday DEFINITIONS. A rule is stored once and expanded into concrete dates
@@ -1431,6 +1257,8 @@ CREATE TABLE IF NOT EXISTS public.program_completions (
     issued_flag varchar(1) NOT NULL DEFAULT 'N',
     parchment_number varchar(30) NULL,
     PRIMARY KEY (id),
+    CONSTRAINT fk_pc_student FOREIGN KEY (student_id) REFERENCES public.students(id)  ON DELETE RESTRICT,
+    CONSTRAINT fk_pc_program FOREIGN KEY (program_id) REFERENCES public.programs(id)  ON DELETE RESTRICT,
     CONSTRAINT fk_pc_org FOREIGN KEY (training_org_id) REFERENCES public.training_orgs(id) ON DELETE SET NULL,
     UNIQUE (student_id, program_id),
     CONSTRAINT chk_pc_issued CHECK (issued_flag IN ('Y','N'))
@@ -1703,6 +1531,18 @@ CREATE TABLE IF NOT EXISTS public.workplan_entries (
     CONSTRAINT chk_we_dates CHECK (activity_end_date IS NULL OR activity_end_date >= activity_start_date)
 );
 
+-- Maps academic periods to Semester 1 or Semester 2 for workplan reporting.
+-- A period may appear in both semesters (composite PK allows it) or neither.
+-- Managed via Workplan → Settings.
+CREATE TABLE IF NOT EXISTS public.workplan_period_semesters (
+    academic_period_id bigint   NOT NULL,
+    semester           smallint NOT NULL,
+    PRIMARY KEY (academic_period_id, semester),
+    CONSTRAINT fk_wps_period FOREIGN KEY (academic_period_id)
+        REFERENCES public.academic_periods(id) ON DELETE CASCADE,
+    CONSTRAINT chk_wps_semester CHECK (semester IN (1, 2))
+);
+
 -- =========================================================================
 -- 8.6. TIMESHEET (FORTNIGHTLY PAYROLL HOURS — AUTO-POPULATED FROM SESSIONS)
 -- =========================================================================
@@ -1770,38 +1610,7 @@ CREATE TABLE IF NOT EXISTS public.timesheet_entries (
 );
 
 -- =========================================================================
--- 9. DEFERRED CROSS-FK RELATIONSHIPS
--- =========================================================================
-ALTER TABLE IF EXISTS public.student_course_enrollments ADD CONSTRAINT fk_se_student   FOREIGN KEY (student_id) REFERENCES public.students (id) ON DELETE RESTRICT;
-ALTER TABLE IF EXISTS public.student_course_enrollments ADD CONSTRAINT fk_se_program   FOREIGN KEY (program_id) REFERENCES public.programs (id) ON DELETE RESTRICT;
-
-ALTER TABLE IF EXISTS public.client_subject_enrolments ADD CONSTRAINT fk_cse_student   FOREIGN KEY (student_id) REFERENCES public.students (id) ON DELETE RESTRICT;
-ALTER TABLE IF EXISTS public.client_subject_enrolments ADD CONSTRAINT fk_cse_subject   FOREIGN KEY (subject_id) REFERENCES public.subjects (id) ON DELETE RESTRICT;
-
-ALTER TABLE IF EXISTS public.program_completions      ADD CONSTRAINT fk_pc_student     FOREIGN KEY (student_id) REFERENCES public.students (id) ON DELETE RESTRICT;
-ALTER TABLE IF EXISTS public.program_completions      ADD CONSTRAINT fk_pc_program     FOREIGN KEY (program_id) REFERENCES public.programs (id) ON DELETE RESTRICT;
-
-ALTER TABLE IF EXISTS public.class_subjects           ADD CONSTRAINT fk_cl_class       FOREIGN KEY (class_id)   REFERENCES public.classes (id) ON DELETE CASCADE;
-ALTER TABLE IF EXISTS public.class_subjects           ADD CONSTRAINT fk_cl_subject     FOREIGN KEY (subject_id) REFERENCES public.subjects (id) ON DELETE CASCADE;
-
-ALTER TABLE IF EXISTS public.class_enrollments        ADD CONSTRAINT fk_ce_class       FOREIGN KEY (class_id) REFERENCES public.classes (id) ON DELETE CASCADE;
-ALTER TABLE IF EXISTS public.class_enrollments        ADD CONSTRAINT fk_ce_subject_enrolment FOREIGN KEY (client_subject_enrolment_id) REFERENCES public.client_subject_enrolments (id) ON DELETE CASCADE;
-
-ALTER TABLE IF EXISTS public.class_exceptions         ADD CONSTRAINT fk_cx_class       FOREIGN KEY (class_id) REFERENCES public.classes (id) ON DELETE CASCADE;
-
-ALTER TABLE IF EXISTS public.class_slots              ADD CONSTRAINT fk_cs_class       FOREIGN KEY (class_id) REFERENCES public.classes (id) ON DELETE CASCADE;
-ALTER TABLE IF EXISTS public.class_slots              ADD CONSTRAINT fk_cs_period      FOREIGN KEY (academic_period_id) REFERENCES public.academic_periods (id);
-ALTER TABLE IF EXISTS public.class_slots              ADD CONSTRAINT fk_cs_teacher     FOREIGN KEY (teacher_id) REFERENCES public.teachers (id) ON DELETE RESTRICT;
-ALTER TABLE IF EXISTS public.class_slots              ADD CONSTRAINT fk_cs_room        FOREIGN KEY (room_id) REFERENCES public.rooms (id) ON DELETE SET NULL;
-
-ALTER TABLE IF EXISTS public.delivery_locations       ADD CONSTRAINT fk_delivery_loc_parent FOREIGN KEY (training_org_id) REFERENCES public.training_orgs(id) ON DELETE CASCADE;
-ALTER TABLE IF EXISTS public.buildings                ADD CONSTRAINT fk_building_parent FOREIGN KEY (delivery_location_id) REFERENCES public.delivery_locations(id) ON DELETE CASCADE;
-ALTER TABLE IF EXISTS public.buildings                ADD CONSTRAINT fk_building_state  FOREIGN KEY (state_code) REFERENCES public.australian_states(state_code);
-ALTER TABLE IF EXISTS public.rooms                    ADD CONSTRAINT fk_room_parent    FOREIGN KEY (building_id) REFERENCES public.buildings(id) ON DELETE CASCADE;
-ALTER TABLE IF EXISTS public.learning_access_plans    ADD CONSTRAINT fk_lap_assessor   FOREIGN KEY (assessor_id) REFERENCES public.staff(id) ON DELETE RESTRICT;
-
--- =========================================================================
--- 10. INDEXES
+-- 9. INDEXES
 -- =========================================================================
 CREATE INDEX IF NOT EXISTS idx_class_enrollments_cse ON public.class_enrollments(client_subject_enrolment_id);
 CREATE INDEX IF NOT EXISTS idx_slots_period_teacher  ON public.class_slots(academic_period_id, teacher_id);
@@ -1858,7 +1667,7 @@ CREATE INDEX IF NOT EXISTS idx_mr_message                 ON public.message_reci
 CREATE INDEX IF NOT EXISTS idx_mr_teacher                 ON public.message_recipients(teacher_id) WHERE (teacher_id IS NOT NULL);
 
 -- =========================================================================
--- 11. COMPLIANCE & TEACHING-HOURS ENGINE (sessions are the source of truth)
+-- 10. COMPLIANCE & TEACHING-HOURS ENGINE (sessions are the source of truth)
 -- =========================================================================
 
 -- Postgres does NOT auto-touch updated_at; this trigger does, on every UPDATE.
@@ -2263,7 +2072,7 @@ CREATE OR REPLACE TRIGGER trg_validate_traineeship_milestones
     FOR EACH ROW EXECUTE FUNCTION public.fn_validate_traineeship_constraints();
 
 -- =========================================================================
--- 12. HOLIDAY EXPANSION (rules -> concrete observances per year)
+-- 11. HOLIDAY EXPANSION (rules -> concrete observances per year)
 -- =========================================================================
 
 -- Easter Sunday via the Anonymous Gregorian algorithm (Meeus/Jones/Butcher).
@@ -2378,7 +2187,7 @@ CREATE OR REPLACE TRIGGER trg_materialise_holidays
     FOR EACH ROW EXECUTE FUNCTION public.fn_materialise_holidays_for_period();
 
 -- =========================================================================
--- 13. SESSION GENERATION (explode slots -> concrete sessions)
+-- 12. SESSION GENERATION (explode slots -> concrete sessions)
 -- =========================================================================
 -- Set-based: one INSERT...SELECT over the period's calendar, honouring
 -- per-state public holidays and class-specific exceptions. Idempotent via the
@@ -2429,7 +2238,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- =========================================================================
--- 14. GENERIC AUDIT TRIGGER (attached to result-bearing tables)
+-- 13. GENERIC AUDIT TRIGGER (attached to result-bearing tables)
 -- =========================================================================
 -- Actor is read from a per-transaction GUC the Go layer sets:
 --   SET LOCAL app.current_user_id = '<app_users.id>';
@@ -2472,7 +2281,7 @@ CREATE OR REPLACE TRIGGER trg_audit_completions
     FOR EACH ROW EXECUTE FUNCTION public.fn_audit();
 
 -- =========================================================================
--- 15. REPORTING VIEWS
+-- 14. REPORTING VIEWS
 -- =========================================================================
 
 -- Annual workload overview. v11: surfaces teacher sector alongside hours.
@@ -2567,15 +2376,8 @@ LEFT JOIN public.timesheet_entries te ON te.timesheet_id = ts.id
 GROUP BY ts.id, ts.teacher_id, pp.period_start, pp.period_end,
          pp.period_name, pp.calendar_year, ts.status, ts.exported_at, ts.export_format;
 
-COMMIT;
-
 -- =========================================================================
--- v0.17 migration
--- =========================================================================
-BEGIN;
-
--- =========================================================================
--- NEW TABLES — Employment Services
+-- 15. ADDITIONAL TABLES (Employment Services, VCC, Documents, etc.)
 -- =========================================================================
 
 CREATE TABLE IF NOT EXISTS public.student_employment_services (
@@ -2831,31 +2633,6 @@ CREATE TABLE IF NOT EXISTS public.teacher_documents (
     ))
 );
 
--- Links a document to exactly one VCC entity. vcc_currency_activity_id FK is
--- added after teacher_currency_activities is created below.
-CREATE TABLE IF NOT EXISTS public.teacher_document_connections (
-    id                       bigserial NOT NULL,
-    document_id              bigint    NOT NULL,
-    vcc_professional_qual_id bigint    NULL,
-    vcc_vocational_qual_id   bigint    NULL,
-    vcc_unit_id              bigint    NULL,
-    vcc_currency_activity_id bigint    NULL,
-    vcc_unit_element_id      bigint    NULL,
-    vcc_vocational_evidence_id   bigint    NULL,
-    vcc_professional_evidence_id bigint    NULL,
-    vcc_industry_evidence_id     bigint    NULL,
-    PRIMARY KEY (id),
-    CONSTRAINT fk_tdc_document      FOREIGN KEY (document_id)              REFERENCES public.teacher_documents(id)                        ON DELETE CASCADE,
-    CONSTRAINT fk_tdc_pq            FOREIGN KEY (vcc_professional_qual_id) REFERENCES public.teacher_vcc_professional_qualifications(id)   ON DELETE CASCADE,
-    CONSTRAINT fk_tdc_vocqual       FOREIGN KEY (vcc_vocational_qual_id)   REFERENCES public.teacher_vcc_vocational_qualifications(id)     ON DELETE CASCADE,
-    CONSTRAINT fk_tdc_unit          FOREIGN KEY (vcc_unit_id)              REFERENCES public.teacher_vcc_units(id)                        ON DELETE CASCADE,
-    CONSTRAINT fk_tdc_unit_element  FOREIGN KEY (vcc_unit_element_id)      REFERENCES public.teacher_vcc_unit_elements(id)                ON DELETE CASCADE,
-    CONSTRAINT fk_tdc_voc_evidence  FOREIGN KEY (vcc_vocational_evidence_id)   REFERENCES public.teacher_vcc_vocational_evidence(id)      ON DELETE CASCADE,
-    CONSTRAINT fk_tdc_prof_evidence FOREIGN KEY (vcc_professional_evidence_id) REFERENCES public.teacher_vcc_professional_evidence(id)    ON DELETE CASCADE,
-    CONSTRAINT fk_tdc_ind_evidence  FOREIGN KEY (vcc_industry_evidence_id)     REFERENCES public.teacher_vcc_industry_evidence(id)        ON DELETE CASCADE,
-    CONSTRAINT chk_tdc_target       CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id, vcc_unit_element_id, vcc_vocational_evidence_id, vcc_professional_evidence_id, vcc_industry_evidence_id) = 1)
-);
-
 -- =========================================================================
 -- NEW TABLES — Currency Activities
 -- =========================================================================
@@ -2892,92 +2669,31 @@ CREATE TABLE IF NOT EXISTS public.teacher_currency_activities (
     CONSTRAINT chk_tca_points        CHECK (points_awarded >= 0)
 );
 
--- Wire up the deferred FK now that teacher_currency_activities exists.
-ALTER TABLE public.teacher_document_connections
-    ADD CONSTRAINT fk_tdc_currency FOREIGN KEY (vcc_currency_activity_id)
-    REFERENCES public.teacher_currency_activities(id) ON DELETE CASCADE;
-
--- v0.41 live-migration: rename teacher_vcc_credentials → teacher_vcc_vocational_evidence.
-DO $$ BEGIN
-    ALTER TABLE public.teacher_vcc_credentials RENAME TO teacher_vcc_vocational_evidence;
-EXCEPTION WHEN duplicate_table THEN NULL;
-         WHEN undefined_table  THEN NULL;
-END $$;
-
--- v0.41 live-migration: rename institution → issuing_organisation on vocational evidence table.
-DO $$ BEGIN
-    ALTER TABLE public.teacher_vcc_vocational_evidence RENAME COLUMN institution TO issuing_organisation;
-EXCEPTION WHEN undefined_column THEN NULL;
-         WHEN undefined_table  THEN NULL;
-END $$;
-
--- v0.41 live-migration: drop aqf_level from vocational evidence table if it exists.
-DO $$ BEGIN
-    ALTER TABLE public.teacher_vcc_vocational_evidence DROP COLUMN IF EXISTS aqf_level;
-EXCEPTION WHEN undefined_table THEN NULL;
-END $$;
-DO $$ BEGIN
-    ALTER TABLE public.teacher_vcc_vocational_evidence DROP CONSTRAINT IF EXISTS chk_vcc_cred_aqf;
-EXCEPTION WHEN undefined_table THEN NULL;
-END $$;
-
--- v0.41 live-migration: update teacher_document_connections — rename vcc_credential_id
---   → vcc_vocational_evidence_id, add vcc_professional_evidence_id, rebuild constraints.
-DO $$ BEGIN
-    -- Rename old column if it exists under old name.
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'teacher_document_connections'
-          AND column_name = 'vcc_credential_id'
-    ) THEN
-        ALTER TABLE public.teacher_document_connections
-            RENAME COLUMN vcc_credential_id TO vcc_vocational_evidence_id;
-    -- Add column if neither old nor new name exists (fresh install from pre-v0.40).
-    ELSIF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'teacher_document_connections'
-          AND column_name = 'vcc_vocational_evidence_id'
-    ) THEN
-        ALTER TABLE public.teacher_document_connections
-            ADD COLUMN vcc_vocational_evidence_id bigint NULL;
-    END IF;
-END $$;
-ALTER TABLE public.teacher_document_connections
-    ADD COLUMN IF NOT EXISTS vcc_professional_evidence_id bigint NULL;
-ALTER TABLE public.teacher_document_connections
-    DROP CONSTRAINT IF EXISTS fk_tdc_credential;
-ALTER TABLE public.teacher_document_connections
-    DROP CONSTRAINT IF EXISTS chk_tdc_target;
-ALTER TABLE public.teacher_document_connections
-    ADD CONSTRAINT chk_tdc_target
-        CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id, vcc_unit_element_id, vcc_vocational_evidence_id, vcc_professional_evidence_id) = 1);
-DO $$ BEGIN
-    ALTER TABLE public.teacher_document_connections
-        ADD CONSTRAINT fk_tdc_voc_evidence FOREIGN KEY (vcc_vocational_evidence_id)
-        REFERENCES public.teacher_vcc_vocational_evidence(id) ON DELETE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-DO $$ BEGIN
-    ALTER TABLE public.teacher_document_connections
-        ADD CONSTRAINT fk_tdc_prof_evidence FOREIGN KEY (vcc_professional_evidence_id)
-        REFERENCES public.teacher_vcc_professional_evidence(id) ON DELETE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
--- v0.42 live-migration: add vcc_industry_evidence_id to teacher_document_connections.
-ALTER TABLE public.teacher_document_connections
-    ADD COLUMN IF NOT EXISTS vcc_industry_evidence_id bigint NULL;
-ALTER TABLE public.teacher_document_connections
-    DROP CONSTRAINT IF EXISTS chk_tdc_target;
-ALTER TABLE public.teacher_document_connections
-    ADD CONSTRAINT chk_tdc_target
-        CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id, vcc_unit_element_id, vcc_vocational_evidence_id, vcc_professional_evidence_id, vcc_industry_evidence_id) = 1);
-DO $$ BEGIN
-    ALTER TABLE public.teacher_document_connections
-        ADD CONSTRAINT fk_tdc_ind_evidence FOREIGN KEY (vcc_industry_evidence_id)
-        REFERENCES public.teacher_vcc_industry_evidence(id) ON DELETE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+-- Links a document to exactly one VCC entity. All target FKs are inline
+-- now that teacher_currency_activities has been created above.
+CREATE TABLE IF NOT EXISTS public.teacher_document_connections (
+    id                           bigserial NOT NULL,
+    document_id                  bigint    NOT NULL,
+    vcc_professional_qual_id     bigint    NULL,
+    vcc_vocational_qual_id       bigint    NULL,
+    vcc_unit_id                  bigint    NULL,
+    vcc_currency_activity_id     bigint    NULL,
+    vcc_unit_element_id          bigint    NULL,
+    vcc_vocational_evidence_id   bigint    NULL,
+    vcc_professional_evidence_id bigint    NULL,
+    vcc_industry_evidence_id     bigint    NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_tdc_document      FOREIGN KEY (document_id)              REFERENCES public.teacher_documents(id)                        ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_pq            FOREIGN KEY (vcc_professional_qual_id) REFERENCES public.teacher_vcc_professional_qualifications(id)   ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_vocqual       FOREIGN KEY (vcc_vocational_qual_id)   REFERENCES public.teacher_vcc_vocational_qualifications(id)     ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_unit          FOREIGN KEY (vcc_unit_id)              REFERENCES public.teacher_vcc_units(id)                        ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_unit_element  FOREIGN KEY (vcc_unit_element_id)      REFERENCES public.teacher_vcc_unit_elements(id)                ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_voc_evidence  FOREIGN KEY (vcc_vocational_evidence_id)   REFERENCES public.teacher_vcc_vocational_evidence(id)      ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_prof_evidence FOREIGN KEY (vcc_professional_evidence_id) REFERENCES public.teacher_vcc_professional_evidence(id)    ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_ind_evidence  FOREIGN KEY (vcc_industry_evidence_id)     REFERENCES public.teacher_vcc_industry_evidence(id)        ON DELETE CASCADE,
+    CONSTRAINT fk_tdc_currency      FOREIGN KEY (vcc_currency_activity_id)     REFERENCES public.teacher_currency_activities(id)          ON DELETE CASCADE,
+    CONSTRAINT chk_tdc_target       CHECK (num_nonnulls(vcc_professional_qual_id, vcc_vocational_qual_id, vcc_unit_id, vcc_currency_activity_id, vcc_unit_element_id, vcc_vocational_evidence_id, vcc_professional_evidence_id, vcc_industry_evidence_id) = 1)
+);
 
 CREATE OR REPLACE TRIGGER trg_touch_teacher_currency_activities
     BEFORE UPDATE ON public.teacher_currency_activities
@@ -3142,71 +2858,5 @@ CREATE INDEX IF NOT EXISTS idx_vse_vcc_id
     ON public.teacher_vcc_subject_evidence(vcc_id);
 CREATE INDEX IF NOT EXISTS idx_vse_subject_id
     ON public.teacher_vcc_subject_evidence(subject_id);
-
--- live migration (idempotent)
-DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'teacher_vcc_subject_evidence') THEN
-        -- already created above via CREATE TABLE IF NOT EXISTS; nothing extra needed
-        NULL;
-    END IF;
-END $$;
-
--- ── v0.45 — Organisational Staff Roles ───────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS public.role_types (
-    id          bigserial    NOT NULL,
-    role_name   text         NOT NULL,
-    is_system   boolean      NOT NULL DEFAULT FALSE,
-    description text         NULL,
-    sort_order  integer      NOT NULL DEFAULT 0,
-    PRIMARY KEY (id),
-    CONSTRAINT uq_role_types_name UNIQUE (role_name)
-);
-
-INSERT INTO public.role_types (role_name, is_system, sort_order) VALUES
-    ('Teacher',            TRUE, 10),
-    ('Education Manager',  TRUE, 20),
-    ('Head of Department', TRUE, 30)
-ON CONFLICT (role_name) DO NOTHING;
-
-CREATE TABLE IF NOT EXISTS public.staff_roles (
-    id           bigserial    NOT NULL,
-    staff_id     bigint       NOT NULL,
-    role_type_id bigint       NOT NULL,
-    started_on   date         NOT NULL,
-    ended_on     date         NULL,
-    PRIMARY KEY (id),
-    CONSTRAINT fk_sr_staff     FOREIGN KEY (staff_id)     REFERENCES public.staff(id)       ON DELETE CASCADE,
-    CONSTRAINT fk_sr_role_type FOREIGN KEY (role_type_id) REFERENCES public.role_types(id)  ON DELETE RESTRICT,
-    CONSTRAINT chk_sr_dates    CHECK (ended_on IS NULL OR ended_on >= started_on)
-);
-
-CREATE INDEX IF NOT EXISTS idx_sr_staff_id
-    ON public.staff_roles(staff_id);
-CREATE INDEX IF NOT EXISTS idx_sr_role_type_id
-    ON public.staff_roles(role_type_id);
-
--- live migration (idempotent)
-DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'role_types') THEN
-        NULL;
-    END IF;
-END $$;
-
--- ── v0.47 — Subject assessment tool version ──────────────────────────────────
-
-ALTER TABLE public.subjects
-    ADD COLUMN IF NOT EXISTS assessment_tool_version varchar(50) NULL;
-
--- ── v0.46 — Teaching Delivery fields ─────────────────────────────────────────
-
-ALTER TABLE public.classes
-    ADD COLUMN IF NOT EXISTS delivery_mode     varchar(20)  NULL,
-    ADD COLUMN IF NOT EXISTS delivery_activity varchar(50)  NULL,
-    ADD COLUMN IF NOT EXISTS attendance_method varchar(50)  NULL,
-    ADD COLUMN IF NOT EXISTS tas_version       varchar(50)  NULL;
-
-ALTER TABLE public.class_subjects
-    ADD COLUMN IF NOT EXISTS assessment_tool_version varchar(50) NULL;
 
 COMMIT;

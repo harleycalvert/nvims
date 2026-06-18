@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -5043,4 +5044,141 @@ func (s *Store) UpdateSubjectAssessmentToolVersion(ctx context.Context, classID,
 		WHERE class_id = $1 AND subject_id = $2
 	`, classID, subjectID, version)
 	return err
+}
+
+// ── Workplan Settings ─────────────────────────────────────────────────────────
+
+type WorkplanSettings struct {
+	State                 string
+	MaxTeachingWeekly     int
+	AnnualTeachingCap     int
+	AnnualSupervisionCap  int
+	TotalAccountableHours int
+}
+
+func (s *Store) GetWorkplanSettings(ctx context.Context) (WorkplanSettings, error) {
+	keys := []string{
+		"workplan.state",
+		"workplan.vic.max_teaching_weekly",
+		"workplan.vic.annual_teaching_cap",
+		"workplan.vic.annual_supervision_cap",
+		"workplan.vic.total_accountable_hours",
+	}
+	vals := make(map[string]string, len(keys))
+	rows, err := s.pool.Query(ctx,
+		`SELECT key, value FROM public.system_settings WHERE key = ANY($1)`,
+		keys,
+	)
+	if err != nil {
+		return WorkplanSettings{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return WorkplanSettings{}, err
+		}
+		vals[k] = v
+	}
+
+	atoi := func(s string, def int) int {
+		if s == "" {
+			return def
+		}
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			return def
+		}
+		return n
+	}
+
+	return WorkplanSettings{
+		State:                 vals["workplan.state"],
+		MaxTeachingWeekly:     atoi(vals["workplan.vic.max_teaching_weekly"], 21),
+		AnnualTeachingCap:     atoi(vals["workplan.vic.annual_teaching_cap"], 1200),
+		AnnualSupervisionCap:  atoi(vals["workplan.vic.annual_supervision_cap"], 800),
+		TotalAccountableHours: atoi(vals["workplan.vic.total_accountable_hours"], 1748),
+	}, nil
+}
+
+func (s *Store) SaveWorkplanSettings(ctx context.Context, ws WorkplanSettings) error {
+	pairs := [][2]string{
+		{"workplan.state", ws.State},
+		{"workplan.vic.max_teaching_weekly", strconv.Itoa(ws.MaxTeachingWeekly)},
+		{"workplan.vic.annual_teaching_cap", strconv.Itoa(ws.AnnualTeachingCap)},
+		{"workplan.vic.annual_supervision_cap", strconv.Itoa(ws.AnnualSupervisionCap)},
+		{"workplan.vic.total_accountable_hours", strconv.Itoa(ws.TotalAccountableHours)},
+	}
+	for _, p := range pairs {
+		if err := s.SetSetting(ctx, p[0], p[1]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// PeriodSemesterRow holds a period with its semester assignment (0 = unassigned).
+type PeriodSemesterRow struct {
+	ID         int64
+	PeriodCode string
+	PeriodName string
+	Year       int
+	Semester1  bool
+	Semester2  bool
+}
+
+func (s *Store) GetPeriodSemesters(ctx context.Context) ([]PeriodSemesterRow, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT ap.id, ap.period_code, ap.period_name, ap.year,
+		       COALESCE(bool_or(wps.semester = 1), false) AS s1,
+		       COALESCE(bool_or(wps.semester = 2), false) AS s2
+		FROM public.academic_periods ap
+		LEFT JOIN public.workplan_period_semesters wps ON wps.academic_period_id = ap.id
+		GROUP BY ap.id, ap.period_code, ap.period_name, ap.year
+		ORDER BY ap.year DESC, ap.sequence_number, ap.id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PeriodSemesterRow
+	for rows.Next() {
+		var r PeriodSemesterRow
+		if err := rows.Scan(&r.ID, &r.PeriodCode, &r.PeriodName, &r.Year, &r.Semester1, &r.Semester2); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+// SetPeriodSemesters replaces all semester assignments with the provided maps.
+// s1IDs and s2IDs are sets of period IDs to assign to semester 1 and 2 respectively.
+func (s *Store) SetPeriodSemesters(ctx context.Context, s1IDs, s2IDs []int64) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `DELETE FROM public.workplan_period_semesters`); err != nil {
+		return err
+	}
+	for _, id := range s1IDs {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO public.workplan_period_semesters (academic_period_id, semester) VALUES ($1, 1) ON CONFLICT DO NOTHING`,
+			id,
+		); err != nil {
+			return err
+		}
+	}
+	for _, id := range s2IDs {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO public.workplan_period_semesters (academic_period_id, semester) VALUES ($1, 2) ON CONFLICT DO NOTHING`,
+			id,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
