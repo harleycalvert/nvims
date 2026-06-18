@@ -47,13 +47,12 @@
             <th>Capacity</th>
             <th>Type</th>
             <th title="Active">Act.</th>
-            <th title="Computer Lab">Lab</th>
             <th class="col-actions"></th>
           </tr>
         </thead>
         <tbody id="rooms-tbody">
           {{range .Rooms}}
-          <tr class="sess-row" data-id="{{.ID}}" data-building-id="{{.BuildingID}}">
+          <tr class="sess-row" data-id="{{.ID}}" data-building-id="{{.BuildingID}}" data-room-name="{{.RoomName}}" data-is-lab="{{.IsComputerLab}}" data-open-issues="{{.OpenIssues}}" data-investigating-issues="{{.InvestigatingIssues}}">
             <td>
               <select class="sess-input room-col-bld" name="building_id">
                 {{$bid := .BuildingID}}
@@ -69,9 +68,9 @@
               </select>
             </td>
             <td class="td-center"><input type="checkbox" name="is_active"{{if .IsActive}} checked{{end}}></td>
-            <td class="td-center"><input type="checkbox" name="is_computer_lab"{{if .IsComputerLab}} checked{{end}}></td>
             <td class="sess-actions">
               <span class="sess-status"></span>
+              <button class="btn-row-action{{if gt .OpenIssues 0}} btn-issues-alert{{else if gt .InvestigatingIssues 0}} btn-issues-investigating{{end}}" type="button" data-panel="issues" title="Room Issues">Issues{{if gt .OpenIssues 0}} ({{.OpenIssues}}){{else if gt .InvestigatingIssues 0}} ({{.InvestigatingIssues}}){{end}}</button>
               <button class="btn-danger-sm" type="button" data-delete title="Delete">✕</button>
             </td>
           </tr>
@@ -83,6 +82,52 @@
       <button class="btn-primary btn-sm" id="btn-add-room" type="button">+ Add Room</button>
     </div>
   </main>
+
+{{/* ── Room detail modal ── */}}
+<div id="room-modal" class="room-modal hidden" role="dialog" aria-modal="true">
+  <div class="room-modal-box">
+    <div class="room-modal-hdr">
+      <span id="room-modal-title" class="room-modal-title"></span>
+      <button id="room-modal-close" class="room-modal-close" type="button" aria-label="Close">✕</button>
+    </div>
+    <div id="room-modal-body" class="room-modal-body"></div>
+  </div>
+</div>
+
+<style>
+.room-modal { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:300; display:flex; align-items:center; justify-content:center; }
+.room-modal.hidden { display:none; }
+.room-modal-box  { background:#fff; border-radius:8px; width:min(96vw,860px); max-height:85vh; display:flex; flex-direction:column; box-shadow:0 8px 32px rgba(0,0,0,.2); }
+.room-modal-hdr  { display:flex; justify-content:space-between; align-items:center; padding:.875rem 1.25rem; border-bottom:1px solid #e5e7eb; flex-shrink:0; }
+.room-modal-title{ font-weight:600; font-size:.95rem; }
+.room-modal-close{ background:none; border:none; cursor:pointer; font-size:1.1rem; color:#6b7280; padding:0 4px; }
+.room-modal-body { overflow-y:auto; padding:1.25rem; flex:1; }
+.modal-section   { margin-bottom:1.5rem; }
+.modal-section h3{ font-size:.875rem; font-weight:600; margin:0 0 .75rem; color:#374151; }
+.modal-tbl       { width:100%; border-collapse:collapse; font-size:.875rem; }
+.modal-tbl th    { text-align:left; padding:4px 8px; color:#6b7280; font-weight:500; border-bottom:1px solid #e5e7eb; white-space:nowrap; }
+.modal-tbl td    { padding:4px 8px; border-bottom:1px solid #f3f4f6; vertical-align:middle; }
+.modal-tbl tr:last-child td { border-bottom:none; }
+.modal-inp       { width:100%; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px; font-size:.875rem; box-sizing:border-box; }
+.modal-sel       { padding:3px 6px; border:1px solid #d1d5db; border-radius:4px; font-size:.875rem; }
+.modal-status    { width:1.4rem; text-align:center; font-size:.8rem; color:#6b7280; }
+.modal-add-row   { margin-top:.75rem; }
+.status-badge    { display:inline-block; padding:1px 8px; border-radius:10px; font-size:.75rem; font-weight:600; }
+.status-open     { background:#fee2e2; color:#991b1b; }
+.status-investigating { background:#fef3c7; color:#92400e; }
+.status-resolved { background:#d1fae5; color:#065f46; }
+.specs-grid      { display:grid; grid-template-columns:1fr 1fr; gap:.75rem 1.5rem; }
+.specs-field label{ display:block; font-size:.78rem; color:#6b7280; margin-bottom:2px; }
+.sw-suggest { position:absolute; top:calc(100% + 2px); left:0; right:0; background:#fff;
+  border:1px solid #d1d5db; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,.1);
+  list-style:none; margin:0; padding:4px 0; z-index:400; max-height:220px; overflow-y:auto; }
+.sw-suggest.hidden { display:none; }
+.sw-suggest li { padding:6px 12px; cursor:pointer; font-size:.875rem; }
+.sw-suggest li:hover { background:#f3f4f6; }
+.sw-suggest .sd-sub { font-size:.78rem; color:#6b7280; }
+.btn-issues-alert        { background:#fee2e2 !important; color:#991b1b !important; border-color:#fca5a5 !important; font-weight:600; }
+.btn-issues-investigating { background:#fef3c7 !important; color:#92400e !important; border-color:#fcd34d !important; font-weight:600; }
+</style>
 
 <script>
 (function () {
@@ -155,9 +200,35 @@
   function collect(tr) {
     return { building_id: g(tr,'building_id'), room_name: g(tr,'room_name'),
              capacity: g(tr,'capacity'), room_type: g(tr,'room_type'),
-             is_active: cb(tr,'is_active'), is_computer_lab: cb(tr,'is_computer_lab') };
+             is_active: cb(tr,'is_active') };
   }
   function isComplete(f) { return f.building_id && f.room_name && f.room_type && f.capacity && parseInt(f.capacity) > 0; }
+
+  function refreshLabButtons(tr) {
+    const roomId   = tr.dataset.id;
+    const roomName = tr.querySelector('[name=room_name]')?.value || tr.dataset.roomName || '';
+    const isLab    = g(tr, 'room_type') === 'Computer Lab';
+    const actions  = tr.querySelector('.sess-actions');
+
+    // Remove existing lab buttons then re-add if needed
+    actions.querySelectorAll('[data-panel=specs],[data-panel=software]').forEach(b => b.remove());
+    if (isLab && roomId !== 'new') {
+      const specsBtn = document.createElement('button');
+      specsBtn.className = 'btn-row-action'; specsBtn.type = 'button';
+      specsBtn.dataset.panel = 'specs'; specsBtn.title = 'Lab Specs'; specsBtn.textContent = 'Lab Specs';
+      specsBtn.addEventListener('click', () => openLabSpecs(roomId, roomName));
+
+      const swBtn = document.createElement('button');
+      swBtn.className = 'btn-row-action'; swBtn.type = 'button';
+      swBtn.dataset.panel = 'software'; swBtn.title = 'Lab Software'; swBtn.textContent = 'Software';
+      swBtn.addEventListener('click', () => openSoftware(roomId, roomName));
+
+      // Insert before delete button
+      const delBtn = actions.querySelector('[data-delete]');
+      actions.insertBefore(swBtn, delBtn);
+      actions.insertBefore(specsBtn, swBtn);
+    }
+  }
 
   async function saveRow(tr) {
     const f = collect(tr);
@@ -187,7 +258,10 @@
 
   function attachListeners(tr) {
     tr.querySelectorAll('input[type=text],input[type=number]').forEach(el => el.addEventListener('blur', () => saveRow(tr)));
-    tr.querySelectorAll('select').forEach(el => el.addEventListener('change', () => saveRow(tr)));
+    tr.querySelectorAll('select').forEach(el => el.addEventListener('change', () => {
+      saveRow(tr);
+      if (el.name === 'room_type') refreshLabButtons(tr);
+    }));
     tr.querySelectorAll('input[type=checkbox]').forEach(el => el.addEventListener('change', () => saveRow(tr)));
     tr.querySelector('[data-delete]')?.addEventListener('click', () => deleteRow(tr));
   }
@@ -217,7 +291,6 @@
       <td><input class="sess-input room-col-cap"   type="number" name="capacity"  placeholder="25" min="1"></td>
       <td><select class="sess-input room-col-type" name="room_type">${typeOpts}</select></td>
       <td class="td-center"><input type="checkbox" name="is_active" checked></td>
-      <td class="td-center"><input type="checkbox" name="is_computer_lab"></td>
       <td class="sess-actions"><span class="sess-status"></span>
         <button class="btn-danger-sm" type="button" data-delete title="Remove">✕</button></td>`;
     tbody.appendChild(tr);
@@ -226,6 +299,325 @@
     tr.style.display = '';
     tr.querySelector('[name=room_name]').focus();
   });
+
+  // ── Room detail modal ─────────────────────────────────────────────────────
+  const modal      = document.getElementById('room-modal');
+  const modalTitle = document.getElementById('room-modal-title');
+  const modalBody  = document.getElementById('room-modal-body');
+
+  document.getElementById('room-modal-close').addEventListener('click', closeModal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+  function closeModal() {
+    if (currentIssueRoomId) { refreshIssueBtn(currentIssueRoomId); currentIssueRoomId = null; }
+    modal.classList.add('hidden'); modalBody.innerHTML = '';
+  }
+
+  function openModal(title, html) {
+    modalTitle.textContent = title;
+    modalBody.innerHTML    = html;
+    modal.classList.remove('hidden');
+  }
+
+  function ind(el, state) {
+    el.className = 'modal-status';
+    el.textContent = state === 'saving' ? '…' : state === 'saved' ? '✓' : state === 'error' ? '!' : '';
+    if (state === 'saved') setTimeout(() => { el.textContent = ''; }, 1400);
+  }
+
+  // Attach panel buttons on existing rows
+  document.querySelectorAll('#rooms-tbody .sess-row').forEach(tr => {
+    const roomId   = tr.dataset.id;
+    const roomName = tr.dataset.roomName;
+    // Issues button (always present — attach listener)
+    tr.querySelector('[data-panel=issues]')?.addEventListener('click', () => openIssues(roomId, roomName));
+    // Lab buttons — rebuild from current room_type so they're consistent
+    refreshLabButtons(tr);
+  });
+
+  // Refresh the Issues button alert state after modal changes
+  async function refreshIssueBtn(roomId) {
+    const tr = document.querySelector(`#rooms-tbody .sess-row[data-id="${roomId}"]`);
+    if (!tr) return;
+    const data = await fetchJSON(`/admin/rooms/${roomId}/issues`);
+    if (!data) return;
+    const open  = data.filter(i => i.status === 'Open').length;
+    const invest = data.filter(i => i.status === 'Investigating').length;
+    const btn = tr.querySelector('[data-panel=issues]');
+    if (!btn) return;
+    tr.dataset.openIssues = open;
+    tr.dataset.investigatingIssues = invest;
+    const count = open || invest;
+    btn.textContent = count ? `Issues (${count})` : 'Issues';
+    btn.classList.toggle('btn-issues-alert',        open > 0);
+    btn.classList.toggle('btn-issues-investigating', open === 0 && invest > 0);
+  }
+
+  // ── Issues ──────────────────────────────────────────────────────────────
+  const issueStatuses = ['Open','Investigating','Resolved'];
+
+  let currentIssueRoomId = null;
+
+  async function openIssues(roomId, roomName) {
+    currentIssueRoomId = roomId;
+    openModal(`${roomName} — Issues`, '<p style="color:#6b7280;font-size:.875rem">Loading…</p>');
+    const data = await fetchJSON(`/admin/rooms/${roomId}/issues`);
+    renderIssues(roomId, data);
+  }
+
+  function badgeClass(s) {
+    return s === 'Open' ? 'status-open' : s === 'Investigating' ? 'status-investigating' : 'status-resolved';
+  }
+
+  function renderIssues(roomId, issues) {
+    const statusOpts = issueStatuses.map(s => `<option>${s}</option>`).join('');
+    const rows = issues.map(iss => `
+      <tr data-issue-id="${iss.id}">
+        <td><input class="modal-inp" name="title" value="${esc(iss.title)}"></td>
+        <td><select class="modal-sel" name="status">${issueStatuses.map(s => `<option${s===iss.status?' selected':''}>${s}</option>`).join('')}</select></td>
+        <td><input class="modal-inp" name="description" value="${esc(iss.description)}" placeholder="Description"></td>
+        <td><input class="modal-inp" name="notes" value="${esc(iss.notes)}" placeholder="Notes"></td>
+        <td style="white-space:nowrap;font-size:.78rem;color:#6b7280">${iss.reported_at}${iss.resolved_at ? '<br>→ '+iss.resolved_at : ''}</td>
+        <td class="modal-status"></td>
+        <td style="white-space:nowrap">
+          <button class="btn-primary btn-sm issue-save" type="button">Save</button>
+          <button class="btn-danger-sm issue-del" type="button" title="Delete">✕</button>
+        </td>
+      </tr>`).join('');
+
+    modalBody.innerHTML = `
+      <table class="modal-tbl">
+        <thead><tr>
+          <th>Title</th><th>Status</th><th>Description</th><th>Notes</th><th>Dates</th><th></th><th></th>
+        </tr></thead>
+
+        <tbody id="issues-tbody">${rows}</tbody>
+      </table>
+      <div class="modal-add-row">
+        <table class="modal-tbl"><tbody><tr id="issue-new-row">
+          <td><input class="modal-inp" id="new-issue-title" placeholder="Title" required></td>
+          <td><select class="modal-sel" id="new-issue-status">${statusOpts}</select></td>
+          <td><input class="modal-inp" id="new-issue-desc" placeholder="Description"></td>
+          <td colspan="3"></td>
+          <td><button class="btn-primary btn-sm" id="btn-add-issue" type="button">+ Add</button></td>
+        </tr></tbody></table>
+      </div>`;
+
+    document.querySelectorAll('#issues-tbody tr').forEach(tr => attachIssueSave(tr, roomId));
+
+    // delete
+    document.querySelectorAll('.issue-del').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const tr = btn.closest('tr');
+        const issId = tr.dataset.issueId;
+        if (!confirm('Delete this issue?')) return;
+        const ok = await postJSON(`/admin/rooms/${roomId}/issues/${issId}/delete`, {});
+        if (ok) tr.remove();
+      });
+    });
+
+    // add
+    document.getElementById('btn-add-issue').addEventListener('click', async () => {
+      const title = document.getElementById('new-issue-title').value.trim();
+      if (!title) return;
+      const body = {
+        title, status: document.getElementById('new-issue-status').value,
+        description: document.getElementById('new-issue-desc').value
+      };
+      const res = await postJSONParsed(`/admin/rooms/${roomId}/issues/new`, body);
+      if (res?.ok) {
+        const fresh = await fetchJSON(`/admin/rooms/${roomId}/issues`);
+        renderIssues(roomId, fresh);
+      }
+    });
+  }
+
+  function attachIssueSave(tr, roomId) {
+    const issId    = tr.dataset.issueId;
+    const statusEl = tr.querySelector('.modal-status');
+    async function save() {
+      ind(statusEl, 'saving');
+      const ok = await postJSON(`/admin/rooms/${roomId}/issues/${issId}`, {
+        title:       tr.querySelector('[name=title]').value,
+        description: tr.querySelector('[name=description]').value,
+        status:      tr.querySelector('[name=status]').value,
+        notes:       tr.querySelector('[name=notes]').value,
+      });
+      ind(statusEl, ok ? 'saved' : 'error');
+    }
+    tr.querySelector('.issue-save')?.addEventListener('click', save);
+    tr.querySelectorAll('input').forEach(el => el.addEventListener('blur', save));
+  }
+
+  // ── Lab Specs ────────────────────────────────────────────────────────────
+  async function openLabSpecs(roomId, roomName) {
+    openModal(`${roomName} — Lab Specs`, '<p style="color:#6b7280;font-size:.875rem">Loading…</p>');
+    const sp = await fetchJSON(`/admin/rooms/${roomId}/lab-specs`);
+    renderLabSpecs(roomId, sp);
+  }
+
+  function renderLabSpecs(roomId, sp) {
+    modalBody.innerHTML = `
+      <div class="specs-grid">
+        <div class="specs-field"><label>Workstations</label>
+          <input class="modal-inp" id="sp-workstations" type="number" min="0" value="${sp.Workstations||0}"></div>
+        <div class="specs-field"><label>RAM (GB)</label>
+          <input class="modal-inp" id="sp-ram" type="number" min="0" value="${sp.RAMGB||0}"></div>
+        <div class="specs-field"><label><input type="checkbox" id="sp-mic"${sp.HasMicrophone?' checked':''}> Has Microphone</label></div>
+        <div class="specs-field"><label><input type="checkbox" id="sp-cam"${sp.HasWebcam?' checked':''}> Has Webcam</label></div>
+        <div class="specs-field" style="grid-column:1/-1"><label>Notes</label>
+          <textarea class="modal-inp" id="sp-notes" rows="3">${esc(sp.Notes||'')}</textarea></div>
+      </div>
+      <div style="margin-top:1rem;display:flex;align-items:center;gap:.75rem">
+        <button class="btn-primary btn-sm" id="btn-save-specs" type="button">Save</button>
+        <span id="sp-status" class="modal-status"></span>
+      </div>`;
+
+    document.getElementById('btn-save-specs').addEventListener('click', async () => {
+      const statusEl = document.getElementById('sp-status');
+      ind(statusEl, 'saving');
+      const ok = await postJSON(`/admin/rooms/${roomId}/lab-specs`, {
+        workstations: document.getElementById('sp-workstations').value,
+        ram_gb: document.getElementById('sp-ram').value,
+        has_microphone: document.getElementById('sp-mic').checked ? '1' : '0',
+        has_webcam: document.getElementById('sp-cam').checked ? '1' : '0',
+        notes: document.getElementById('sp-notes').value
+      });
+      ind(statusEl, ok ? 'saved' : 'error');
+    });
+  }
+
+  // ── Lab Software ─────────────────────────────────────────────────────────
+  let knownSoftware = null; // cached after first fetch
+
+  async function openSoftware(roomId, roomName) {
+    openModal(`${roomName} — Lab Software`, '<p style="color:#6b7280;font-size:.875rem">Loading…</p>');
+    const [data, known] = await Promise.all([
+      fetchJSON(`/admin/rooms/${roomId}/lab-software`),
+      knownSoftware ?? fetchJSON('/admin/rooms/lab-software/known').then(d => { knownSoftware = d; return d; })
+    ]);
+    renderSoftware(roomId, data);
+  }
+
+  function renderSoftware(roomId, list) {
+    const rows = (list||[]).map(sw => `
+      <tr data-sw-id="${sw.ID}">
+        <td><input class="modal-inp" name="software_name" value="${esc(sw.SoftwareName)}"></td>
+        <td><input class="modal-inp" name="version"       value="${esc(sw.Version)}"       placeholder="Version"></td>
+        <td><input class="modal-inp" name="licence_type"  value="${esc(sw.LicenceType)}"   placeholder="Licence type"></td>
+        <td><input class="modal-inp" name="notes"         value="${esc(sw.Notes)}"          placeholder="Notes"></td>
+        <td class="modal-status"></td>
+        <td><button class="btn-danger-sm sw-del" type="button" title="Delete">✕</button></td>
+      </tr>`).join('');
+
+    modalBody.innerHTML = `
+      <table class="modal-tbl">
+        <thead><tr><th>Software</th><th>Version</th><th>Licence Type</th><th>Notes</th><th></th><th></th></tr></thead>
+        <tbody id="sw-tbody">${rows}</tbody>
+      </table>
+      <div class="modal-add-row" style="margin-top:.75rem">
+        <div style="position:relative;display:inline-block;width:100%">
+          <input class="modal-inp" id="new-sw-name" placeholder="Type to search or enter new software name…" autocomplete="off" style="width:100%">
+          <ul id="sw-suggest" class="sw-suggest hidden"></ul>
+        </div>
+        <table class="modal-tbl" style="margin-top:.5rem"><tbody><tr>
+          <td><input class="modal-inp" id="new-sw-ver"  placeholder="Version"></td>
+          <td><input class="modal-inp" id="new-sw-lic"  placeholder="Licence type"></td>
+          <td><input class="modal-inp" id="new-sw-note" placeholder="Notes"></td>
+          <td><button class="btn-primary btn-sm" id="btn-add-sw" type="button">+ Add</button></td>
+        </tr></tbody></table>
+      </div>`;
+
+    document.querySelectorAll('#sw-tbody tr').forEach(tr => attachSwSave(tr, roomId));
+
+    document.querySelectorAll('.sw-del').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const tr = btn.closest('tr');
+        if (!confirm('Delete this software entry?')) return;
+        const ok = await postJSON(`/admin/rooms/${roomId}/lab-software/${tr.dataset.swId}/delete`, {});
+        if (ok) tr.remove();
+      });
+    });
+
+    // Autocomplete for known software
+    const nameInput = document.getElementById('new-sw-name');
+    const suggest   = document.getElementById('sw-suggest');
+
+    nameInput.addEventListener('input', () => {
+      const q = nameInput.value.toLowerCase();
+      const matches = (knownSoftware||[]).filter(s => s.name.toLowerCase().includes(q));
+      if (!q || !matches.length) { suggest.classList.add('hidden'); return; }
+      suggest.innerHTML = matches.slice(0,8).map(s =>
+        `<li data-name="${esc(s.name)}" data-ver="${esc(s.version)}" data-lic="${esc(s.licence_type)}">`+
+        `<span>${esc(s.name)}</span>`+
+        (s.version ? `<span class="sd-sub"> — ${esc(s.version)}</span>` : '')+
+        `</li>`).join('');
+      suggest.classList.remove('hidden');
+    });
+    nameInput.addEventListener('blur', () => setTimeout(() => suggest.classList.add('hidden'), 150));
+    suggest.addEventListener('mousedown', e => {
+      const li = e.target.closest('li');
+      if (!li) return;
+      nameInput.value = li.dataset.name;
+      document.getElementById('new-sw-ver').value = li.dataset.ver;
+      document.getElementById('new-sw-lic').value = li.dataset.lic;
+      suggest.classList.add('hidden');
+    });
+
+    document.getElementById('btn-add-sw').addEventListener('click', async () => {
+      const name = nameInput.value.trim();
+      if (!name) return;
+      const res = await postJSONParsed(`/admin/rooms/${roomId}/lab-software/new`, {
+        software_name: name,
+        version: document.getElementById('new-sw-ver').value,
+        licence_type: document.getElementById('new-sw-lic').value,
+        notes: document.getElementById('new-sw-note').value
+      });
+      if (res?.ok) {
+        knownSoftware = null; // invalidate cache so new name appears next time
+        const fresh = await fetchJSON(`/admin/rooms/${roomId}/lab-software`);
+        renderSoftware(roomId, fresh);
+      }
+    });
+  }
+
+  function attachSwSave(tr, roomId) {
+    const swId = tr.dataset.swId;
+    const statusEl = tr.querySelector('.modal-status');
+    async function save() {
+      ind(statusEl, 'saving');
+      const ok = await postJSON(`/admin/rooms/${roomId}/lab-software/${swId}`, {
+        software_name: tr.querySelector('[name=software_name]').value,
+        version: tr.querySelector('[name=version]').value,
+        licence_type: tr.querySelector('[name=licence_type]').value,
+        notes: tr.querySelector('[name=notes]').value
+      });
+      ind(statusEl, ok ? 'saved' : 'error');
+    }
+    tr.querySelectorAll('input').forEach(el => el.addEventListener('blur', save));
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  async function fetchJSON(url) {
+    try { const r = await fetch(url); return await r.json(); } catch { return null; }
+  }
+  async function postJSON(url, data) {
+    try {
+      const r = await fetch(url, { method: 'POST', body: new URLSearchParams(data) });
+      return r.ok;
+    } catch { return false; }
+  }
+  async function postJSONParsed(url, data) {
+    try {
+      const r = await fetch(url, { method: 'POST', body: new URLSearchParams(data) });
+      return r.ok ? await r.json() : null;
+    } catch { return null; }
+  }
+  function esc(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
 })();
 </script>
   </div>

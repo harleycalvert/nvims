@@ -1480,15 +1480,17 @@ type BuildingRow struct {
 }
 
 type RoomRow struct {
-	ID            int64
-	BuildingID    int64
-	BuildingName  string
-	LocationName  string
-	RoomName      string
-	Capacity      int
-	RoomType      string
-	IsActive      bool
-	IsComputerLab bool
+	ID                   int64
+	BuildingID           int64
+	BuildingName         string
+	LocationName         string
+	RoomName             string
+	Capacity             int
+	RoomType             string
+	IsActive             bool
+	IsComputerLab        bool
+	OpenIssues           int
+	InvestigatingIssues  int
 }
 
 type ProgramIntakeRow struct {
@@ -1903,10 +1905,14 @@ func (s *Store) ListRooms(ctx context.Context) ([]RoomRow, error) {
 		       r.room_name, r.capacity,
 		       COALESCE(r.room_type,'Classroom'),
 		       COALESCE(r.is_active, true),
-		       COALESCE(r.is_computer_lab, false)
+		       COALESCE(r.is_computer_lab, false),
+		       COUNT(ri.id) FILTER (WHERE ri.status = 'Open') AS open_issues,
+		       COUNT(ri.id) FILTER (WHERE ri.status = 'Investigating') AS investigating_issues
 		FROM public.rooms r
 		JOIN public.buildings b ON b.id = r.building_id
 		JOIN public.delivery_locations dl ON dl.id = b.delivery_location_id
+		LEFT JOIN public.room_issues ri ON ri.room_id = r.id
+		GROUP BY r.id, b.building_name, dl.name, b.id, dl.id
 		ORDER BY dl.name, b.building_name, r.room_name
 	`)
 	if err != nil {
@@ -1917,7 +1923,7 @@ func (s *Store) ListRooms(ctx context.Context) ([]RoomRow, error) {
 	for rows.Next() {
 		var r RoomRow
 		if err := rows.Scan(&r.ID, &r.BuildingID, &r.BuildingName, &r.LocationName,
-			&r.RoomName, &r.Capacity, &r.RoomType, &r.IsActive, &r.IsComputerLab); err != nil {
+			&r.RoomName, &r.Capacity, &r.RoomType, &r.IsActive, &r.IsComputerLab, &r.OpenIssues, &r.InvestigatingIssues); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -1952,6 +1958,191 @@ func (s *Store) UpdateRoom(ctx context.Context, id, buildingID int64, name, room
 func (s *Store) DeleteRoom(ctx context.Context, id int64) error {
 	_, err := s.pool.Exec(ctx, `DELETE FROM public.rooms WHERE id=$1`, id)
 	return err
+}
+
+// ── Room Issues ─────────────────────────────────────────────────────────────
+
+type RoomIssue struct {
+	ID          int64
+	RoomID      int64
+	Title       string
+	Description string
+	Status      string
+	ReportedAt  time.Time
+	ResolvedAt  *time.Time
+	Notes       string
+}
+
+func (s *Store) ListRoomIssues(ctx context.Context, roomID int64) ([]RoomIssue, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, room_id, title, COALESCE(description,''), status,
+		       reported_at, resolved_at, COALESCE(notes,'')
+		FROM public.room_issues WHERE room_id = $1
+		ORDER BY reported_at DESC
+	`, roomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RoomIssue
+	for rows.Next() {
+		var r RoomIssue
+		if err := rows.Scan(&r.ID, &r.RoomID, &r.Title, &r.Description, &r.Status,
+			&r.ReportedAt, &r.ResolvedAt, &r.Notes); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) CreateRoomIssue(ctx context.Context, roomID int64, title, description, status string) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO public.room_issues (room_id, title, description, status)
+		VALUES ($1, $2, NULLIF($3,''), $4) RETURNING id
+	`, roomID, title, description, status).Scan(&id)
+	return id, err
+}
+
+func (s *Store) UpdateRoomIssue(ctx context.Context, id int64, title, description, status, notes string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.room_issues
+		SET title = $2, description = NULLIF($3,''), status = $4,
+		    notes = NULLIF($5,''),
+		    resolved_at = CASE WHEN $6::text = 'Resolved' AND resolved_at IS NULL THEN NOW()
+		                       WHEN $6::text != 'Resolved' THEN NULL
+		                       ELSE resolved_at END
+		WHERE id = $1
+	`, id, title, description, status, notes, status)
+	return err
+}
+
+func (s *Store) DeleteRoomIssue(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM public.room_issues WHERE id=$1`, id)
+	return err
+}
+
+// ── Room Lab Specs ───────────────────────────────────────────────────────────
+
+type RoomLabSpecs struct {
+	RoomID        int64
+	Workstations  int
+	RAMGB         int
+	HasMicrophone bool
+	HasWebcam     bool
+	Notes         string
+}
+
+func (s *Store) GetRoomLabSpecs(ctx context.Context, roomID int64) (*RoomLabSpecs, error) {
+	var sp RoomLabSpecs
+	err := s.pool.QueryRow(ctx, `
+		SELECT room_id, COALESCE(workstations,0), COALESCE(ram_gb,0),
+		       has_microphone, has_webcam, COALESCE(notes,'')
+		FROM public.room_computer_lab_specs WHERE room_id = $1
+	`, roomID).Scan(&sp.RoomID, &sp.Workstations, &sp.RAMGB,
+		&sp.HasMicrophone, &sp.HasWebcam, &sp.Notes)
+	if err != nil {
+		return nil, err
+	}
+	return &sp, nil
+}
+
+func (s *Store) UpsertRoomLabSpecs(ctx context.Context, roomID int64, workstations, ramGB int, hasMic, hasWebcam bool, notes string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO public.room_computer_lab_specs
+		    (room_id, workstations, ram_gb, has_microphone, has_webcam, notes)
+		VALUES ($1, NULLIF($2,0), NULLIF($3,0), $4, $5, NULLIF($6,''))
+		ON CONFLICT (room_id) DO UPDATE SET
+		    workstations   = EXCLUDED.workstations,
+		    ram_gb         = EXCLUDED.ram_gb,
+		    has_microphone = EXCLUDED.has_microphone,
+		    has_webcam     = EXCLUDED.has_webcam,
+		    notes          = EXCLUDED.notes
+	`, roomID, workstations, ramGB, hasMic, hasWebcam, notes)
+	return err
+}
+
+// ── Room Lab Software ────────────────────────────────────────────────────────
+
+type RoomLabSoftware struct {
+	ID           int64
+	RoomID       int64
+	SoftwareName string
+	Version      string
+	LicenceType  string
+	Notes        string
+}
+
+func (s *Store) ListRoomLabSoftware(ctx context.Context, roomID int64) ([]RoomLabSoftware, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, room_id, software_name, COALESCE(version,''),
+		       COALESCE(licence_type,''), COALESCE(notes,'')
+		FROM public.room_lab_software WHERE room_id = $1
+		ORDER BY software_name
+	`, roomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RoomLabSoftware
+	for rows.Next() {
+		var r RoomLabSoftware
+		if err := rows.Scan(&r.ID, &r.RoomID, &r.SoftwareName, &r.Version,
+			&r.LicenceType, &r.Notes); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) CreateRoomLabSoftware(ctx context.Context, roomID int64, name, version, licenceType, notes string) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO public.room_lab_software (room_id, software_name, version, licence_type, notes)
+		VALUES ($1, $2, NULLIF($3,''), NULLIF($4,''), NULLIF($5,'')) RETURNING id
+	`, roomID, name, version, licenceType, notes).Scan(&id)
+	return id, err
+}
+
+func (s *Store) UpdateRoomLabSoftware(ctx context.Context, id int64, name, version, licenceType, notes string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.room_lab_software
+		SET software_name = $2, version = NULLIF($3,''), licence_type = NULLIF($4,''), notes = NULLIF($5,'')
+		WHERE id = $1
+	`, id, name, version, licenceType, notes)
+	return err
+}
+
+func (s *Store) DeleteRoomLabSoftware(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM public.room_lab_software WHERE id=$1`, id)
+	return err
+}
+
+// ListKnownLabSoftware returns one entry per distinct software name (case-insensitive),
+// using the most recently added row for version/licence defaults.
+func (s *Store) ListKnownLabSoftware(ctx context.Context) ([]RoomLabSoftware, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT DISTINCT ON (LOWER(software_name))
+		       0, 0, software_name,
+		       COALESCE(version,''), COALESCE(licence_type,''), COALESCE(notes,'')
+		FROM public.room_lab_software
+		ORDER BY LOWER(software_name), id DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RoomLabSoftware
+	for rows.Next() {
+		var r RoomLabSoftware
+		if err := rows.Scan(&r.ID, &r.RoomID, &r.SoftwareName, &r.Version, &r.LicenceType, &r.Notes); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) CreateDeliveryLocation(ctx context.Context, trainingOrgID int64, locID, name string, isVirtual bool, address, suburb, stateCode, postcode, lat, lng string) (int64, error) {

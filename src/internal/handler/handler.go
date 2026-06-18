@@ -5045,7 +5045,7 @@ func (h *Handler) AdminRoomCreate(w http.ResponseWriter, r *http.Request) {
 	roomType      := strings.TrimSpace(r.FormValue("room_type"))
 	capacityStr   := strings.TrimSpace(r.FormValue("capacity"))
 	isActive      := r.FormValue("is_active") == "1"
-	isComputerLab := r.FormValue("is_computer_lab") == "1"
+	isComputerLab := roomType == "Computer Lab"
 
 	capacity := parseInt(capacityStr)
 	if buildingID == 0 || roomName == "" || roomType == "" || capacityStr == "" || capacity <= 0 {
@@ -5077,7 +5077,7 @@ func (h *Handler) AdminRoomUpdate(w http.ResponseWriter, r *http.Request) {
 	roomType      := strings.TrimSpace(r.FormValue("room_type"))
 	capacityStr   := strings.TrimSpace(r.FormValue("capacity"))
 	isActive      := r.FormValue("is_active") == "1"
-	isComputerLab := r.FormValue("is_computer_lab") == "1"
+	isComputerLab := roomType == "Computer Lab"
 
 	capacity := parseInt(capacityStr)
 	if buildingID == 0 || roomName == "" || roomType == "" || capacityStr == "" || capacity <= 0 {
@@ -5101,6 +5101,191 @@ func (h *Handler) AdminRoomDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.store.DeleteRoom(r.Context(), id); err != nil {
 		log.Printf("DeleteRoom(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+// ── Room Issues ───────────────────────────────────────────────────────────────
+
+func (h *Handler) AdminRoomIssuesList(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	issues, err := h.store.ListRoomIssues(r.Context(), id)
+	if err != nil {
+		log.Printf("ListRoomIssues(%d): %v", id, err)
+		http.Error(w, "[]", http.StatusInternalServerError)
+		return
+	}
+	type row struct {
+		ID          int64   `json:"id"`
+		Title       string  `json:"title"`
+		Description string  `json:"description"`
+		Status      string  `json:"status"`
+		ReportedAt  string  `json:"reported_at"`
+		ResolvedAt  *string `json:"resolved_at"`
+		Notes       string  `json:"notes"`
+	}
+	out := make([]row, len(issues))
+	for i, iss := range issues {
+		var ra *string
+		if iss.ResolvedAt != nil {
+			s := iss.ResolvedAt.Format("2 Jan 2006 15:04")
+			ra = &s
+		}
+		out[i] = row{iss.ID, iss.Title, iss.Description, iss.Status,
+			iss.ReportedAt.Format("2 Jan 2006 15:04"), ra, iss.Notes}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+func (h *Handler) AdminRoomIssueCreate(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	_ = r.ParseForm()
+	title := strings.TrimSpace(r.FormValue("title"))
+	if title == "" {
+		http.Error(w, `{"error":"title required"}`, http.StatusBadRequest)
+		return
+	}
+	issID, err := h.store.CreateRoomIssue(r.Context(), id, title,
+		r.FormValue("description"), r.FormValue("status"))
+	if err != nil {
+		log.Printf("CreateRoomIssue(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"ok":true,"id":%d}`, issID)
+}
+
+func (h *Handler) AdminRoomIssueUpdate(w http.ResponseWriter, r *http.Request) {
+	issID, _ := strconv.ParseInt(r.PathValue("iid"), 10, 64)
+	_ = r.ParseForm()
+	if err := h.store.UpdateRoomIssue(r.Context(), issID,
+		strings.TrimSpace(r.FormValue("title")),
+		r.FormValue("description"), r.FormValue("status"), r.FormValue("notes")); err != nil {
+		log.Printf("UpdateRoomIssue(%d): %v", issID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminRoomIssueDelete(w http.ResponseWriter, r *http.Request) {
+	issID, _ := strconv.ParseInt(r.PathValue("iid"), 10, 64)
+	if err := h.store.DeleteRoomIssue(r.Context(), issID); err != nil {
+		log.Printf("DeleteRoomIssue(%d): %v", issID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+// ── Room Lab Specs ────────────────────────────────────────────────────────────
+
+func (h *Handler) AdminRoomLabSpecsGet(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	sp, err := h.store.GetRoomLabSpecs(r.Context(), id)
+	if err != nil {
+		// No row yet — return empty defaults
+		sp = &store.RoomLabSpecs{RoomID: id}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(sp)
+}
+
+func (h *Handler) AdminRoomLabSpecsUpsert(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	_ = r.ParseForm()
+	workstations, _ := strconv.Atoi(r.FormValue("workstations"))
+	ramGB, _        := strconv.Atoi(r.FormValue("ram_gb"))
+	hasMic          := r.FormValue("has_microphone") == "1"
+	hasWebcam       := r.FormValue("has_webcam") == "1"
+	if err := h.store.UpsertRoomLabSpecs(r.Context(), id, workstations, ramGB, hasMic, hasWebcam,
+		r.FormValue("notes")); err != nil {
+		log.Printf("UpsertRoomLabSpecs(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+// ── Room Lab Software ─────────────────────────────────────────────────────────
+
+func (h *Handler) AdminRoomLabSoftwareKnown(w http.ResponseWriter, r *http.Request) {
+	list, err := h.store.ListKnownLabSoftware(r.Context())
+	if err != nil {
+		log.Printf("ListKnownLabSoftware: %v", err)
+		http.Error(w, "[]", http.StatusInternalServerError)
+		return
+	}
+	type row struct {
+		Name        string `json:"name"`
+		Version     string `json:"version"`
+		LicenceType string `json:"licence_type"`
+	}
+	out := make([]row, len(list))
+	for i, s := range list {
+		out[i] = row{s.SoftwareName, s.Version, s.LicenceType}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+func (h *Handler) AdminRoomLabSoftwareList(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	list, err := h.store.ListRoomLabSoftware(r.Context(), id)
+	if err != nil {
+		log.Printf("ListRoomLabSoftware(%d): %v", id, err)
+		http.Error(w, "[]", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(list)
+}
+
+func (h *Handler) AdminRoomLabSoftwareCreate(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	_ = r.ParseForm()
+	name := strings.TrimSpace(r.FormValue("software_name"))
+	if name == "" {
+		http.Error(w, `{"error":"software name required"}`, http.StatusBadRequest)
+		return
+	}
+	swID, err := h.store.CreateRoomLabSoftware(r.Context(), id, name,
+		r.FormValue("version"), r.FormValue("licence_type"), r.FormValue("notes"))
+	if err != nil {
+		log.Printf("CreateRoomLabSoftware(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"ok":true,"id":%d}`, swID)
+}
+
+func (h *Handler) AdminRoomLabSoftwareUpdate(w http.ResponseWriter, r *http.Request) {
+	swID, _ := strconv.ParseInt(r.PathValue("swid"), 10, 64)
+	_ = r.ParseForm()
+	if err := h.store.UpdateRoomLabSoftware(r.Context(), swID,
+		strings.TrimSpace(r.FormValue("software_name")),
+		r.FormValue("version"), r.FormValue("licence_type"), r.FormValue("notes")); err != nil {
+		log.Printf("UpdateRoomLabSoftware(%d): %v", swID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminRoomLabSoftwareDelete(w http.ResponseWriter, r *http.Request) {
+	swID, _ := strconv.ParseInt(r.PathValue("swid"), 10, 64)
+	if err := h.store.DeleteRoomLabSoftware(r.Context(), swID); err != nil {
+		log.Printf("DeleteRoomLabSoftware(%d): %v", swID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}
