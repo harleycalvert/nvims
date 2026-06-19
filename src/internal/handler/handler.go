@@ -216,11 +216,11 @@ func (h *Handler) LoadPermissions(ctx context.Context) error {
 }
 
 // HasPerm reports whether the user holds the given permission.
-// SystemAdmin bypasses all permission checks.
+// Admin bypasses all permission checks.
 func (h *Handler) HasPerm(user auth.User, perm string) bool {
 	for _, role := range strings.Split(user.Role, ", ") {
 		role = strings.TrimSpace(role)
-		if role == "SystemAdmin" {
+		if role == "Admin" {
 			return true
 		}
 		h.permsMu.RLock()
@@ -5625,7 +5625,6 @@ func (h *Handler) SystemPermissions(w http.ResponseWriter, r *http.Request) {
 		"Groups":  perm.Groups,
 		"Roles":   perm.Roles,
 		"Current": current,
-		"Saved":   r.URL.Query().Get("saved") == "1",
 	})
 }
 
@@ -5635,7 +5634,7 @@ func (h *Handler) SystemPermissionsSave(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	role := r.FormValue("role")
-	if role == "" || role == "SystemAdmin" {
+	if role == "" || role == "Admin" {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
@@ -5654,7 +5653,7 @@ func (h *Handler) SystemPermissionsSave(w http.ResponseWriter, r *http.Request) 
 	if err := h.LoadPermissions(r.Context()); err != nil {
 		log.Printf("LoadPermissions after save: %v", err)
 	}
-	http.Redirect(w, r, "/system/permissions?saved=1", http.StatusSeeOther)
+	w.WriteHeader(http.StatusOK)
 }
 
 // ── Admin Exceptions ──────────────────────────────────────────────────────────

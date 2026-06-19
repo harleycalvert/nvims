@@ -1,5 +1,5 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.48, 2026-06-18
+-- AVETMISS-compliant SMS schema  --  version 0.49, 2026-06-19
 -- =========================================================================
 -- Tables: people, students, staff, teachers, programs, subjects, classes,
 --         sessions, timetabling, workplans, timesheets, VCC, system_settings.
@@ -180,7 +180,7 @@ CREATE TABLE IF NOT EXISTS public.app_user_roles (
     PRIMARY KEY (id),
     CONSTRAINT fk_aur_user FOREIGN KEY (user_id) REFERENCES public.app_users(id) ON DELETE CASCADE,
     CONSTRAINT chk_aur_role CHECK (role IN (
-        'SystemAdmin','Trainer','Compliance','Reception','SupportStaff','System','Staff','Student'
+        'Admin','Teacher','Compliance','Reception','SupportStaff','System','Staff','Student'
     ))
 );
 
@@ -1365,7 +1365,7 @@ CREATE TABLE IF NOT EXISTS public.message_deliveries (
 );
 
 -- NEW v14: teacher-composed individual messages (distinct from bulk campaigns).
--- sender_id must reference an app_users row whose role is 'Trainer'.
+-- sender_id must reference an app_users row whose role is 'Teacher'.
 -- Application layer enforces the role check; the schema carries the FK only.
 CREATE TABLE IF NOT EXISTS public.messages (
     id bigserial NOT NULL,
@@ -2865,22 +2865,22 @@ CREATE TABLE IF NOT EXISTS public.role_permissions (
     permission varchar(100) NOT NULL,
     PRIMARY KEY (role, permission),
     CONSTRAINT chk_rp_role CHECK (role IN (
-        'SystemAdmin','Trainer','Compliance','Reception','SupportStaff','System','Staff','Student'
+        'Admin','Teacher','Compliance','Reception','SupportStaff','System','Staff','Student'
     ))
 );
 
 -- Default permission seeds (idempotent).
 INSERT INTO public.role_permissions (role, permission) VALUES
-    -- Trainer
-    ('Trainer','people:view'),
-    ('Trainer','enrolments:view'),
-    ('Trainer','programs:view'),
-    ('Trainer','sessions:view'),('Trainer','sessions:manage'),
-    ('Trainer','attendance:view'),('Trainer','attendance:mark'),
-    ('Trainer','results:view'),('Trainer','results:manage'),
-    ('Trainer','vcc:access'),('Trainer','vcc:manage'),
-    ('Trainer','workplan:view'),('Trainer','workplan:manage'),
-    ('Trainer','student:panel'),
+    -- Teacher
+    ('Teacher','people:view'),
+    ('Teacher','enrolments:view'),
+    ('Teacher','programs:view'),
+    ('Teacher','sessions:view'),('Teacher','sessions:manage'),
+    ('Teacher','attendance:view'),('Teacher','attendance:mark'),
+    ('Teacher','results:view'),('Teacher','results:manage'),
+    ('Teacher','vcc:access'),('Teacher','vcc:manage'),
+    ('Teacher','workplan:view'),('Teacher','workplan:manage'),
+    ('Teacher','student:panel'),
     -- Compliance
     ('Compliance','people:view'),
     ('Compliance','enrolments:view'),

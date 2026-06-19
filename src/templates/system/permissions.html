@@ -43,10 +43,12 @@
     .perm-row label { cursor:pointer; flex:1; font-size:0.9rem; }
     .perm-row input[type=checkbox] { width:1rem; height:1rem; cursor:pointer; flex-shrink:0; }
     .perm-key { font-family:ui-monospace,'Cascadia Code',Menlo,monospace; font-size:0.75rem; color:var(--text-muted); }
-    .perm-save-bar {
-      display:flex; align-items:center; gap:1rem;
-      margin-top:1.5rem; padding-top:1rem; border-top:1px solid var(--border);
+    .perm-status {
+      font-size:0.8rem; height:1.5rem; display:flex; align-items:center;
+      margin-top:0.5rem; color:var(--text-muted);
     }
+    .perm-status.ok    { color:#166534; }
+    .perm-status.error { color:#991b1b; }
     .perm-note {
       font-size:0.8rem; color:var(--text-muted);
       background:var(--bg-card); border:1px solid var(--border);
@@ -73,17 +75,13 @@
 
   <main class="sessions-main">
 
-    {{if .Saved}}
-    <div class="form-success" style="margin-bottom:1rem">Permissions saved.</div>
-    {{end}}
-
     <div class="perm-note">
-      <strong>System Admin</strong> bypasses all permission checks and always has full access.
+      <strong>Admin</strong> bypasses all permission checks and always has full access.
       Configure permissions for the other roles below.
     </div>
 
     <div class="perm-tabs" role="tablist">
-      <button type="button" class="perm-tab" role="tab" data-role="Trainer"    aria-selected="false"><span class="perm-tab-bar perm-bar-trainer"></span><span class="perm-tab-label">Trainer</span></button>
+      <button type="button" class="perm-tab" role="tab" data-role="Teacher"    aria-selected="false"><span class="perm-tab-bar perm-bar-trainer"></span><span class="perm-tab-label">VET Practitioner</span></button>
       <button type="button" class="perm-tab" role="tab" data-role="Compliance" aria-selected="false"><span class="perm-tab-bar perm-bar-compliance"></span><span class="perm-tab-label">Compliance</span></button>
       <button type="button" class="perm-tab" role="tab" data-role="Reception"  aria-selected="false"><span class="perm-tab-bar perm-bar-reception"></span><span class="perm-tab-label">Reception</span></button>
       <button type="button" class="perm-tab" role="tab" data-role="SupportStaff" aria-selected="false"><span class="perm-tab-bar perm-bar-support"></span><span class="perm-tab-label">Support Staff</span></button>
@@ -91,31 +89,26 @@
       <button type="button" class="perm-tab" role="tab" data-role="Student"    aria-selected="false"><span class="perm-tab-bar perm-bar-student"></span><span class="perm-tab-label">Student</span></button>
     </div>
 
-    {{range .Roles}}{{if ne . "SystemAdmin"}}
+    {{range .Roles}}{{if ne . "Admin"}}
     {{$role := .}}
-    <div class="perm-panel" id="panel-{{$role}}" role="tabpanel">
-      <form method="POST" action="/system/permissions">
-        <input type="hidden" name="role" value="{{$role}}">
-        {{range $.Groups}}
-        <div class="perm-group">
-          <div class="perm-group-name">{{.Name}}</div>
-          {{range .Permissions}}
-          {{$key := .Key}}
-          {{$checked := index (index $.Current $role) $key}}
-          <div class="perm-row">
-            <input type="checkbox" id="{{$role}}-{{$key}}" name="{{$key}}" value="1"{{if $checked}} checked{{end}}>
-            <label for="{{$role}}-{{$key}}">
-              {{.Description}}
-              <span class="perm-key"> — {{$key}}</span>
-            </label>
-          </div>
-          {{end}}
+    <div class="perm-panel" id="panel-{{$role}}" role="tabpanel" data-role="{{$role}}">
+      {{range $.Groups}}
+      <div class="perm-group">
+        <div class="perm-group-name">{{.Name}}</div>
+        {{range .Permissions}}
+        {{$key := .Key}}
+        {{$checked := index (index $.Current $role) $key}}
+        <div class="perm-row">
+          <input type="checkbox" id="{{$role}}-{{$key}}" name="{{$key}}" value="1"{{if $checked}} checked{{end}}>
+          <label for="{{$role}}-{{$key}}">
+            {{.Description}}
+            <span class="perm-key"> — {{$key}}</span>
+          </label>
         </div>
         {{end}}
-        <div class="perm-save-bar">
-          <button type="submit" class="btn-primary">Save {{$role}} permissions</button>
-        </div>
-      </form>
+      </div>
+      {{end}}
+      <div class="perm-status" id="status-{{$role}}"></div>
     </div>
     {{end}}{{end}}
 
@@ -124,13 +117,12 @@
 
   <script>
   (function(){
-    var tabs  = document.querySelectorAll('.perm-tab');
-    var key   = 'nvims-perm-role';
+    var tabs = document.querySelectorAll('.perm-tab');
+    var key  = 'nvims-perm-role';
 
     function activate(role) {
       tabs.forEach(function(t) {
-        var active = t.dataset.role === role;
-        t.setAttribute('aria-selected', active ? 'true' : 'false');
+        t.setAttribute('aria-selected', t.dataset.role === role ? 'true' : 'false');
       });
       document.querySelectorAll('.perm-panel').forEach(function(p) {
         p.classList.toggle('active', p.id === 'panel-' + role);
@@ -142,9 +134,39 @@
       t.addEventListener('click', function(){ activate(t.dataset.role); });
     });
 
-    var saved = sessionStorage.getItem(key);
-    var first = tabs[0] && tabs[0].dataset.role;
-    activate(saved || first);
+    activate(sessionStorage.getItem(key) || (tabs[0] && tabs[0].dataset.role));
+
+    var timers = {};
+
+    function saveRole(panel) {
+      var role   = panel.dataset.role;
+      var status = document.getElementById('status-' + role);
+      var body   = new URLSearchParams({ role: role });
+      panel.querySelectorAll('input[type=checkbox]:checked').forEach(function(cb) {
+        body.append(cb.name, '1');
+      });
+      status.textContent = 'Saving…';
+      status.className   = 'perm-status';
+      fetch('/system/permissions', { method: 'POST', body: body })
+        .then(function(r) {
+          status.className   = r.ok ? 'perm-status ok' : 'perm-status error';
+          status.textContent = r.ok ? 'Saved' : 'Error saving';
+          if (r.ok) setTimeout(function(){ status.textContent = ''; status.className = 'perm-status'; }, 2000);
+        })
+        .catch(function() {
+          status.className   = 'perm-status error';
+          status.textContent = 'Error saving';
+        });
+    }
+
+    document.querySelectorAll('.perm-panel').forEach(function(panel) {
+      panel.addEventListener('change', function(e) {
+        if (e.target.type !== 'checkbox') return;
+        var role = panel.dataset.role;
+        clearTimeout(timers[role]);
+        timers[role] = setTimeout(function(){ saveRole(panel); }, 300);
+      });
+    });
   })();
   </script>
 </body>

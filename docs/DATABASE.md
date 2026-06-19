@@ -1,8 +1,8 @@
-# A National VET Information Management System (NVIMS), Student Management System (SMS) — Database Design v0.48, 2026-06-18
+# A National VET Information Management System (NVIMS), Student Management System (SMS) — Database Design v0.49, 2026-06-19
 
 PostgreSQL schema for a national, AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.48` (2026-06-18): its entities, relationships, business rules, and the
+describes the design of `v0.49` (2026-06-19): its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -45,7 +45,7 @@ mapping to the AVETMISS NAT reporting files.
   - Timesheet: [`pay_periods`](#pay_periods) · [`timesheets`](#timesheets) · [`timesheet_entries`](#timesheet_entries)
   - Employment services: [`student_employment_services`](#student_employment_services) · [`student_employment_registrations`](#student_employment_registrations)
   - VCC: [`teacher_vccs`](#teacher_vccs) · [`teacher_vcc_professional_qualifications`](#teacher_vcc_professional_qualifications) · [`teacher_vcc_vocational_qualifications`](#teacher_vcc_vocational_qualifications) · [`teacher_vcc_vocational_evidence`](#teacher_vcc_vocational_evidence) · [`teacher_vcc_professional_evidence`](#teacher_vcc_professional_evidence) · [`teacher_vcc_industry_evidence`](#teacher_vcc_industry_evidence) · [`teacher_vcc_subject_evidence`](#teacher_vcc_subject_evidence) · [`teacher_vcc_publications`](#teacher_vcc_publications) · [`teacher_vcc_courses`](#teacher_vcc_courses) · [`teacher_vcc_units`](#teacher_vcc_units) · [`teacher_vcc_unit_elements`](#teacher_vcc_unit_elements) · [`teacher_documents`](#teacher_documents) · [`teacher_document_connections`](#teacher_document_connections) · [`teacher_currency_activities`](#teacher_currency_activities) · [`teacher_currency_unit_links`](#teacher_currency_unit_links) · [`teacher_vcc_profiling`](#teacher_vcc_profiling)
-  - System: [`system_settings`](#system_settings)
+  - System: [`system_settings`](#system_settings) · [`role_permissions`](#role_permissions)
 - [Business rules & constraints](#business-rules--constraints)
 - [Functions & triggers](#functions--triggers)
 - [AVETMISS NAT file mapping](#avetmiss-nat-file-mapping)
@@ -58,6 +58,20 @@ mapping to the AVETMISS NAT reporting files.
 ## Changelog
 
 > **`nvims.sql` is a single fresh-install script** — run it once on an empty PostgreSQL database to create the complete schema. It contains no `ALTER TABLE` migration blocks; all columns and constraints are defined inline in their `CREATE TABLE` statements.
+
+### v0.49 — 2026-06-19
+
+1. **New table `role_permissions`.** Stores the RBAC permission grants for each application role. Each row is a `(role, permission)` pair. The `permission` values are `"area:action"` strings (e.g. `people:view`, `sessions:manage`). `Admin` role is intentionally absent — it bypasses all permission checks in the application layer. The full set of permissions is: `people:view`, `people:manage`, `enrolments:view`, `enrolments:manage`, `programs:view`, `programs:manage`, `sessions:view`, `sessions:manage`, `attendance:view`, `attendance:mark`, `results:view`, `results:manage`, `infra:view`, `infra:manage`, `vcc:access`, `vcc:manage`, `workplan:view`, `workplan:manage`, `student:panel`, `system:users`, `system:backup`, `system:config`. Seeded with defaults for roles: Teacher, Compliance, Reception, SupportStaff, Staff, Student. See [`role_permissions`](#role_permissions).
+
+2. **`app_user_roles.chk_aur_role`** updated: `'Trainer'` replaced with `'Teacher'` in the role allowlist. Valid roles are now: `Admin`, `Teacher`, `Compliance`, `Reception`, `SupportStaff`, `Staff`, `Student`.
+
+3. **`people` table** — six new nullable columns added for address sub-fields and emergency contact:
+   - `unit_details varchar(30) NULL` — unit/apartment number (e.g. "Unit 4").
+   - `street_number varchar(10) NULL` — street number.
+   - `street_name varchar(70) NULL` — street name.
+   - `emergency_contact_name varchar(100) NULL` — emergency contact full name.
+   - `emergency_contact_phone varchar(15) NULL` — emergency contact phone number.
+   - `emergency_contact_relationship varchar(30) NULL` — relationship to the person (e.g. "Spouse", "Parent").
 
 ### v0.48 — 2026-06-18
 
@@ -173,7 +187,7 @@ mapping to the AVETMISS NAT reporting files.
 
 ### v0.24 — prior
 
-1. **`app_users.role` (single varchar) replaced by `app_user_roles` table.** A user may hold multiple roles simultaneously (e.g. Trainer + Student). Roleless accounts are valid (service accounts, pending onboarding). `app_users.is_active` remains as an account-level lock. `app_user_roles.revoked_at` is NULL while the role is active; set to the revocation timestamp when removed. The surrogate PK allows re-granting a previously revoked role while preserving audit history. A partial unique index (`uq_aur_active_role`) prevents duplicate active grants for the same `(user_id, role)` pair. Login evaluation: account must be active AND at least one role row must have `revoked_at IS NULL`.
+1. **`app_users.role` (single varchar) replaced by `app_user_roles` table.** A user may hold multiple roles simultaneously (e.g. Teacher + Student). Roleless accounts are valid (service accounts, pending onboarding). `app_users.is_active` remains as an account-level lock. `app_user_roles.revoked_at` is NULL while the role is active; set to the revocation timestamp when removed. The surrogate PK allows re-granting a previously revoked role while preserving audit history. A partial unique index (`uq_aur_active_role`) prevents duplicate active grants for the same `(user_id, role)` pair. Login evaluation: account must be active AND at least one role row must have `revoked_at IS NULL`.
 
 ### v0.23 — prior
 
@@ -1006,6 +1020,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 | Table | Purpose | Key relationships |
 |---|---|---|
 | `system_settings` | Key-value store for application configuration (e.g. LMS name, LMS URL). One row per setting key. | — |
+| `role_permissions` | RBAC permission grants per application role. Each row is a `(role, permission)` pair. `Admin` is absent — it bypasses all checks. | — |
 
 ### VCC
 
@@ -1032,7 +1047,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 
 ## Data dictionary
 
-Every table and column, current as of `v0.48`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
+Every table and column, current as of `v0.49`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
 
 ### Identity & reference
 
@@ -1219,7 +1234,7 @@ System login accounts. Each account links to a person via `person_id` (nullable 
 
 #### `app_user_roles`
 
-Per-user role grants. A user may hold multiple roles simultaneously (e.g. `Trainer` + `Student`) and may hold no roles (service accounts, pending onboarding). `revoked_at IS NULL` means the role is currently active; setting `revoked_at` revokes it while preserving the history row. The surrogate PK allows the same role to be re-granted after revocation. The partial unique index `uq_aur_active_role` prevents duplicate active grants for the same `(user_id, role)` pair. Login evaluation: `app_users.is_active` must be `true` AND at least one `app_user_roles` row for the user must have `revoked_at IS NULL`. Added in v0.24.
+Per-user role grants. A user may hold multiple roles simultaneously (e.g. `Teacher` + `Student`) and may hold no roles (service accounts, pending onboarding). `revoked_at IS NULL` means the role is currently active; setting `revoked_at` revokes it while preserving the history row. The surrogate PK allows the same role to be re-granted after revocation. The partial unique index `uq_aur_active_role` prevents duplicate active grants for the same `(user_id, role)` pair. Login evaluation: `app_users.is_active` must be `true` AND at least one `app_user_roles` row for the user must have `revoked_at IS NULL`. Added in v0.24.
 
 | Column | Type | Null | Default | Key |
 |---|---|---|---|---|
@@ -1233,7 +1248,7 @@ Per-user role grants. A user may hold multiple roles simultaneously (e.g. `Train
 
 - `PRIMARY KEY (id)`
 - `CONSTRAINT fk_aur_user FOREIGN KEY (user_id) REFERENCES public.app_users(id) ON DELETE CASCADE`
-- `CONSTRAINT chk_aur_role CHECK (role IN ('Admin','Trainer','Compliance','Reception','SupportStaff','System','Staff','Student'))`
+- `CONSTRAINT chk_aur_role CHECK (role IN ('Admin','Teacher','Compliance','Reception','SupportStaff','Staff','Student'))`
 
 *Indexes:* `UNIQUE INDEX uq_aur_active_role (user_id, role) WHERE (revoked_at IS NULL)`
 
@@ -3494,6 +3509,47 @@ Generic key-value store for application-level configuration. Each setting is ide
 | `workplan.vic.annual_teaching_cap` | Victoria: annual teaching delivery cap in hours (default `1200`) |
 | `workplan.vic.annual_supervision_cap` | Victoria: annual supervision cap in hours (default `800`) |
 | `workplan.vic.total_accountable_hours` | Victoria: total accountable hours per year (default `1748`) |
+
+#### `role_permissions`
+
+RBAC permission grants per application role. Each row is a `(role, permission)` pair forming the primary key. The `permission` value is an `"area:action"` string; the full set is defined in the application's `perm` package. The `Admin` role is intentionally absent from this table — it bypasses all permission checks in the application layer. All other roles have their permission sets managed via the Role Permissions UI and seeded with sensible defaults on fresh install. Added in v0.49.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `role` | `varchar(30)` | no | | PK (composite) |
+| `permission` | `varchar(100)` | no | | PK (composite) |
+
+*Constraints:*
+
+- `PRIMARY KEY (role, permission)`
+- `CONSTRAINT chk_rp_role CHECK (role IN ('Admin','Teacher','Compliance','Reception','SupportStaff','System','Staff','Student'))`
+
+**Permission keys:**
+
+| Permission | Description |
+|---|---|
+| `people:view` | View person records and search |
+| `people:manage` | Create and edit person records |
+| `enrolments:view` | View student enrolments |
+| `enrolments:manage` | Create and edit enrolments |
+| `programs:view` | View programs and subjects |
+| `programs:manage` | Create and edit programs and subjects |
+| `sessions:view` | View sessions, classes and timetable |
+| `sessions:manage` | Create and edit sessions, classes, periods and exceptions |
+| `attendance:view` | View attendance records |
+| `attendance:mark` | Record and update attendance |
+| `results:view` | View assessment results |
+| `results:manage` | Enter and publish results |
+| `infra:view` | View locations, buildings, rooms and organisations |
+| `infra:manage` | Create and edit infrastructure records |
+| `vcc:access` | Access vocational currency and competency records |
+| `vcc:manage` | Edit VCC content and evidence |
+| `workplan:view` | View workplan and availability |
+| `workplan:manage` | Edit workplan, availability and leave |
+| `student:panel` | Access the student panel view |
+| `system:users` | Manage system user accounts |
+| `system:backup` | Database backup and restore |
+| `system:config` | System configuration (LMS, role types, departments, permissions, etc.) |
 
 ---
 

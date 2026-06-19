@@ -32,12 +32,12 @@
 
     {{if .AutoRevoked}}
     <div class="form-error" style="margin-bottom:1rem">
-      System Admin access automatically revoked — no longer current staff:
+      Admin access automatically revoked — no longer current staff:
       {{range .AutoRevoked}}<strong>{{.}}</strong> {{end}}
     </div>
     {{end}}
     {{if .Saved}}
-    <div class="form-success" style="margin-bottom:1rem">System Admin user created successfully.</div>
+    <div class="form-success" style="margin-bottom:1rem">Admin user created successfully.</div>
     {{end}}
     {{if .ErrDup}}
     <div class="form-error" style="margin-bottom:1rem">That username is already taken — choose a different one.</div>
@@ -46,9 +46,9 @@
     <div class="form-error" style="margin-bottom:1rem">Passwords did not match or were empty.</div>
     {{end}}
 
-    {{/* ── System Admin Users ── */}}
-    <h2 class="section-heading">System Admin Users</h2>
-    <p class="page-desc">The bootstrap admin defined in <code>nvims.env</code> is always retained. System Admin access is automatically revoked if a linked staff member is removed.</p>
+    {{/* ── Admin Users ── */}}
+    <h2 class="section-heading">Admin Users</h2>
+    <p class="page-desc">The bootstrap admin defined in <code>nvims.env</code> is always retained. Admin access is automatically revoked if a linked staff member is removed.</p>
     <div class="table-wrap">
       <table class="sessions-table">
         <thead>
@@ -84,7 +84,7 @@
 
     {{/* ── Current Staff ── */}}
     <h2 class="section-heading" style="margin-top:2rem">Current Staff</h2>
-    <p class="page-desc">Select a staff member to grant them a System Admin login. Staff may have a separate System Admin account in addition to their normal role account.</p>
+    <p class="page-desc">Select a staff member to grant them a Admin login. Staff may have a separate Admin account in addition to their normal role account.</p>
 
     <form id="staff-search-form" class="admin-search" style="margin-bottom:1rem">
       <input id="staff-q" type="search" placeholder="Search by name, email, or staff number…" autocomplete="off">
@@ -108,7 +108,7 @@
 
     {{/* Inline add form — hidden until Add is clicked */}}
     <div id="add-panel" class="form-section form-section--spaced hidden" style="margin-top:1.5rem">
-      <h2 class="form-section-title">New System Admin Account — <span id="add-panel-name"></span></h2>
+      <h2 class="form-section-title">New Admin Account — <span id="add-panel-name"></span></h2>
       <form method="POST" action="/system/users/new" id="add-user-form">
         <input type="hidden" name="person_id" id="add-person-id">
         <div class="form-row form-row--mt">
@@ -127,7 +127,7 @@
           </div>
         </div>
         <div class="form-actions form-actions--mt">
-          <button type="submit" class="btn-primary" id="add-submit">Add System Admin</button>
+          <button type="submit" class="btn-primary" id="add-submit">Add Admin</button>
           <button type="button" class="btn-secondary" id="add-cancel">Cancel</button>
         </div>
       </form>

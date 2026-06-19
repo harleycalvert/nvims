@@ -332,7 +332,7 @@ func (s *Store) BootstrapAdmin(ctx context.Context, username, passwordHash strin
 	}
 	_, err = s.pool.Exec(ctx, `
 		INSERT INTO public.app_user_roles (user_id, role, granted_at)
-		VALUES ($1, 'SystemAdmin', NOW())
+		VALUES ($1, 'Admin', NOW())
 	`, id)
 	return err == nil, err
 }
@@ -367,7 +367,7 @@ func (s *Store) ListAdminUsers(ctx context.Context) ([]AdminUserRow, error) {
 		       r.granted_at,
 		       r.revoked_at
 		FROM public.app_users u
-		JOIN public.app_user_roles r ON r.user_id = u.id AND r.role = 'SystemAdmin'
+		JOIN public.app_user_roles r ON r.user_id = u.id AND r.role = 'Admin'
 		LEFT JOIN public.people p ON p.id = u.person_id
 		LEFT JOIN public.staff sf ON sf.id = u.person_id
 		ORDER BY r.revoked_at NULLS FIRST, r.granted_at
@@ -446,7 +446,7 @@ func (s *Store) CreateAdminUserForPerson(ctx context.Context, personID int64, us
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO public.app_user_roles (user_id, role, granted_at)
-		VALUES ($1, 'SystemAdmin', NOW())
+		VALUES ($1, 'Admin', NOW())
 	`, id); err != nil {
 		return err
 	}
@@ -553,7 +553,7 @@ func (s *Store) AutoRevokeNonStaffAdmins(ctx context.Context) ([]string, error) 
 		SET revoked_at = NOW()
 		FROM public.app_users u
 		WHERE r.user_id = u.id
-		  AND r.role = 'SystemAdmin'
+		  AND r.role = 'Admin'
 		  AND r.revoked_at IS NULL
 		  AND u.person_id IS NOT NULL
 		  AND NOT EXISTS (SELECT 1 FROM public.staff WHERE id = u.person_id)
@@ -578,7 +578,7 @@ func (s *Store) RevokeAdminRole(ctx context.Context, roleID int64) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE public.app_user_roles
 		SET revoked_at = NOW()
-		WHERE id = $1 AND role = 'SystemAdmin' AND revoked_at IS NULL
+		WHERE id = $1 AND role = 'Admin' AND revoked_at IS NULL
 	`, roleID)
 	return err
 }

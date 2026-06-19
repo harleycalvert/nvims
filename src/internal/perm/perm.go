@@ -145,13 +145,13 @@ func All() []string {
 
 // Roles is the canonical ordered list of assignable roles.
 var Roles = []string{
-	"SystemAdmin", "Trainer", "Compliance", "Reception", "SupportStaff", "Staff", "Student",
+	"Admin", "Teacher", "Compliance", "Reception", "SupportStaff", "Staff", "Student",
 }
 
 // Defaults maps each role to its default set of permissions.
-// SystemAdmin is intentionally absent — it bypasses all permission checks.
+// Admin is intentionally absent — it bypasses all permission checks.
 var Defaults = map[string][]string{
-	"Trainer": {
+	"Teacher": {
 		PeopleView,
 		EnrolmentsView,
 		ProgramsView,
