@@ -195,3 +195,45 @@
 
 /* ── Hint paragraph ── */
 .hint { margin-top: 20px; }
+
+/* ── Class subjects dropdown ── */
+#subjects-dropdown {
+  position: absolute;
+  width: 300px;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.13);
+  z-index: 1000;
+  overflow: hidden;
+}
+.subjects-dd-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px 6px;
+  border-bottom: 1px solid #f3f4f6;
+}
+.subjects-dd-title { font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: .04em; }
+.subjects-dd-close { background: none; border: none; cursor: pointer; color: #9ca3af; font-size: 14px; line-height: 1; padding: 0 2px; }
+.subjects-dd-close:hover { color: #374151; }
+.subjects-dd-search { padding: 6px 8px; border-bottom: 1px solid #f3f4f6; }
+.subjects-dd-search input {
+  width: 100%; box-sizing: border-box;
+  padding: 4px 8px; border: 1px solid #e5e7eb; border-radius: 4px;
+  font-size: 12px; outline: none;
+}
+.subjects-dd-search input:focus { border-color: #93c5fd; }
+.subjects-dd-list { max-height: 280px; overflow-y: auto; }
+.subjects-dd-item {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 6px 12px; cursor: pointer; font-size: 13px;
+}
+.subjects-dd-item:hover { background: #f0f9ff; }
+.subjects-dd-item input[type=checkbox] { cursor: pointer; flex-shrink: 0; margin: 0; }
+.subjects-dd-code { font-family: monospace; font-weight: 500; color: #1e293b; white-space: nowrap; }
+.subjects-dd-name { color: #6b7280; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btn-subjects {
+  font-size: 11px; padding: 2px 7px; border-radius: 4px;
+  border: 1px solid #d1d5db; background: #f3f4f6; color: #374151;
+  cursor: pointer; white-space: nowrap;
+}
+.btn-subjects:hover { background: #e5e7eb; }

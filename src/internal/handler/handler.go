@@ -1618,14 +1618,54 @@ func (h *Handler) AdminClasses(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "database error", http.StatusInternalServerError)
 		return
 	}
+	subjects, err := h.store.ListSubjects(r.Context())
+	if err != nil {
+		log.Printf("ListSubjects (classes): %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
 	user, _ := auth.Current(r)
 	h.render(w, "admin-classes", map[string]any{
 		"Classes":      classes,
 		"Periods":      periods,
 		"Locations":    locations,
 		"IntakeGroups": intakeGroups,
+		"AllSubjects":  subjects,
 		"User":         user,
 	})
+}
+
+func (h *Handler) AdminClassToggleSubject(w http.ResponseWriter, r *http.Request) {
+	classID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	subjectID := parseInt64(r.FormValue("subject_id"))
+	if subjectID == 0 {
+		http.Error(w, `{"error":"subject_id required"}`, http.StatusBadRequest)
+		return
+	}
+	if r.FormValue("checked") == "1" {
+		label := strings.TrimSpace(r.FormValue("subject_code"))
+		if label == "" {
+			label = strconv.FormatInt(subjectID, 10)
+		}
+		err = h.store.AddClassSubject(r.Context(), classID, subjectID, label)
+	} else {
+		err = h.store.RemoveClassSubject(r.Context(), classID, subjectID)
+	}
+	if err != nil {
+		log.Printf("ToggleClassSubject(%d,%d): %v", classID, subjectID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
 func classOptionalInt64(r *http.Request, field string) *int64 {

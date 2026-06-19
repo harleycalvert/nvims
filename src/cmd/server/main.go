@@ -249,6 +249,7 @@ func main() {
 	mux.HandleFunc("POST /admin/classes/new",                          P("sessions:manage", h.AdminClassCreate))
 	mux.HandleFunc("POST /admin/classes/{id}",                         P("sessions:manage", h.AdminClassUpdate))
 	mux.HandleFunc("POST /admin/classes/{id}/delete",                  P("sessions:manage", h.AdminClassDelete))
+	mux.HandleFunc("POST /admin/classes/{id}/subjects",               P("sessions:manage", h.AdminClassToggleSubject))
 	mux.HandleFunc("GET /admin/periods",                               P("sessions:manage", h.AdminPeriods))
 	mux.HandleFunc("POST /admin/periods/new",                          P("sessions:manage", h.AdminPeriodCreate))
 	mux.HandleFunc("POST /admin/periods/{id}",                         P("sessions:manage", h.AdminPeriodUpdate))

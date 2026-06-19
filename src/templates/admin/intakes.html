@@ -116,9 +116,9 @@
 
 <script>
 (function () {
-  const programs  = [{{range $i,$p := .Programs}}{{if $i}},{{end}}{"id":{{$p.ID}},"code":{{printf "%q" $p.ProgramCode}},"name":{{printf "%q" $p.ProgramName}}}{{end}}];
-  const periods   = [{{range $i,$p := .Periods}}{{if $i}},{{end}}{"id":{{$p.ID}},"label":{{printf "%q" (print $p.PeriodCode " " $p.PeriodName)}}}{{end}}];
-  const locations = [{{range $i,$l := .Locations}}{{if $i}},{{end}}{"id":{{$l.ID}},"name":{{printf "%q" $l.Name}}}{{end}}];
+  const programs  = [{{range $i,$p := .Programs}}{{if $i}},{{end}}{"id":{{$p.ID}},"code":"{{$p.ProgramCode}}","name":"{{$p.ProgramName}}"}{{end}}];
+  const periods   = [{{range $i,$p := .Periods}}{{if $i}},{{end}}{"id":{{$p.ID}},"label":"{{$p.PeriodCode}} {{$p.PeriodName}}"}{{end}}];
+  const locations = [{{range $i,$l := .Locations}}{{if $i}},{{end}}{"id":{{$l.ID}},"name":"{{$l.Name}}"}{{end}}];
 
   // ── Program filter panel ────────────────────────────────────────────────────
   const PROG_KEY      = 'nvims-in-program';

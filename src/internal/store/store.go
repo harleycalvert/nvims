@@ -1368,6 +1368,7 @@ type ClassListRow struct {
 	DeliveryMode       string
 	AttendanceMethod   string
 	TASVersion         string
+	SubjectIDs         string // comma-separated subject IDs from class_subjects
 }
 
 type ClassSubject struct {
@@ -1529,7 +1530,9 @@ func (s *Store) ListClasses(ctx context.Context) ([]ClassListRow, error) {
 		SELECT c.id, c.class_code, ap.period_name || ' ' || ap.year, dl.name,
 		       c.academic_period_id, c.delivery_location_id,
 		       COALESCE(c.intake_group_id,0), COALESCE(c.enrolment_cap,0),
-		       COALESCE(c.delivery_mode,''), COALESCE(c.attendance_method,''), COALESCE(c.tas_version,'')
+		       COALESCE(c.delivery_mode,''), COALESCE(c.attendance_method,''), COALESCE(c.tas_version,''),
+		       COALESCE((SELECT STRING_AGG(cs.subject_id::text, ',' ORDER BY cs.subject_id)
+		                 FROM public.class_subjects cs WHERE cs.class_id = c.id), '') AS subject_ids
 		FROM public.classes c
 		JOIN public.academic_periods ap ON ap.id = c.academic_period_id
 		JOIN public.delivery_locations dl ON dl.id = c.delivery_location_id
@@ -1544,12 +1547,28 @@ func (s *Store) ListClasses(ctx context.Context) ([]ClassListRow, error) {
 		var r ClassListRow
 		if err := rows.Scan(&r.ID, &r.ClassCode, &r.PeriodName, &r.LocationName,
 			&r.AcademicPeriodID, &r.DeliveryLocationID, &r.IntakeGroupID, &r.EnrolmentCap,
-			&r.DeliveryMode, &r.AttendanceMethod, &r.TASVersion); err != nil {
+			&r.DeliveryMode, &r.AttendanceMethod, &r.TASVersion, &r.SubjectIDs); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) AddClassSubject(ctx context.Context, classID, subjectID int64, label string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO public.class_subjects (class_id, subject_id, subject_label)
+		VALUES ($1, $2, $3)
+		ON CONFLICT DO NOTHING
+	`, classID, subjectID, label)
+	return err
+}
+
+func (s *Store) RemoveClassSubject(ctx context.Context, classID, subjectID int64) error {
+	_, err := s.pool.Exec(ctx, `
+		DELETE FROM public.class_subjects WHERE class_id=$1 AND subject_id=$2
+	`, classID, subjectID)
+	return err
 }
 
 // ── Admin / Periods, Locations, Intakes, Sessions ─────────────────────────

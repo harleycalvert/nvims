@@ -51,7 +51,7 @@
         </thead>
         <tbody id="classes-tbody">
           {{range .Classes}}
-          <tr class="sess-row" data-id="{{.ID}}">
+          <tr class="sess-row" data-id="{{.ID}}" data-subjects="{{.SubjectIDs}}">
             <td><input class="sess-input cl-code" type="text" name="class_code"
                        value="{{.ClassCode}}" maxlength="80"></td>
             <td>
@@ -91,6 +91,7 @@
                        value="{{.TASVersion}}" maxlength="50" placeholder="—"></td>
             <td class="sess-actions">
               <span class="sess-status"></span>
+              <button class="btn-subjects cl-subjects-btn" type="button" title="Assign subjects">Subjects</button>
               <button class="btn-danger-sm cl-delete" type="button" title="Delete">✕</button>
             </td>
           </tr>
@@ -104,6 +105,18 @@
     </div>
 
   </main>
+
+  <!-- floating subjects dropdown (shared, moved into position on open) -->
+  <div id="subjects-dropdown" style="display:none" role="menu">
+    <div class="subjects-dd-header">
+      <span class="subjects-dd-title">Subjects</span>
+      <button class="subjects-dd-close" type="button" title="Close">✕</button>
+    </div>
+    <div class="subjects-dd-search">
+      <input id="subjects-dd-search" type="search" placeholder="Filter…" autocomplete="off">
+    </div>
+    <div id="subjects-dd-list" class="subjects-dd-list"></div>
+  </div>
 
 <script>
 (function () {
@@ -123,9 +136,10 @@
     inputs.forEach(inp => { inp.style.width = maxW + 'px'; });
   })();
 
-  const periods  = [{{range $i,$p := .Periods}}{{if $i}},{{end}}{"id":{{$p.ID}},"label":{{printf "%q" (printf "%d — %s" $p.Year $p.PeriodName)}}}{{end}}];
-  const locations = [{{range $i,$l := .Locations}}{{if $i}},{{end}}{"id":{{$l.ID}},"name":{{printf "%q" $l.Name}}}{{end}}];
-  const groups   = [{{range $i,$g := .IntakeGroups}}{{if $i}},{{end}}{"id":{{$g.ID}},"label":{{printf "%q" (printf "%s / %s (%s)" $g.IntakeName $g.GroupName $g.GroupCode)}}}{{end}}];
+  const periods   = [{{range $i,$p := .Periods}}{{if $i}},{{end}}{"id":{{$p.ID}},"label":"{{$p.Year}} — {{$p.PeriodName}}"}{{end}}];
+  const locations = [{{range $i,$l := .Locations}}{{if $i}},{{end}}{"id":{{$l.ID}},"name":"{{$l.Name}}"}{{end}}];
+  const groups    = [{{range $i,$g := .IntakeGroups}}{{if $i}},{{end}}{"id":{{$g.ID}},"label":"{{$g.IntakeName}} / {{$g.GroupName}} ({{$g.GroupCode}})"}{{end}}];
+  const allSubjects = [{{range $i,$s := .AllSubjects}}{{if $i}},{{end}}{"id":{{$s.ID}},"code":"{{$s.SubjectCode}}","name":"{{$s.SubjectName}}"}{{end}}];
 
   function periodOptions(selectedID) {
     return periods.map(p =>
@@ -144,6 +158,7 @@
       ).join('');
   }
 
+  // ── Row save / delete ────────────────────────────────────────────────────────
   function setStatus(tr, state) {
     const el = tr.querySelector('.sess-status');
     el.className = 'sess-status sess-status-' + state;
@@ -196,6 +211,107 @@
     } catch { setStatus(tr, 'error'); }
   }
 
+  // ── Floating subjects dropdown ───────────────────────────────────────────────
+  const dropdown   = document.getElementById('subjects-dropdown');
+  const ddList     = document.getElementById('subjects-dd-list');
+  const ddSearch   = document.getElementById('subjects-dd-search');
+  let activeClassRow = null;
+
+  function updateSubjectsBtn(classRow) {
+    const count = (classRow.dataset.subjects || '').split(',').filter(Boolean).length;
+    const btn   = classRow.querySelector('.cl-subjects-btn');
+    if (btn) btn.textContent = count > 0 ? `Subjects (${count})` : 'Subjects';
+  }
+
+  function renderList(filter) {
+    const q = (filter || '').toLowerCase();
+    const assignedIDs = new Set(
+      (activeClassRow?.dataset.subjects || '').split(',').map(Number).filter(Boolean)
+    );
+    ddList.innerHTML = '';
+    allSubjects.forEach(s => {
+      if (q && !s.code.toLowerCase().includes(q) && !s.name.toLowerCase().includes(q)) return;
+      const item = document.createElement('label');
+      item.className = 'subjects-dd-item';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.dataset.subjectId   = s.id;
+      cb.dataset.subjectCode = s.code;
+      cb.checked = assignedIDs.has(s.id);
+      cb.addEventListener('change', () => onToggle(cb));
+      const code = document.createElement('span');
+      code.className = 'subjects-dd-code';
+      code.textContent = s.code;
+      const name = document.createElement('span');
+      name.className = 'subjects-dd-name';
+      name.textContent = s.name;
+      item.append(cb, code, name);
+      ddList.appendChild(item);
+    });
+  }
+
+  async function onToggle(cb) {
+    if (!activeClassRow) return;
+    const classID     = activeClassRow.dataset.id;
+    const subjectID   = cb.dataset.subjectId;
+    const subjectCode = cb.dataset.subjectCode;
+    const checked     = cb.checked ? '1' : '0';
+    const body = new URLSearchParams({ subject_id: subjectID, subject_code: subjectCode, checked });
+    try {
+      const res = await fetch(`/admin/classes/${classID}/subjects`, { method: 'POST', body });
+      if (!res.ok) { cb.checked = !cb.checked; return; }
+      const ids = new Set((activeClassRow.dataset.subjects || '').split(',').map(Number).filter(Boolean));
+      if (cb.checked) ids.add(parseInt(subjectID));
+      else ids.delete(parseInt(subjectID));
+      activeClassRow.dataset.subjects = [...ids].sort((a,b) => a-b).join(',');
+      updateSubjectsBtn(activeClassRow);
+    } catch { cb.checked = !cb.checked; }
+  }
+
+  function openDropdown(btn, classRow) {
+    if (activeClassRow === classRow && dropdown.style.display !== 'none') {
+      closeDropdown();
+      return;
+    }
+    activeClassRow = classRow;
+    ddSearch.value = '';
+    renderList('');
+
+    dropdown.style.display = 'block';
+
+    // Position below the button, aligned to its left edge
+    const rect = btn.getBoundingClientRect();
+    const ddW  = 300;
+    let left = rect.left + window.scrollX;
+    let top  = rect.bottom + window.scrollY + 4;
+    // keep within viewport
+    if (left + ddW > window.innerWidth - 8) left = window.innerWidth - ddW - 8;
+    dropdown.style.left = left + 'px';
+    dropdown.style.top  = top + 'px';
+    ddSearch.focus();
+  }
+
+  function closeDropdown() {
+    dropdown.style.display = 'none';
+    activeClassRow = null;
+  }
+
+  document.getElementById('subjects-dropdown').querySelector('.subjects-dd-close')
+    .addEventListener('click', closeDropdown);
+
+  ddSearch.addEventListener('input', () => renderList(ddSearch.value));
+
+  document.addEventListener('mousedown', e => {
+    if (!dropdown.contains(e.target) && !e.target.classList.contains('cl-subjects-btn')) {
+      closeDropdown();
+    }
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeDropdown();
+  });
+
+  // ── Wire up rows ─────────────────────────────────────────────────────────────
   function attachRowListeners(tr) {
     ['class_code','enrolment_cap','delivery_mode','attendance_method','tas_version'].forEach(name => {
       tr.querySelector(`[name=${name}]`)?.addEventListener('blur', () => saveRow(tr));
@@ -204,9 +320,14 @@
       tr.querySelector(`[name=${name}]`)?.addEventListener('change', () => saveRow(tr));
     });
     tr.querySelector('.cl-delete')?.addEventListener('click', () => deleteRow(tr));
+    const btn = tr.querySelector('.cl-subjects-btn');
+    if (btn) btn.addEventListener('click', () => openDropdown(btn, tr));
   }
 
-  document.querySelectorAll('#classes-tbody .sess-row').forEach(attachRowListeners);
+  document.querySelectorAll('#classes-tbody .sess-row').forEach(tr => {
+    attachRowListeners(tr);
+    updateSubjectsBtn(tr);
+  });
 
   document.getElementById('btn-add-class')?.addEventListener('click', () => {
     const tbody = document.getElementById('classes-tbody');
@@ -217,6 +338,7 @@
     const tr = document.createElement('tr');
     tr.className = 'sess-row sess-new';
     tr.dataset.id = 'new';
+    tr.dataset.subjects = '';
     tr.innerHTML = `
       <td><input class="sess-input cl-code" type="text" name="class_code"
                  placeholder="e.g. ICT30120-DA-2025-T1-A" maxlength="80"></td>
