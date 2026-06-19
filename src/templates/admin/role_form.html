@@ -175,7 +175,7 @@
           </div>
           <div class="form-group fg-180">
             <label>Start Date <span class="req">*</span></label>
-            <input type="date" id="orole-started-on">
+            <input type="text" id="orole-started-on" placeholder="DD/MM/YYYY" pattern="\d{2}/\d{2}/\d{4}" maxlength="10">
           </div>
           <div class="form-group orole-add-actions">
             <label>&nbsp;</label>
@@ -287,7 +287,7 @@
   addBtn?.addEventListener('click', () => {
     addBtn.classList.add('hidden');
     addForm.classList.remove('hidden');
-    document.getElementById('orole-started-on').value = new Date().toISOString().slice(0,10);
+    const now = new Date(); document.getElementById('orole-started-on').value = String(now.getDate()).padStart(2,'0')+'/'+String(now.getMonth()+1).padStart(2,'0')+'/'+now.getFullYear();
     document.getElementById('orole-type-select').focus();
   });
 
@@ -304,7 +304,7 @@
     if (!roleTypeID) { errEl.textContent = 'Please select a role.'; errEl.classList.remove('hidden'); return; }
     if (!startedOn)  { errEl.textContent = 'Please enter a start date.'; errEl.classList.remove('hidden'); return; }
     saveBtn.disabled = true;
-    const body = new URLSearchParams({ role_type_id: roleTypeID, started_on: startedOn });
+    const body = new URLSearchParams({ role_type_id: roleTypeID, started_on: dmyToIso(startedOn) });
     try {
       const res = await fetch(`/admin/people/${personID}/org-roles/new`, { method: 'POST', body });
       if (!res.ok) {

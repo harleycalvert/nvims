@@ -32,8 +32,16 @@
 
     {{template "admin-nav" .}}
 
-    <p class="page-desc">Subjects are the units of competency delivered within programs. Each subject has a national code, title, and nominal hours. Subjects are linked to programs and assigned to classes. Student results are recorded against each subject enrolment.</p>
+    <p class="page-desc">Subjects are the units of competency delivered within programs. Filter by program using the panel on the left. Each subject has a national code, title, and nominal hours.</p>
 
+    <div class="bld-layout">
+      <div class="bld-campus-panel">
+        <div class="bld-campus-search">
+          <input id="campus-search" type="search" placeholder="Search programs…" autocomplete="off">
+        </div>
+        <ul id="campus-list"></ul>
+      </div>
+      <div class="bld-content">
     <div class="table-wrap">
       <table class="sessions-table" id="subjects-table">
         <thead>
@@ -51,7 +59,7 @@
         </thead>
         <tbody id="subjects-tbody">
           {{range .Subjects}}
-          <tr class="sess-row" data-id="{{.ID}}">
+          <tr class="sess-row" data-id="{{.ID}}" data-programs="{{.ProgramIDs}}">
             <td><input class="sess-input sb-code" type="text" name="subject_code"
                        value="{{.SubjectCode}}" maxlength="30"></td>
             <td><input class="sess-input sb-name" type="text" name="subject_name"
@@ -84,11 +92,72 @@
     <div class="sess-add-bar">
       <button class="btn-primary btn-sm" id="btn-add-subject" type="button">+ Add Subject</button>
     </div>
+      </div>{{/* end .bld-content */}}
+    </div>{{/* end .bld-layout */}}
 
   </main>
 
 <script>
 (function () {
+  const programs = [{{range $i,$p := .Programs}}{{if $i}},{{end}}{"id":{{$p.ID}},"code":"{{$p.ProgramCode}}","name":"{{$p.ProgramName}}"}{{end}}];
+
+  // ── Program filter panel ────────────────────────────────────────────────────
+  const PROG_KEY      = 'nvims-sb-program';
+  const programList   = document.getElementById('campus-list');
+  const programSearch = document.getElementById('campus-search');
+  let activeProgramId = parseInt(sessionStorage.getItem(PROG_KEY) ?? '0') || 0;
+
+  function renderProgramList(filter) {
+    const q = (filter || '').toLowerCase();
+    programList.innerHTML = '';
+
+    if (!q) {
+      const all = document.createElement('li');
+      all.dataset.id = '0';
+      all.textContent = 'All subjects';
+      all.style.fontStyle = 'italic';
+      if (activeProgramId === 0) all.classList.add('campus-active');
+      all.addEventListener('click', () => {
+        activeProgramId = 0;
+        programList.querySelectorAll('li').forEach(el => el.classList.remove('campus-active'));
+        all.classList.add('campus-active');
+        filterRows();
+      });
+      programList.appendChild(all);
+    }
+
+    programs.forEach(p => {
+      const label = p.code + ' — ' + p.name;
+      if (q && !label.toLowerCase().includes(q)) return;
+      const li = document.createElement('li');
+      li.dataset.id = p.id;
+      li.title = p.name;
+      li.textContent = label;
+      if (p.id === activeProgramId) li.classList.add('campus-active');
+      li.addEventListener('click', () => {
+        activeProgramId = p.id;
+        programList.querySelectorAll('li').forEach(el => el.classList.remove('campus-active'));
+        li.classList.add('campus-active');
+        filterRows();
+      });
+      programList.appendChild(li);
+    });
+  }
+
+  function filterRows() {
+    sessionStorage.setItem(PROG_KEY, activeProgramId);
+    document.querySelectorAll('#subjects-tbody .sess-row:not(.sess-new)').forEach(tr => {
+      if (activeProgramId === 0) { tr.style.display = ''; return; }
+      const ids = (tr.dataset.programs || '').split(',').map(Number).filter(Boolean);
+      tr.style.display = ids.includes(activeProgramId) ? '' : 'none';
+    });
+  }
+
+  programSearch.addEventListener('input', () => renderProgramList(programSearch.value));
+  renderProgramList('');
+  filterRows();
+
+  // ── Row save / delete ───────────────────────────────────────────────────────
   function setStatus(tr, state) {
     const el = tr.querySelector('.sess-status');
     el.className = 'sess-status sess-status-' + state;
@@ -98,7 +167,7 @@
 
   function collectFields(tr) {
     return {
-      subject_code:            tr.querySelector('[name=subject_code]').value.trim(),
+      subject_code:            tr.querySelector('[name=subject_code]').value.trim().toUpperCase(),
       subject_name:            tr.querySelector('[name=subject_name]').value.trim(),
       field_of_education:      tr.querySelector('[name=field_of_education]').value.trim(),
       nominal_hours:           tr.querySelector('[name=nominal_hours]').value.trim(),
@@ -106,6 +175,7 @@
       module_flag:             tr.querySelector('[name=module_flag]').value,
       vet_flag:                tr.querySelector('[name=vet_flag]').checked ? '1' : '0',
       assessment_tool_version: tr.querySelector('[name=assessment_tool_version]').value.trim(),
+      program_id:              tr.dataset.id === 'new' ? String(activeProgramId) : '0',
     };
   }
 
@@ -142,6 +212,8 @@
   }
 
   function attachRowListeners(tr) {
+    const codeInp = tr.querySelector('[name=subject_code]');
+    codeInp?.addEventListener('input', () => { codeInp.value = codeInp.value.toUpperCase(); });
     ['subject_code','subject_name','field_of_education','nominal_hours','credit_points','assessment_tool_version'].forEach(name => {
       tr.querySelector(`[name=${name}]`)?.addEventListener('blur', () => saveRow(tr));
     });
@@ -159,6 +231,7 @@
     const tr = document.createElement('tr');
     tr.className = 'sess-row sess-new';
     tr.dataset.id = 'new';
+    tr.dataset.programs = '';
     tr.innerHTML = `
       <td><input class="sess-input sb-code" type="text" name="subject_code"
                  placeholder="e.g. ICTPRG302" maxlength="30"></td>

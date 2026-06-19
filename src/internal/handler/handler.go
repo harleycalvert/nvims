@@ -126,6 +126,18 @@ func New(st *store.Store, sessions *auth.Sessions, stor *storage.Client) *Handle
 		return template.JS(b), err
 	}
 	funcs["dateDMY"] = func(t time.Time) string { return t.Format("02/01/2006") }
+	funcs["formatBytes"] = func(b int64) string {
+		const unit = 1024
+		if b < unit {
+			return fmt.Sprintf("%d B", b)
+		}
+		div, exp := int64(unit), 0
+		for n := b / unit; n >= unit; n /= unit {
+			div *= unit
+			exp++
+		}
+		return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+	}
 	funcs["dateDayName"] = func(t time.Time) string { return t.Format("Mon") }
 	funcs["sub"] = func(a, b int) int { return a - b }
 	funcs["sessionTypeClass"] = func(t string) string {
@@ -159,6 +171,7 @@ func New(st *store.Store, sessions *auth.Sessions, stor *storage.Client) *Handle
 			"templates/timetable.html",
 			"templates/admin/periods.html",
 			"templates/admin/locations.html",
+			"templates/admin/intakes.html",
 			"templates/admin/intake-groups.html",
 			"templates/admin/sessions.html",
 			"templates/backup.html",
@@ -190,6 +203,7 @@ func New(st *store.Store, sessions *auth.Sessions, stor *storage.Client) *Handle
 			"templates/system/lms.html",
 			"templates/system/users.html",
 			"templates/system/permissions.html",
+			"templates/system/filestorage.html",
 			"templates/assessment/menu.html",
 			"templates/taf/tas.html",
 			"templates/system/menu.html",
@@ -746,15 +760,36 @@ type personForm struct {
 	Username           string
 }
 
+// parseDMY converts a DD/MM/YYYY string to YYYY-MM-DD for DB storage.
+// Returns the input unchanged if it doesn't match DD/MM/YYYY.
+func parseDMY(s string) string {
+	if t, err := time.Parse("02/01/2006", s); err == nil {
+		return t.Format("2006-01-02")
+	}
+	return s
+}
+
+// isoToDMY converts a YYYY-MM-DD string to DD/MM/YYYY for display.
+// Returns empty string if blank or unparseable.
+func isoToDMY(s string) string {
+	if s == "" {
+		return ""
+	}
+	if t, err := time.Parse("2006-01-02", s); err == nil {
+		return t.Format("02/01/2006")
+	}
+	return s
+}
+
 func personFormFrom(d store.PersonDetail) personForm {
 	return personForm{
 		ID: d.ID, Title: d.Title, FirstName: d.FirstName, FamilyName: d.FamilyName,
-		PreferredName: d.PreferredName, DOBStr: d.DOB.Format("2006-01-02"),
+		PreferredName: d.PreferredName, DOBStr: d.DOB.Format("02/01/2006"),
 		Gender: d.Gender, Email: d.Email, PhoneMobile: d.PhoneMobile,
 		UnitDetails: d.UnitDetails, StreetNumber: d.StreetNumber, StreetName: d.StreetName,
 		Suburb: d.Suburb, StateCode: d.StateCode, Postcode: d.Postcode,
-		PhotoURL: d.PhotoURL, WWCCNumber: d.WWCCNumber, WWCCExpiryStr: d.WWCCExpiryStr,
-		PoliceCheckStatus: d.PoliceCheckStatus, PoliceCheckDateStr: d.PoliceCheckDateStr,
+		PhotoURL: d.PhotoURL, WWCCNumber: d.WWCCNumber, WWCCExpiryStr: isoToDMY(d.WWCCExpiryStr),
+		PoliceCheckStatus: d.PoliceCheckStatus, PoliceCheckDateStr: isoToDMY(d.PoliceCheckDateStr),
 		EmergencyName: d.EmergencyContactName, EmergencyPhone: d.EmergencyContactPhone,
 		EmergencyRelationship: d.EmergencyContactRelationship,
 	}
@@ -766,7 +801,7 @@ func personFormFromPost(r *http.Request, id int64) personForm {
 		FirstName:     strings.TrimSpace(r.FormValue("first_name")),
 		FamilyName:    strings.TrimSpace(r.FormValue("family_name")),
 		PreferredName: strings.TrimSpace(r.FormValue("preferred_name")),
-		DOBStr: r.FormValue("dob"), Gender: r.FormValue("gender"),
+		DOBStr: parseDMY(r.FormValue("dob")), Gender: r.FormValue("gender"),
 		Email:       strings.TrimSpace(r.FormValue("email")),
 		PhoneMobile: strings.TrimSpace(r.FormValue("phone_mobile")),
 		Suburb:      strings.TrimSpace(r.FormValue("suburb")),
@@ -777,9 +812,9 @@ func personFormFromPost(r *http.Request, id int64) personForm {
 		StreetNumber: strings.TrimSpace(r.FormValue("street_number")),
 		StreetName:   strings.TrimSpace(r.FormValue("street_name")),
 		WWCCNumber:         strings.TrimSpace(r.FormValue("wwcc_number")),
-		WWCCExpiryStr:      r.FormValue("wwcc_expiry"),
+		WWCCExpiryStr:      parseDMY(r.FormValue("wwcc_expiry")),
 		PoliceCheckStatus:  r.FormValue("police_check_status"),
-		PoliceCheckDateStr: r.FormValue("police_check_date"),
+		PoliceCheckDateStr: parseDMY(r.FormValue("police_check_date")),
 		EmergencyName:         strings.TrimSpace(r.FormValue("emergency_name")),
 		EmergencyPhone:        strings.TrimSpace(r.FormValue("emergency_phone")),
 		EmergencyRelationship: strings.TrimSpace(r.FormValue("emergency_relationship")),
@@ -1426,8 +1461,8 @@ func programFormFromPost(r *http.Request) programForm {
 		LevelOfEducation:     strings.TrimSpace(r.FormValue("level_of_education")),
 		FieldOfEducation:     strings.TrimSpace(r.FormValue("field_of_education")),
 		NominalHoursStr:      r.FormValue("nominal_hours"),
-		VetFlag:              r.FormValue("vet_flag") == "on",
-		HeFlag:               r.FormValue("he_flag") == "on",
+		VetFlag:              r.FormValue("vet_flag") == "1" || r.FormValue("vet_flag") == "on",
+		HeFlag:               r.FormValue("he_flag") == "1" || r.FormValue("he_flag") == "on",
 		AQFLevelStr:          r.FormValue("aqf_level"),
 		ProgramType:          r.FormValue("program_type"),
 	}
@@ -1521,6 +1556,9 @@ func (h *Handler) AdminProgramUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if !f.VetFlag && !f.HeFlag {
+		f.VetFlag = true
+	}
 	if err := h.store.UpdateProgram(r.Context(), id, f.FacultyID,
 		f.ProgramCode, f.ProgramName,
 		f.ProgramRecognitionID, f.LevelOfEducation, f.FieldOfEducation,
@@ -1874,13 +1912,150 @@ func (h *Handler) AdminLocationCreate(w http.ResponseWriter, r *http.Request) {
 
 	_, err := h.store.CreateDeliveryLocation(r.Context(),
 		f.TrainingOrgID, f.LocID, f.Name, false,
-		f.Address, f.Suburb, f.StateCode, f.Postcode, "", "")
+		f.Address, f.Suburb, f.StateCode, f.Postcode, "1101", "", "")
 	if err != nil {
 		log.Printf("CreateDeliveryLocation: %v", err)
 		renderErr("Could not save — check the location ID is not already in use for this organisation.")
 		return
 	}
 	http.Redirect(w, r, "/admin/locations?saved=1", http.StatusSeeOther)
+}
+
+// ── Admin / Intakes ────────────────────────────────────────────────────────
+
+func (h *Handler) AdminIntakes(w http.ResponseWriter, r *http.Request) {
+	intakes, err := h.store.ListIntakesFull(r.Context())
+	if err != nil {
+		log.Printf("ListIntakesFull: %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	programs, err := h.store.ListPrograms(r.Context())
+	if err != nil {
+		log.Printf("ListPrograms (intakes): %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	periods, err := h.store.ListPeriods(r.Context())
+	if err != nil {
+		log.Printf("ListPeriods (intakes): %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	locations, err := h.store.ListDeliveryLocations(r.Context())
+	if err != nil {
+		log.Printf("ListDeliveryLocations (intakes): %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	user, _ := auth.Current(r)
+	h.render(w, "admin-intakes", map[string]any{
+		"Intakes":   intakes,
+		"Programs":  programs,
+		"Periods":   periods,
+		"Locations": locations,
+		"Statuses":  []string{"Planned", "Active", "Closed", "Cancelled"},
+		"User":      user,
+	})
+}
+
+func (h *Handler) AdminIntakeCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	programID  := parseInt64(r.FormValue("program_id"))
+	periodID   := parseInt64(r.FormValue("period_id"))
+	locationID := parseInt64(r.FormValue("location_id"))
+	intakeCode := strings.TrimSpace(r.FormValue("intake_code"))
+	intakeName := strings.TrimSpace(r.FormValue("intake_name"))
+	studyMode  := r.FormValue("study_mode")
+	status     := r.FormValue("status")
+	durStr     := strings.TrimSpace(r.FormValue("duration_periods"))
+
+	if studyMode != "Full-Time" && studyMode != "Part-Time" {
+		studyMode = "Full-Time"
+	}
+	validStatuses := map[string]bool{"Planned": true, "Active": true, "Closed": true, "Cancelled": true}
+	if !validStatuses[status] {
+		status = "Planned"
+	}
+	dur, err := strconv.Atoi(durStr)
+	if err != nil || dur < 1 {
+		dur = 1
+	}
+
+	if programID == 0 || periodID == 0 || locationID == 0 || intakeCode == "" || intakeName == "" {
+		http.Error(w, `{"error":"program, period, location, code and name are required"}`, http.StatusBadRequest)
+		return
+	}
+	_, err = h.store.CreateIntake(r.Context(), programID, periodID, locationID, intakeCode, intakeName, studyMode, status, dur)
+	if err != nil {
+		log.Printf("CreateIntake: %v", err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminIntakeUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	programID  := parseInt64(r.FormValue("program_id"))
+	periodID   := parseInt64(r.FormValue("period_id"))
+	locationID := parseInt64(r.FormValue("location_id"))
+	intakeCode := strings.TrimSpace(r.FormValue("intake_code"))
+	intakeName := strings.TrimSpace(r.FormValue("intake_name"))
+	studyMode  := r.FormValue("study_mode")
+	status     := r.FormValue("status")
+	durStr     := strings.TrimSpace(r.FormValue("duration_periods"))
+
+	if studyMode != "Full-Time" && studyMode != "Part-Time" {
+		studyMode = "Full-Time"
+	}
+	validStatuses := map[string]bool{"Planned": true, "Active": true, "Closed": true, "Cancelled": true}
+	if !validStatuses[status] {
+		status = "Planned"
+	}
+	dur, durErr := strconv.Atoi(durStr)
+	if durErr != nil || dur < 1 {
+		dur = 1
+	}
+
+	if programID == 0 || periodID == 0 || locationID == 0 || intakeCode == "" || intakeName == "" {
+		http.Error(w, `{"error":"program, period, location, code and name are required"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.UpdateIntake(r.Context(), id, programID, periodID, locationID, intakeCode, intakeName, studyMode, status, dur); err != nil {
+		log.Printf("UpdateIntake(%d): %v", id, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminIntakeDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	if err := h.store.DeleteIntake(r.Context(), id); err != nil {
+		log.Printf("DeleteIntake(%d): %v", id, err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
 // ── Admin / Intake Groups ──────────────────────────────────────────────────
@@ -2709,9 +2884,16 @@ func (h *Handler) AdminSubjects(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "database error", http.StatusInternalServerError)
 		return
 	}
+	programs, err := h.store.ListPrograms(r.Context())
+	if err != nil {
+		log.Printf("ListPrograms (subjects): %v", err)
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
 	user, _ := auth.Current(r)
 	h.render(w, "admin-subjects", map[string]any{
 		"Subjects": subjects,
+		"Programs": programs,
 		"User":     user,
 	})
 }
@@ -2728,7 +2910,7 @@ func subjectNullableInt(r *http.Request, field string) *int {
 }
 
 func parseSubjectFields(r *http.Request) (code, name, mod, field string, vet bool) {
-	code  = strings.TrimSpace(r.FormValue("subject_code"))
+	code  = strings.ToUpper(strings.TrimSpace(r.FormValue("subject_code")))
 	name  = strings.TrimSpace(r.FormValue("subject_name"))
 	field = strings.TrimSpace(r.FormValue("field_of_education"))
 	mod   = r.FormValue("module_flag")
@@ -2749,13 +2931,18 @@ func (h *Handler) AdminSubjectCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"code, name and field are required"}`, http.StatusBadRequest)
 		return
 	}
-	_, err := h.store.CreateSubject(r.Context(), code, name, mod, field,
+	subjectID, err := h.store.CreateSubject(r.Context(), code, name, mod, field,
 		subjectNullableInt(r, "nominal_hours"), vet, subjectNullableInt(r, "credit_points"),
 		r.FormValue("assessment_tool_version"))
 	if err != nil {
 		log.Printf("CreateSubject: %v", err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
+	}
+	if programID, _ := strconv.ParseInt(r.FormValue("program_id"), 10, 64); programID > 0 {
+		if err := h.store.LinkSubjectToProgram(r.Context(), subjectID, programID); err != nil {
+			log.Printf("LinkSubjectToProgram(%d,%d): %v", subjectID, programID, err)
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"ok":true}`))
@@ -5050,6 +5237,7 @@ func (h *Handler) AdminLocCreate(w http.ResponseWriter, r *http.Request) {
 	suburb        := strings.TrimSpace(r.FormValue("suburb"))
 	stateCode     := strings.TrimSpace(r.FormValue("state_code"))
 	postcode      := strings.TrimSpace(r.FormValue("postcode"))
+	countryID     := strings.TrimSpace(r.FormValue("country_id"))
 	lat           := strings.TrimSpace(r.FormValue("latitude"))
 	lng           := strings.TrimSpace(r.FormValue("longitude"))
 
@@ -5061,7 +5249,7 @@ func (h *Handler) AdminLocCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"address fields are required for non-virtual locations"}`, http.StatusBadRequest)
 		return
 	}
-	_, err := h.store.CreateDeliveryLocation(r.Context(), trainingOrgID, locID, name, isVirtual, address, suburb, stateCode, postcode, lat, lng)
+	_, err := h.store.CreateDeliveryLocation(r.Context(), trainingOrgID, locID, name, isVirtual, address, suburb, stateCode, postcode, countryID, lat, lng)
 	if err != nil {
 		log.Printf("CreateDeliveryLocation: %v", err)
 		http.Error(w, `{"error":"could not save — loc ID may already be in use"}`, http.StatusConflict)
@@ -5089,6 +5277,7 @@ func (h *Handler) AdminLocUpdate(w http.ResponseWriter, r *http.Request) {
 	suburb        := strings.TrimSpace(r.FormValue("suburb"))
 	stateCode     := strings.TrimSpace(r.FormValue("state_code"))
 	postcode      := strings.TrimSpace(r.FormValue("postcode"))
+	countryID     := strings.TrimSpace(r.FormValue("country_id"))
 	lat           := strings.TrimSpace(r.FormValue("latitude"))
 	lng           := strings.TrimSpace(r.FormValue("longitude"))
 
@@ -5100,7 +5289,7 @@ func (h *Handler) AdminLocUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"address fields are required for non-virtual locations"}`, http.StatusBadRequest)
 		return
 	}
-	if err := h.store.UpdateDeliveryLocation(r.Context(), id, trainingOrgID, locID, name, isVirtual, address, suburb, stateCode, postcode, lat, lng); err != nil {
+	if err := h.store.UpdateDeliveryLocation(r.Context(), id, trainingOrgID, locID, name, isVirtual, address, suburb, stateCode, postcode, countryID, lat, lng); err != nil {
 		log.Printf("UpdateDeliveryLocation(%d): %v", id, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
@@ -5616,6 +5805,15 @@ func (h *Handler) SystemLMSSave(w http.ResponseWriter, r *http.Request) {
 	h.lmsURL  = url
 	h.mu.Unlock()
 	http.Redirect(w, r, "/system/lms?saved=1", http.StatusSeeOther)
+}
+
+func (h *Handler) SystemFileStorage(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	stats := h.storage.BucketStats(r.Context())
+	h.render(w, "system-filestorage", map[string]any{
+		"User":  user,
+		"Stats": stats,
+	})
 }
 
 func (h *Handler) SystemPermissions(w http.ResponseWriter, r *http.Request) {

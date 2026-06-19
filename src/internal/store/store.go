@@ -1337,6 +1337,7 @@ type SubjectRow struct {
 	VetFlag               bool
 	ModuleFlag            string
 	AssessmentToolVersion string
+	ProgramIDs            string // comma-separated program IDs from subject_programs
 }
 
 type ProgramListRow struct {
@@ -1497,10 +1498,14 @@ func (s *Store) ListIntakeGroups(ctx context.Context) ([]IntakeGroupRow, error) 
 
 func (s *Store) ListSubjects(ctx context.Context) ([]SubjectRow, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, subject_code, subject_name,
-		       field_of_education, COALESCE(nominal_hours,0), COALESCE(credit_points,0), vet_flag, module_flag,
-		       COALESCE(assessment_tool_version, '')
-		FROM public.subjects ORDER BY subject_code
+		SELECT s.id, s.subject_code, s.subject_name,
+		       s.field_of_education, COALESCE(s.nominal_hours,0), COALESCE(s.credit_points,0),
+		       s.vet_flag, s.module_flag, COALESCE(s.assessment_tool_version, ''),
+		       COALESCE(STRING_AGG(sp.program_id::text, ',' ORDER BY sp.program_id), '') AS program_ids
+		FROM public.subjects s
+		LEFT JOIN public.subject_programs sp ON sp.subject_id = s.id
+		GROUP BY s.id
+		ORDER BY s.subject_code
 	`)
 	if err != nil {
 		return nil, err
@@ -1511,7 +1516,7 @@ func (s *Store) ListSubjects(ctx context.Context) ([]SubjectRow, error) {
 		var r SubjectRow
 		if err := rows.Scan(&r.ID, &r.SubjectCode, &r.SubjectName,
 			&r.FieldOfEducation, &r.NominalHours, &r.CreditPoints, &r.VetFlag, &r.ModuleFlag,
-			&r.AssessmentToolVersion); err != nil {
+			&r.AssessmentToolVersion, &r.ProgramIDs); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -1589,6 +1594,7 @@ type DeliveryLocationFull struct {
 	Suburb        string
 	StateCode     string
 	Postcode      string
+	CountryID     string
 	Latitude      string
 	Longitude     string
 }
@@ -1624,6 +1630,20 @@ type ProgramIntakeRow struct {
 	ID         int64
 	IntakeCode string
 	IntakeName string
+}
+
+type IntakeListRow struct {
+	ID              int64
+	ProgramID       int64
+	IntakeCode      string
+	IntakeName      string
+	PeriodID        int64
+	PeriodLabel     string // e.g. "T1-2026 Term 1 2026"
+	LocationID      int64
+	LocationName    string
+	StudyMode       string
+	DurationPeriods int
+	Status          string
 }
 
 type SessionListRow struct {
@@ -1919,6 +1939,7 @@ func (s *Store) ListDeliveryLocationsFull(ctx context.Context) ([]DeliveryLocati
 		       COALESCE(dl.is_virtual, false),
 		       COALESCE(dl.address,''), COALESCE(dl.suburb,''),
 		       COALESCE(dl.state_code,''), COALESCE(dl.postcode,''),
+		       COALESCE(dl.country_id,'1101'),
 		       COALESCE(dl.latitude::text,''), COALESCE(dl.longitude::text,'')
 		FROM public.delivery_locations dl
 		JOIN public.training_orgs t ON t.id = dl.training_org_id
@@ -1934,7 +1955,7 @@ func (s *Store) ListDeliveryLocationsFull(ctx context.Context) ([]DeliveryLocati
 		if err := rows.Scan(&r.ID, &r.TrainingOrgID, &r.OrgName,
 			&r.LocID, &r.Name, &r.IsVirtual,
 			&r.Address, &r.Suburb, &r.StateCode, &r.Postcode,
-			&r.Latitude, &r.Longitude); err != nil {
+			&r.CountryID, &r.Latitude, &r.Longitude); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -1942,7 +1963,7 @@ func (s *Store) ListDeliveryLocationsFull(ctx context.Context) ([]DeliveryLocati
 	return out, rows.Err()
 }
 
-func (s *Store) UpdateDeliveryLocation(ctx context.Context, id, trainingOrgID int64, locID, name string, isVirtual bool, address, suburb, stateCode, postcode, lat, lng string) error {
+func (s *Store) UpdateDeliveryLocation(ctx context.Context, id, trainingOrgID int64, locID, name string, isVirtual bool, address, suburb, stateCode, postcode, countryID, lat, lng string) error {
 	var addrVal, suburbVal, stateVal, postcodeVal any
 	if isVirtual {
 		addrVal, suburbVal, stateVal, postcodeVal = nil, nil, nil, nil
@@ -1956,6 +1977,9 @@ func (s *Store) UpdateDeliveryLocation(ctx context.Context, id, trainingOrgID in
 	if lng != "" {
 		lngVal = lng
 	}
+	if countryID == "" {
+		countryID = "1101"
+	}
 	_, err := s.pool.Exec(ctx, `
 		UPDATE public.delivery_locations SET
 		    training_org_id  = $2,
@@ -1966,11 +1990,12 @@ func (s *Store) UpdateDeliveryLocation(ctx context.Context, id, trainingOrgID in
 		    suburb           = $7,
 		    state_code       = $8,
 		    postcode         = $9,
-		    latitude         = NULLIF($10::text,'')::numeric,
-		    longitude        = NULLIF($11::text,'')::numeric
+		    country_id       = $10,
+		    latitude         = NULLIF($11::text,'')::numeric,
+		    longitude        = NULLIF($12::text,'')::numeric
 		WHERE id = $1
 	`, id, trainingOrgID, locID, name, isVirtual,
-		addrVal, suburbVal, stateVal, postcodeVal, latVal, lngVal)
+		addrVal, suburbVal, stateVal, postcodeVal, countryID, latVal, lngVal)
 	return err
 }
 
@@ -2280,7 +2305,7 @@ func (s *Store) ListKnownLabSoftware(ctx context.Context) ([]RoomLabSoftware, er
 	return out, rows.Err()
 }
 
-func (s *Store) CreateDeliveryLocation(ctx context.Context, trainingOrgID int64, locID, name string, isVirtual bool, address, suburb, stateCode, postcode, lat, lng string) (int64, error) {
+func (s *Store) CreateDeliveryLocation(ctx context.Context, trainingOrgID int64, locID, name string, isVirtual bool, address, suburb, stateCode, postcode, countryID, lat, lng string) (int64, error) {
 	var addrVal, suburbVal, stateVal, postcodeVal any
 	if isVirtual {
 		addrVal, suburbVal, stateVal, postcodeVal = nil, nil, nil, nil
@@ -2294,13 +2319,16 @@ func (s *Store) CreateDeliveryLocation(ctx context.Context, trainingOrgID int64,
 	if lng != "" {
 		lngVal = lng
 	}
+	if countryID == "" {
+		countryID = "1101"
+	}
 	var id int64
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO public.delivery_locations
-		    (training_org_id, delivery_loc_id, name, is_virtual, address, suburb, state_code, postcode, latitude, longitude)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9::text,'')::numeric, NULLIF($10::text,'')::numeric)
+		    (training_org_id, delivery_loc_id, name, is_virtual, address, suburb, state_code, postcode, country_id, latitude, longitude)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10::text,'')::numeric, NULLIF($11::text,'')::numeric)
 		RETURNING id
-	`, trainingOrgID, locID, name, isVirtual, addrVal, suburbVal, stateVal, postcodeVal, latVal, lngVal).Scan(&id)
+	`, trainingOrgID, locID, name, isVirtual, addrVal, suburbVal, stateVal, postcodeVal, countryID, latVal, lngVal).Scan(&id)
 	return id, err
 }
 
@@ -2347,6 +2375,65 @@ func (s *Store) CreateIntakeGroup(ctx context.Context, intakeID int64, groupCode
 		RETURNING id
 	`, intakeID, groupCode, groupName, capacity, notes).Scan(&id)
 	return id, err
+}
+
+// ── Program Intakes CRUD ──────────────────────────────────────────────────────
+
+func (s *Store) ListIntakesFull(ctx context.Context) ([]IntakeListRow, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT pi.id, pi.program_id, pi.intake_code, pi.intake_name,
+		       pi.start_academic_period_id,
+		       ap.period_code || ' ' || ap.period_name,
+		       pi.delivery_location_id, dl.name,
+		       pi.study_mode, pi.duration_periods, pi.status
+		FROM public.program_intakes pi
+		JOIN public.academic_periods ap ON ap.id = pi.start_academic_period_id
+		JOIN public.delivery_locations dl ON dl.id = pi.delivery_location_id
+		ORDER BY pi.intake_code
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []IntakeListRow
+	for rows.Next() {
+		var r IntakeListRow
+		if err := rows.Scan(&r.ID, &r.ProgramID, &r.IntakeCode, &r.IntakeName,
+			&r.PeriodID, &r.PeriodLabel,
+			&r.LocationID, &r.LocationName,
+			&r.StudyMode, &r.DurationPeriods, &r.Status); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) CreateIntake(ctx context.Context, programID, periodID, locationID int64, intakeCode, intakeName, studyMode, status string, durationPeriods int) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO public.program_intakes
+		    (program_id, intake_code, intake_name, start_academic_period_id, delivery_location_id, study_mode, duration_periods, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id
+	`, programID, intakeCode, intakeName, periodID, locationID, studyMode, durationPeriods, status).Scan(&id)
+	return id, err
+}
+
+func (s *Store) UpdateIntake(ctx context.Context, id, programID, periodID, locationID int64, intakeCode, intakeName, studyMode, status string, durationPeriods int) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.program_intakes
+		SET program_id=$2, intake_code=$3, intake_name=$4,
+		    start_academic_period_id=$5, delivery_location_id=$6,
+		    study_mode=$7, duration_periods=$8, status=$9
+		WHERE id=$1
+	`, id, programID, intakeCode, intakeName, periodID, locationID, studyMode, durationPeriods, status)
+	return err
+}
+
+func (s *Store) DeleteIntake(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM public.program_intakes WHERE id=$1`, id)
+	return err
 }
 
 func (s *Store) ListSessionsForClass(ctx context.Context, classID int64) ([]SessionListRow, error) {
@@ -2616,6 +2703,15 @@ func (s *Store) CreateSubject(ctx context.Context, subjectCode, subjectName, mod
 		RETURNING id
 	`, subjectCode, subjectName, moduleFlag, fieldOfEducation, nominalHours, vetFlag, creditPoints, assessmentToolVersion).Scan(&id)
 	return id, err
+}
+
+func (s *Store) LinkSubjectToProgram(ctx context.Context, subjectID, programID int64) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO public.subject_programs (subject_id, program_id)
+		VALUES ($1, $2)
+		ON CONFLICT DO NOTHING
+	`, subjectID, programID)
+	return err
 }
 
 func (s *Store) UpdateClass(ctx context.Context, id, academicPeriodID, deliveryLocationID int64, classCode string, intakeGroupID *int64, enrolmentCap *int, deliveryMode, attendanceMethod, tasVersion string) error {

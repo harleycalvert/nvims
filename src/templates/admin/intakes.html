@@ -1,0 +1,304 @@
+{{define "admin-intakes"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS — Intakes</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/sessions.css">
+  <link rel="stylesheet" href="/static/admin.css">
+  <link rel="stylesheet" href="/static/sidebar.css">
+  <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
+</head>
+<body>
+  {{template "sidebar" .}}
+  <div class="page-wrap">
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/admin">Administration</a>
+        <h1>Intakes</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+
+  <main class="sessions-main">
+
+    {{template "admin-nav" .}}
+
+    <p class="page-desc">Intakes are scheduled deliveries of a program — a specific cohort start date, location, and study mode. Filter by program using the panel on the left.</p>
+
+    <div class="bld-layout">
+      <div class="bld-campus-panel">
+        <div class="bld-campus-search">
+          <input id="campus-search" type="search" placeholder="Search programs…" autocomplete="off">
+        </div>
+        <ul id="campus-list"></ul>
+      </div>
+      <div class="bld-content">
+    <div class="table-wrap">
+      <table class="sessions-table" id="intakes-table">
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th class="td-left">Name</th>
+            <th>Period</th>
+            <th>Location</th>
+            <th>Mode</th>
+            <th title="Duration in academic periods">Dur.</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="intakes-tbody">
+          {{range .Intakes}}
+          <tr class="sess-row" data-id="{{.ID}}" data-program-id="{{.ProgramID}}">
+            <input type="hidden" name="program_id" value="{{.ProgramID}}">
+            <td><input class="sess-input in-code" type="text" name="intake_code"
+                       value="{{.IntakeCode}}" maxlength="30"></td>
+            <td><input class="sess-input in-name" type="text" name="intake_name"
+                       value="{{.IntakeName}}" maxlength="150"></td>
+            <td>
+              <select class="sess-input in-period" name="period_id">
+                {{$pid := .PeriodID}}
+                {{range $.Periods}}
+                <option value="{{.ID}}"{{if eq .ID $pid}} selected{{end}}>{{.PeriodCode}} {{.PeriodName}}</option>
+                {{end}}
+              </select>
+            </td>
+            <td>
+              <select class="sess-input in-loc" name="location_id">
+                {{$lid := .LocationID}}
+                {{range $.Locations}}
+                <option value="{{.ID}}"{{if eq .ID $lid}} selected{{end}}>{{.Name}}</option>
+                {{end}}
+              </select>
+            </td>
+            <td>
+              <select class="sess-input in-mode" name="study_mode">
+                <option value="Full-Time"{{if eq .StudyMode "Full-Time"}} selected{{end}}>Full-Time</option>
+                <option value="Part-Time"{{if eq .StudyMode "Part-Time"}} selected{{end}}>Part-Time</option>
+              </select>
+            </td>
+            <td><input class="sess-input in-dur" type="number" name="duration_periods"
+                       value="{{.DurationPeriods}}" min="1"></td>
+            <td>
+              <select class="sess-input in-status" name="status">
+                {{$st := .Status}}
+                {{range $.Statuses}}
+                <option value="{{.}}"{{if eq . $st}} selected{{end}}>{{.}}</option>
+                {{end}}
+              </select>
+            </td>
+            <td class="sess-actions">
+              <span class="sess-status"></span>
+              <button class="btn-danger-sm in-delete" type="button" title="Delete">✕</button>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sess-add-bar">
+      <button class="btn-primary btn-sm" id="btn-add-intake" type="button">+ Add Intake</button>
+    </div>
+      </div>{{/* end .bld-content */}}
+    </div>{{/* end .bld-layout */}}
+
+  </main>
+
+<script>
+(function () {
+  const programs  = [{{range $i,$p := .Programs}}{{if $i}},{{end}}{"id":{{$p.ID}},"code":{{printf "%q" $p.ProgramCode}},"name":{{printf "%q" $p.ProgramName}}}{{end}}];
+  const periods   = [{{range $i,$p := .Periods}}{{if $i}},{{end}}{"id":{{$p.ID}},"label":{{printf "%q" (print $p.PeriodCode " " $p.PeriodName)}}}{{end}}];
+  const locations = [{{range $i,$l := .Locations}}{{if $i}},{{end}}{"id":{{$l.ID}},"name":{{printf "%q" $l.Name}}}{{end}}];
+
+  // ── Program filter panel ────────────────────────────────────────────────────
+  const PROG_KEY      = 'nvims-in-program';
+  const programList   = document.getElementById('campus-list');
+  const programSearch = document.getElementById('campus-search');
+  let activeProgramId = parseInt(sessionStorage.getItem(PROG_KEY) ?? '0') || 0;
+
+  function renderProgramList(filter) {
+    const q = (filter || '').toLowerCase();
+    programList.innerHTML = '';
+
+    if (!q) {
+      const all = document.createElement('li');
+      all.dataset.id = '0';
+      all.textContent = 'All intakes';
+      all.style.fontStyle = 'italic';
+      if (activeProgramId === 0) all.classList.add('campus-active');
+      all.addEventListener('click', () => {
+        activeProgramId = 0;
+        programList.querySelectorAll('li').forEach(el => el.classList.remove('campus-active'));
+        all.classList.add('campus-active');
+        filterRows();
+      });
+      programList.appendChild(all);
+    }
+
+    programs.forEach(p => {
+      const label = p.code + ' — ' + p.name;
+      if (q && !label.toLowerCase().includes(q)) return;
+      const li = document.createElement('li');
+      li.dataset.id = p.id;
+      li.title = p.name;
+      li.textContent = label;
+      if (p.id === activeProgramId) li.classList.add('campus-active');
+      li.addEventListener('click', () => {
+        activeProgramId = p.id;
+        programList.querySelectorAll('li').forEach(el => el.classList.remove('campus-active'));
+        li.classList.add('campus-active');
+        filterRows();
+      });
+      programList.appendChild(li);
+    });
+  }
+
+  function filterRows() {
+    sessionStorage.setItem(PROG_KEY, activeProgramId);
+    document.querySelectorAll('#intakes-tbody .sess-row:not(.sess-new)').forEach(tr => {
+      if (activeProgramId === 0) { tr.style.display = ''; return; }
+      tr.style.display = parseInt(tr.dataset.programId) === activeProgramId ? '' : 'none';
+    });
+  }
+
+  programSearch.addEventListener('input', () => renderProgramList(programSearch.value));
+  renderProgramList('');
+  filterRows();
+
+  // ── Select option helpers ───────────────────────────────────────────────────
+  function periodOptions(selectedID) {
+    return periods.map(p =>
+      `<option value="${p.id}"${p.id === selectedID ? ' selected' : ''}>${p.label}</option>`
+    ).join('');
+  }
+
+  function locationOptions(selectedID) {
+    return locations.map(l =>
+      `<option value="${l.id}"${l.id === selectedID ? ' selected' : ''}>${l.name}</option>`
+    ).join('');
+  }
+
+  function modeOptions(selected) {
+    return ['Full-Time','Part-Time'].map(m =>
+      `<option value="${m}"${m === selected ? ' selected' : ''}>${m}</option>`
+    ).join('');
+  }
+
+  function statusOptions(selected) {
+    return ['Planned','Active','Closed','Cancelled'].map(s =>
+      `<option value="${s}"${s === selected ? ' selected' : ''}>${s}</option>`
+    ).join('');
+  }
+
+  // ── Row save / delete ───────────────────────────────────────────────────────
+  function setStatus(tr, state) {
+    const el = tr.querySelector('.sess-status');
+    el.className = 'sess-status sess-status-' + state;
+    el.textContent = state === 'saving' ? '…' : state === 'saved' ? '✓' : state === 'error' ? '!' : '';
+    if (state === 'saved') setTimeout(() => { el.textContent = ''; el.className = 'sess-status'; }, 1500);
+  }
+
+  function g(tr, name) { return tr.querySelector(`[name=${name}]`)?.value?.trim() ?? ''; }
+
+  function collectFields(tr) {
+    return {
+      program_id:       g(tr, 'program_id'),
+      intake_code:      g(tr, 'intake_code'),
+      intake_name:      g(tr, 'intake_name'),
+      period_id:        g(tr, 'period_id'),
+      location_id:      g(tr, 'location_id'),
+      study_mode:       g(tr, 'study_mode'),
+      duration_periods: g(tr, 'duration_periods'),
+      status:           g(tr, 'status'),
+    };
+  }
+
+  function isComplete(f) {
+    return f.program_id && f.intake_code && f.intake_name && f.period_id && f.location_id;
+  }
+
+  async function saveRow(tr) {
+    const id = tr.dataset.id;
+    const f  = collectFields(tr);
+    if (!isComplete(f)) return;
+
+    setStatus(tr, 'saving');
+    const url  = id === 'new' ? '/admin/intakes/new' : `/admin/intakes/${id}`;
+    const body = new URLSearchParams(f);
+    try {
+      const res = await fetch(url, { method: 'POST', body });
+      if (!res.ok) { setStatus(tr, 'error'); return; }
+      if (id === 'new') { location.reload(); return; }
+      setStatus(tr, 'saved');
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  async function deleteRow(tr) {
+    const id = tr.dataset.id;
+    if (id === 'new') { tr.remove(); return; }
+    if (!confirm('Delete this intake?')) return;
+    setStatus(tr, 'saving');
+    try {
+      const res = await fetch(`/admin/intakes/${id}/delete`, { method: 'POST' });
+      if (!res.ok) { setStatus(tr, 'error'); return; }
+      tr.remove();
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  function attachRowListeners(tr) {
+    ['intake_code','intake_name','duration_periods'].forEach(name => {
+      tr.querySelector(`[name=${name}]`)?.addEventListener('blur', () => saveRow(tr));
+    });
+    ['period_id','location_id','study_mode','status'].forEach(name => {
+      tr.querySelector(`[name=${name}]`)?.addEventListener('change', () => saveRow(tr));
+    });
+    tr.querySelector('.in-delete')?.addEventListener('click', () => deleteRow(tr));
+  }
+
+  document.querySelectorAll('#intakes-tbody .sess-row').forEach(attachRowListeners);
+
+  document.getElementById('btn-add-intake')?.addEventListener('click', () => {
+    const tbody = document.getElementById('intakes-tbody');
+    tbody.querySelector('.sess-new')?.remove();
+
+    const defaultPeriodID   = periods.length   ? periods[0].id   : 0;
+    const defaultLocationID = locations.length ? locations[0].id : 0;
+
+    const tr = document.createElement('tr');
+    tr.className = 'sess-row sess-new';
+    tr.dataset.id = 'new';
+    tr.dataset.programId = activeProgramId;
+    tr.innerHTML = `
+      <input type="hidden" name="program_id" value="${activeProgramId}">
+      <td><input class="sess-input in-code" type="text" name="intake_code"
+                 placeholder="e.g. ICT30120-2026-T1" maxlength="30"></td>
+      <td><input class="sess-input in-name" type="text" name="intake_name"
+                 placeholder="Intake name" maxlength="150"></td>
+      <td><select class="sess-input in-period" name="period_id">${periodOptions(defaultPeriodID)}</select></td>
+      <td><select class="sess-input in-loc" name="location_id">${locationOptions(defaultLocationID)}</select></td>
+      <td><select class="sess-input in-mode" name="study_mode">${modeOptions('Full-Time')}</select></td>
+      <td><input class="sess-input in-dur" type="number" name="duration_periods" value="4" min="1"></td>
+      <td><select class="sess-input in-status" name="status">${statusOptions('Planned')}</select></td>
+      <td class="sess-actions">
+        <span class="sess-status"></span>
+        <button class="btn-danger-sm in-delete" type="button" title="Remove">✕</button>
+      </td>`;
+    tbody.appendChild(tr);
+    attachRowListeners(tr);
+    tr.querySelector('[name=intake_code]').focus();
+  });
+})();
+</script>
+  </div>
+</body>
+</html>{{end}}

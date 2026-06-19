@@ -62,7 +62,7 @@
           </div>
           <div class="form-group fg-160">
             <label>Date of Birth <span class="req">*</span></label>
-            <input type="date" name="dob" value="{{.Form.DOBStr}}" required>
+            <input type="text" name="dob" value="{{.Form.DOBStr}}" placeholder="DD/MM/YYYY" pattern="\d{2}/\d{2}/\d{4}" maxlength="10" required>
           </div>
           <div class="form-group fg-160">
             <label>Gender <span class="req">*</span></label>
@@ -216,7 +216,7 @@
           </div>
           <div class="form-group fg-180">
             <label>Expiry Date</label>
-            <input type="date" name="wwcc_expiry" value="{{.Form.WWCCExpiryStr}}">
+            <input type="text" name="wwcc_expiry" value="{{.Form.WWCCExpiryStr}}" placeholder="DD/MM/YYYY" pattern="\d{2}/\d{2}/\d{4}" maxlength="10">
           </div>
         </div>
       </div>
@@ -235,7 +235,7 @@
           </div>
           <div class="form-group fg-180">
             <label>Date</label>
-            <input type="date" name="police_check_date" value="{{.Form.PoliceCheckDateStr}}">
+            <input type="text" name="police_check_date" value="{{.Form.PoliceCheckDateStr}}" placeholder="DD/MM/YYYY" pattern="\d{2}/\d{2}/\d{4}" maxlength="10">
           </div>
         </div>
       </div>

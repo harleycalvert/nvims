@@ -44,6 +44,7 @@
             <th class="td-left">Suburb</th>
             <th>State</th>
             <th>Postcode</th>
+            <th title="AVETMISS country identifier (e.g. 1101 = Australia)">Country ID</th>
             <th class="col-actions"></th>
           </tr>
         </thead>
@@ -69,6 +70,7 @@
               </select>
             </td>
             <td><input class="sess-input loc-col-post" type="text" name="postcode" value="{{.Postcode}}" maxlength="4"></td>
+            <td><input class="sess-input loc-col-country" type="text" name="country_id" value="{{.CountryID}}" maxlength="4"></td>
             <td class="sess-actions">
               <input type="hidden" name="latitude"  value="{{.Latitude}}">
               <input type="hidden" name="longitude" value="{{.Longitude}}">
@@ -130,6 +132,7 @@
              name: g(tr,'name'), is_virtual: cb(tr,'is_virtual'),
              address: g(tr,'address'), suburb: g(tr,'suburb'),
              state_code: g(tr,'state_code'), postcode: g(tr,'postcode'),
+             country_id: g(tr,'country_id'),
              latitude: g(tr,'latitude'), longitude: g(tr,'longitude') };
   }
   function isComplete(f) {
@@ -181,13 +184,14 @@
     tr.className = 'sess-row sess-new'; tr.dataset.id = 'new';
     tr.innerHTML = `
       <td><select class="sess-input loc-col-org"    name="training_org_id">${orgOpts}</select></td>
-      <td><input class="sess-input loc-col-id"     type="text" name="delivery_loc_id" placeholder="CHI-DAN"        maxlength="30"></td>
+      <td><input class="sess-input loc-col-id"     type="text" name="delivery_loc_id" placeholder=""        maxlength="30"></td>
       <td><input class="sess-input loc-col-name"   type="text" name="name"            placeholder="Location name"  maxlength="100"></td>
       <td class="td-center"><input type="checkbox" name="is_virtual"></td>
       <td><input class="sess-input loc-col-addr"   type="text" name="address"         placeholder="Street address" maxlength="200"></td>
       <td><input class="sess-input loc-col-suburb" type="text" name="suburb"          placeholder="Suburb"         maxlength="50"></td>
       <td><select class="sess-input loc-col-state" name="state_code">${stateOpts}</select></td>
-      <td><input class="sess-input loc-col-post"   type="text" name="postcode"        placeholder="3000"           maxlength="4"></td>
+      <td><input class="sess-input loc-col-post"    type="text" name="postcode"        placeholder="3000"           maxlength="4"></td>
+      <td><input class="sess-input loc-col-country" type="text" name="country_id"     value="1101"                  maxlength="4"></td>
       <td class="sess-actions">
         <input type="hidden" name="latitude" value="">
         <input type="hidden" name="longitude" value="">

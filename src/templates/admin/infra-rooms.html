@@ -301,7 +301,7 @@
     const bldOpts = visible.length
       ? visible.map(b => `<option value="${b.id}">${b.name}</option>`).join('')
       : allBuildings.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
-    const typeOpts = roomTypes.map(t => `<option value="${t}">${t}</option>`).join('');
+    const typeOpts = roomTypes.map(t => `<option value="${t}"${t === 'Computer Lab' ? ' selected' : ''}>${t}</option>`).join('');
 
     const defaultBid = visible.length ? visible[0].id : (allBuildings[0]?.id ?? 0);
     const tr = document.createElement('tr');
@@ -311,7 +311,7 @@
     tr.innerHTML = `
       <td><select class="sess-input room-col-bld"  name="building_id">${bldOpts}</select></td>
       <td><input class="sess-input room-col-name"  type="text"   name="room_name" placeholder="e.g. Room 01" maxlength="50"></td>
-      <td><input class="sess-input room-col-cap"   type="number" name="capacity"  placeholder="25" min="1"></td>
+      <td><input class="sess-input room-col-cap"   type="number" name="capacity"  value="25" min="1"></td>
       <td><select class="sess-input room-col-type" name="room_type">${typeOpts}</select></td>
       <td class="td-center"><input type="checkbox" name="is_active" checked></td>
       <td class="sess-actions"><span class="sess-status"></span>

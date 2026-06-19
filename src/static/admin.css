@@ -6,6 +6,7 @@
 .admin-nav-bar-periods    { background: #0a7a7a; }
 .admin-nav-bar-programs   { background: #155724; }
 .admin-nav-bar-subjects   { background: #334155; }
+.admin-nav-bar-intakes    { background: #b45309; }
 .admin-nav-bar-intake     { background: #0a7a7a; }
 .admin-nav-bar-enrolments { background: #155724; }
 .admin-nav-bar-classes    { background: #334155; }
@@ -21,6 +22,7 @@
 /* ── System nav colour bars ── */
 .system-nav-bar-users       { background: #5b21b6; }
 .system-nav-bar-permissions { background: #1a4480; }
+.system-nav-bar-filestorage { background: #155724; }
 .system-nav-bar-lms         { background: #0a7a7a; }
 .system-nav-bar-backup      { background: #92400e; }
 
@@ -151,7 +153,8 @@
 .loc-col-addr   { width: 180px; }
 .loc-col-suburb { width: 110px; }
 .loc-col-state  { width: 62px; }
-.loc-col-post   { width: 52px; }
+.loc-col-post    { width: 52px; }
+.loc-col-country { width: 58px; font-family: monospace; }
 
 /* ── Rooms column-scoped input widths ── */
 .room-col-bld  { width: 160px; }

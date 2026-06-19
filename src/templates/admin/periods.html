@@ -65,10 +65,10 @@
                 {{end}}
               </select>
             </td>
-            <td><input class="sess-input pi-date" type="date" name="start_date"
-                       value="{{dateISO .StartDate}}"></td>
-            <td><input class="sess-input pi-date" type="date" name="end_date"
-                       value="{{dateISO .EndDate}}"></td>
+            <td><input class="sess-input pi-date" type="text" name="start_date"
+                       value="{{dateDMY .StartDate}}" placeholder="DD/MM/YYYY" maxlength="10"></td>
+            <td><input class="sess-input pi-date" type="text" name="end_date"
+                       value="{{dateDMY .EndDate}}" placeholder="DD/MM/YYYY" maxlength="10"></td>
             <td><input class="sess-input pi-seq" type="number" name="sequence_number"
                        value="{{if .SequenceNumber}}{{.SequenceNumber}}{{end}}"
                        min="1" placeholder="—"></td>
@@ -106,13 +106,37 @@
     if (state === 'saved') setTimeout(() => { el.textContent = ''; el.className = 'sess-status'; }, 1500);
   }
 
+  function toIso(s) {
+    if (!s) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const [d, m, y] = s.split('/');
+    if (!d || !m || !y || y.length !== 4) return '';
+    return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+  }
+
+  function initDateInput(inp) {
+    inp.addEventListener('focus', () => {
+      const iso = toIso(inp.value);
+      inp.type = 'date';
+      inp.value = iso;
+    });
+    inp.addEventListener('blur', () => {
+      const iso = inp.value;
+      inp.type = 'text';
+      if (iso) {
+        const [y, m, d] = iso.split('-');
+        inp.value = y && m && d ? `${d}/${m}/${y}` : iso;
+      }
+    });
+  }
+
   function collectFields(tr) {
     return {
       period_code:     tr.querySelector('[name=period_code]').value.trim(),
       period_name:     tr.querySelector('[name=period_name]').value.trim(),
       year:            tr.querySelector('[name=year]').value.trim(),
-      start_date:      tr.querySelector('[name=start_date]').value,
-      end_date:        tr.querySelector('[name=end_date]').value,
+      start_date:      toIso(tr.querySelector('[name=start_date]').value),
+      end_date:        toIso(tr.querySelector('[name=end_date]').value),
       period_type:     tr.querySelector('[name=period_type]').value,
       sequence_number: tr.querySelector('[name=sequence_number]').value.trim(),
     };
@@ -161,7 +185,10 @@
     tr.querySelector('.pi-delete')?.addEventListener('click', () => deleteRow(tr));
   }
 
-  document.querySelectorAll('#periods-tbody .sess-row').forEach(attachRowListeners);
+  document.querySelectorAll('#periods-tbody .sess-row').forEach(tr => {
+    attachRowListeners(tr);
+    tr.querySelectorAll('.pi-date').forEach(initDateInput);
+  });
 
   document.getElementById('btn-add-period')?.addEventListener('click', () => {
     const tbody = document.getElementById('periods-tbody');
@@ -178,8 +205,8 @@
       <td><input class="sess-input pi-name" type="text" name="period_name"
                  placeholder="e.g. Term 1 2026" maxlength="50"></td>
       <td><select class="sess-input pi-type" name="period_type">${typeOptions('')}</select></td>
-      <td><input class="sess-input pi-date" type="date" name="start_date"></td>
-      <td><input class="sess-input pi-date" type="date" name="end_date"></td>
+      <td><input class="sess-input pi-date" type="text" name="start_date" placeholder="DD/MM/YYYY" maxlength="10"></td>
+      <td><input class="sess-input pi-date" type="text" name="end_date"   placeholder="DD/MM/YYYY" maxlength="10"></td>
       <td><input class="sess-input pi-seq" type="number" name="sequence_number"
                  min="1" placeholder="—"></td>
       <td class="sess-actions">
@@ -188,6 +215,7 @@
       </td>`;
     tbody.appendChild(tr);
     attachRowListeners(tr);
+    tr.querySelectorAll('.pi-date').forEach(initDateInput);
     tr.querySelector('[name=period_code]').focus();
   });
 })();

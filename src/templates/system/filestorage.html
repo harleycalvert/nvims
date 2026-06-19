@@ -1,0 +1,90 @@
+{{define "system-filestorage"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NVIMS — File Storage</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/people.css">
+  <link rel="stylesheet" href="/static/sessions.css">
+  <link rel="stylesheet" href="/static/sidebar.css">
+  <link rel="stylesheet" href="/static/admin.css">
+  <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
+</head>
+<body>
+  {{template "sidebar" .}}
+  <div class="page-wrap">
+  <header>
+    <div class="header-top">
+      <div class="header-title-group">
+        <a class="header-home" href="/system">System</a>
+        <h1>File Storage</h1>
+      </div>
+      <form method="POST" action="/logout"><button class="btn-signout">Sign Out</button></form>
+    </div>
+    <div class="header-sub">
+      <span class="header-fullname">{{.User.FullName}}</span>
+      <span class="header-role">{{.User.Role}}</span>
+    </div>
+  </header>
+
+  <main class="sessions-main">
+    {{template "system-nav" .}}
+
+    <p class="page-desc">Object storage for documents, VCC publications, and other uploaded files. Powered by MinIO. Connection details are configured via environment variables.</p>
+
+    <h2 class="section-heading">Connection</h2>
+    <div class="admin-form" style="max-width:560px">
+      <table class="sessions-table">
+        <tbody>
+          <tr>
+            <td style="width:10rem;font-weight:600;color:var(--text-muted)">Status</td>
+            <td>
+              {{if .Stats.Connected}}
+              <span class="role-badge role-teacher">Connected</span>
+              {{else}}
+              <span class="role-badge role-student" style="background:#fef2f2;color:#991b1b;border-color:#fca5a5">Unavailable</span>
+              {{end}}
+            </td>
+          </tr>
+          <tr>
+            <td style="font-weight:600;color:var(--text-muted)">Endpoint</td>
+            <td><code>{{.Stats.Endpoint}}</code></td>
+          </tr>
+          <tr>
+            <td style="font-weight:600;color:var(--text-muted)">Bucket</td>
+            <td><code>{{.Stats.Bucket}}</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    {{if .Stats.Connected}}
+    <h2 class="section-heading" style="margin-top:1.5rem">Storage</h2>
+    <div class="admin-form" style="max-width:560px">
+      <table class="sessions-table">
+        <tbody>
+          <tr>
+            <td style="width:10rem;font-weight:600;color:var(--text-muted)">Objects</td>
+            <td>{{.Stats.ObjectCount}}</td>
+          </tr>
+          <tr>
+            <td style="font-weight:600;color:var(--text-muted)">Total size</td>
+            <td>{{formatBytes .Stats.TotalBytes}}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    {{end}}
+
+    <p class="hint" style="margin-top:1.5rem">
+      To change the endpoint, bucket, or credentials update <code>MINIO_ENDPOINT</code>,
+      <code>MINIO_BUCKET</code>, <code>MINIO_ROOT_USER</code>, and <code>MINIO_ROOT_PASSWORD</code>
+      in <code>nvims.env</code> and restart the server.
+    </p>
+
+  </main>
+  </div>
+</body>
+</html>
+{{end}}

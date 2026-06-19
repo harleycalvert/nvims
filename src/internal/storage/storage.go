@@ -11,8 +11,18 @@ import (
 )
 
 type Client struct {
-	mc     *minio.Client
-	bucket string
+	mc       *minio.Client
+	bucket   string
+	endpoint string
+}
+
+// Stats holds aggregate information about the storage bucket.
+type Stats struct {
+	Endpoint    string
+	Bucket      string
+	Connected   bool
+	ObjectCount int64
+	TotalBytes  int64
 }
 
 func New(endpoint, accessKey, secretKey, bucket string) (*Client, error) {
@@ -23,7 +33,25 @@ func New(endpoint, accessKey, secretKey, bucket string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("minio client: %w", err)
 	}
-	return &Client{mc: mc, bucket: bucket}, nil
+	return &Client{mc: mc, bucket: bucket, endpoint: endpoint}, nil
+}
+
+// BucketStats returns connection status and aggregate object count/size.
+func (c *Client) BucketStats(ctx context.Context) Stats {
+	s := Stats{Endpoint: c.endpoint, Bucket: c.bucket}
+	exists, err := c.mc.BucketExists(ctx, c.bucket)
+	if err != nil || !exists {
+		return s
+	}
+	s.Connected = true
+	for obj := range c.mc.ListObjects(ctx, c.bucket, minio.ListObjectsOptions{Recursive: true}) {
+		if obj.Err != nil {
+			break
+		}
+		s.ObjectCount++
+		s.TotalBytes += obj.Size
+	}
+	return s
 }
 
 func (c *Client) EnsureBucket(ctx context.Context) error {
