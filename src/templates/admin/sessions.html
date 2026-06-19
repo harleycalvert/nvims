@@ -61,8 +61,8 @@
         <select id="group-select" class="search-role-select">
           <option value="">— select intake group —</option>
           {{range .IntakeGroups}}
-          <option value="{{.ID}}"{{if and (eq $.View "group") (eq $.EntityID .ID)}} selected{{end}}>
-            {{.GroupCode}} — {{.GroupName}}
+          <option value="{{.ID}}"{{if and (eq $.View "group") (eq $.EntityID .ID)}} selected{{end}} data-location="{{.LocationName}}">
+            {{.GroupName}}
           </option>
           {{end}}
         </select>
@@ -189,7 +189,8 @@
 <script>
 (function () {
   const sessionTypes = [{{range $i,$t := .SessionTypes}}{{if $i}},{{end}}"{{$t}}"{{end}}];
-  const allClasses   = [{{range $i,$c := .Classes}}{{if $i}},{{end}}{"id":{{$c.ID}},"label":"{{$c.ClassCode}} — {{$c.PeriodName}}"}{{end}}];
+  const allClasses   = [{{range $i,$c := .Classes}}{{if $i}},{{end}}{"id":{{$c.ID}},"label":"{{$c.ClassCode}} — {{$c.PeriodName}}","loc":"{{$c.LocationName}}"}{{end}}];
+  const allTeachers  = [{{range $i,$t := .Teachers}}{{if $i}},{{end}}{"id":{{$t.ID}},"name":"{{$t.FullName}}"}{{end}}];
   const allRooms     = [{{range $i,$r := .Rooms}}{{if $i}},{{end}}{"id":{{$r.ID}},"bid":{{$r.BuildingID}},"room":{{printf "%q" $r.RoomName}}}{{end}}];
   const allBuildings = [{{range $i,$b := .Buildings}}{{if $i}},{{end}}{"id":{{$b.ID}},"name":{{printf "%q" $b.BuildingName}}}{{end}}];
   const periodEnd    = "{{.PeriodEndDate}}";
@@ -373,6 +374,12 @@
     return '<option value="">— class —</option>' +
       allClasses.map(c => `<option value="${c.id}">${c.label}</option>`).join('');
   }
+  function teacherOptions(selectedID) {
+    return '<option value="0">— none —</option>' +
+      allTeachers.map(t =>
+        `<option value="${t.id}"${t.id === selectedID ? ' selected' : ''}>${t.name}</option>`
+      ).join('');
+  }
 
   function setStatus(tr, state) {
     const el = tr.querySelector('.sess-status');
@@ -397,11 +404,12 @@
     if (id === 'new') {
       const classID  = tr.querySelector('[name=class_id]')?.value;
       if (!classID) { setStatus(tr, 'error'); return; }
-      const autofill = document.getElementById('autofill-cb')?.checked ? '1' : '0';
+      const autofill  = document.getElementById('autofill-cb')?.checked ? '1' : '0';
+      const teacherID = tr.querySelector('[name=teacher_id]')?.value || '0';
       const body = new URLSearchParams({
         class_id: classID, session_date: isoDate,
         start_time: start, end_time: end, session_type: type, notes,
-        autofill, period_end: periodEnd,
+        teacher_id: teacherID, autofill, period_end: periodEnd,
       });
       try {
         const res = await fetch('/admin/sessions/new', {method:'POST', body});
@@ -495,6 +503,15 @@
       }
     });
     tr.querySelector('select[name=session_type]')?.addEventListener('change', () => saveRow(tr));
+    tr.querySelector('select[name=class_id]')?.addEventListener('change', () => {
+      const locSpan = tr.querySelector('.si-location .sess-loc-label');
+      if (locSpan) {
+        const cid = parseInt(tr.querySelector('[name=class_id]').value);
+        const cls = allClasses.find(c => c.id === cid);
+        locSpan.textContent = cls?.loc || '';
+      }
+      saveRow(tr);
+    });
 
     // Building → Room cascade: populate both selects from data-init attrs, then wire change events.
     const buildingEl = tr.querySelector('[name=building_id]');
@@ -524,6 +541,10 @@
     tbody.querySelector('.sess-new')?.remove();
     document.getElementById('autofill-row')?.remove();
 
+    const grpSel     = document.getElementById('group-select');
+    const grpOpt     = grpSel?.options[grpSel.selectedIndex];
+    const defaultLoc = grpOpt?.dataset.location || '';
+
     const tr = document.createElement('tr');
     tr.className = 'sess-row sess-new';
     tr.dataset.id = 'new';
@@ -537,8 +558,8 @@
       <td><div class="time-wrap"><input class="sess-input si-time" type="text" name="end_time"   placeholder="HH:MM" maxlength="5"><input type="time" class="time-native" tabindex="-1"></div></td>
       <td><select class="sess-input si-class" name="class_id">${classOptions()}</select></td>
       <td><select class="sess-input si-type" name="session_type">${typeOptions('Scheduled')}</select></td>
-      <td class="sess-static"></td>
-      <td class="sess-static"></td>
+      <td><select class="sess-input si-teacher" name="teacher_id">${teacherOptions(0)}</select></td>
+      <td class="sess-static si-location"><span class="sess-loc-label">${defaultLoc}</span></td>
       <td><select class="sess-input si-building" name="building_id" data-init-bid="0"></select></td>
       <td><select class="sess-input si-room"     name="room_id"     data-init-rid="0"></select></td>
       <td><input class="sess-input si-notes" type="text" name="notes" maxlength="255" placeholder="—"></td>

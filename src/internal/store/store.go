@@ -1318,13 +1318,14 @@ type DeliveryLocationRow struct {
 }
 
 type IntakeGroupRow struct {
-	ID         int64
-	IntakeID   int64
-	IntakeName string
-	GroupCode  string
-	GroupName  string
-	Capacity   int
-	Notes      string
+	ID           int64
+	IntakeID     int64
+	IntakeName   string
+	GroupCode    string
+	GroupName    string
+	Capacity     int
+	Notes        string
+	LocationName string
 }
 
 type SubjectRow struct {
@@ -1477,9 +1478,11 @@ func (s *Store) ListDeliveryLocations(ctx context.Context) ([]DeliveryLocationRo
 func (s *Store) ListIntakeGroups(ctx context.Context) ([]IntakeGroupRow, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT ig.id, ig.intake_id, pi.intake_name, ig.group_code, ig.group_name,
-		       COALESCE(ig.capacity,0), COALESCE(ig.notes,'')
+		       COALESCE(ig.capacity,0), COALESCE(ig.notes,''),
+		       COALESCE(dl.name,'')
 		FROM public.intake_groups ig
 		JOIN public.program_intakes pi ON pi.id = ig.intake_id
+		LEFT JOIN public.delivery_locations dl ON dl.id = pi.delivery_location_id
 		ORDER BY pi.intake_name, ig.group_code
 	`)
 	if err != nil {
@@ -1489,12 +1492,21 @@ func (s *Store) ListIntakeGroups(ctx context.Context) ([]IntakeGroupRow, error) 
 	var out []IntakeGroupRow
 	for rows.Next() {
 		var r IntakeGroupRow
-		if err := rows.Scan(&r.ID, &r.IntakeID, &r.IntakeName, &r.GroupCode, &r.GroupName, &r.Capacity, &r.Notes); err != nil {
+		if err := rows.Scan(&r.ID, &r.IntakeID, &r.IntakeName, &r.GroupCode, &r.GroupName, &r.Capacity, &r.Notes, &r.LocationName); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) AddSessionTeacher(ctx context.Context, sessionID, teacherID int64) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO public.session_teachers (session_id, teacher_id, role)
+		VALUES ($1, $2, 'Lead')
+		ON CONFLICT DO NOTHING
+	`, sessionID, teacherID)
+	return err
 }
 
 func (s *Store) ListSubjects(ctx context.Context) ([]SubjectRow, error) {

@@ -2232,8 +2232,8 @@ type generateForm struct {
 func (h *Handler) AdminSessions(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	view := q.Get("view")
-	if view != "group" {
-		view = "teacher"
+	if view != "teacher" {
+		view = "group"
 	}
 	entityID := parseInt64(q.Get("id"))
 	periodID := parseInt64(q.Get("period_id"))
@@ -2451,6 +2451,7 @@ func (h *Handler) AdminSessionCreate(w http.ResponseWriter, r *http.Request) {
 	endTime := r.FormValue("end_time")
 	sessionType := r.FormValue("session_type")
 	notes := strings.TrimSpace(r.FormValue("notes"))
+	teacherID := parseInt64(r.FormValue("teacher_id"))
 
 	if classID == 0 || sessionDate == "" || startTime == "" || endTime == "" {
 		http.Error(w, `{"error":"missing fields"}`, http.StatusBadRequest)
@@ -2464,11 +2465,16 @@ func (h *Handler) AdminSessionCreate(w http.ResponseWriter, r *http.Request) {
 		sessionType = "Scheduled"
 	}
 
-	_, err := h.store.CreateSession(r.Context(), classID, sessionDate, startTime, endTime, sessionType, notes)
+	sessionID, err := h.store.CreateSession(r.Context(), classID, sessionDate, startTime, endTime, sessionType, notes)
 	if err != nil {
 		log.Printf("CreateSession: %v", err)
 		http.Redirect(w, r, fmt.Sprintf("/admin/sessions?class_id=%d&error=db", classID), http.StatusSeeOther)
 		return
+	}
+	if teacherID > 0 && sessionID > 0 {
+		if err2 := h.store.AddSessionTeacher(r.Context(), sessionID, teacherID); err2 != nil {
+			log.Printf("AddSessionTeacher(%d,%d): %v", sessionID, teacherID, err2)
+		}
 	}
 
 	if r.FormValue("autofill") == "1" {
