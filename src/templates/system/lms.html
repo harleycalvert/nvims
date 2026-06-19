@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/people.css">
   <link rel="stylesheet" href="/static/sidebar.css">
+  <link rel="stylesheet" href="/static/admin.css">
   <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
 </head>
 <body>
@@ -26,7 +27,8 @@
     </div>
   </header>
 
-  <main>
+  <main class="sessions-main">
+    {{template "config-nav" .}}
     {{if .Saved}}<p class="form-success">LMS settings saved.</p>{{end}}
 
     <form method="POST" action="/system/lms" class="admin-form admin-form--narrow">

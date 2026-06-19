@@ -1,0 +1,28 @@
+{{define "system-nav"}}
+<div class="admin-nav">
+  <a class="admin-nav-tile" href="/system/users" data-nav="/system/users">
+    <span class="admin-nav-bar system-nav-bar-users"></span>
+    <span class="admin-nav-label">System Users</span>
+  </a>
+  <a class="admin-nav-tile" href="/system/permissions" data-nav="/system/permissions">
+    <span class="admin-nav-bar system-nav-bar-permissions"></span>
+    <span class="admin-nav-label">Role Permissions</span>
+  </a>
+  <a class="admin-nav-tile" href="/system/lms" data-nav="/system/lms">
+    <span class="admin-nav-bar system-nav-bar-lms"></span>
+    <span class="admin-nav-label">LMS Config</span>
+  </a>
+  <a class="admin-nav-tile" href="/backup" data-nav="/backup">
+    <span class="admin-nav-bar system-nav-bar-backup"></span>
+    <span class="admin-nav-label">Backup &amp; Restore</span>
+  </a>
+</div>
+<script>
+(function(){
+  const p = location.pathname;
+  document.querySelectorAll('.admin-nav-tile[data-nav]').forEach(function(a){
+    if (p === a.dataset.nav || p.startsWith(a.dataset.nav + '/')) a.classList.add('active');
+  });
+})();
+</script>
+{{end}}

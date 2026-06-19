@@ -12,6 +12,27 @@
 .admin-nav-bar-sessions   { background: #92400e; }
 .admin-nav-bar-exceptions { background: #991b1b; }
 
+/* ── Infra nav colour bars ── */
+.infra-nav-bar-orgs      { background: #1a4480; }
+.infra-nav-bar-locations { background: #0a7a7a; }
+.infra-nav-bar-buildings { background: #155724; }
+.infra-nav-bar-rooms     { background: #334155; }
+
+/* ── System nav colour bars ── */
+.system-nav-bar-users       { background: #5b21b6; }
+.system-nav-bar-permissions { background: #1a4480; }
+.system-nav-bar-lms         { background: #0a7a7a; }
+.system-nav-bar-backup      { background: #92400e; }
+
+/* ── Config nav colour bars ── */
+.config-nav-bar-orgs        { background: #1a4480; }
+.config-nav-bar-faculties   { background: #5b21b6; }
+.config-nav-bar-departments { background: #0a7a7a; }
+.config-nav-bar-locations   { background: #155724; }
+.config-nav-bar-buildings   { background: #334155; }
+.config-nav-bar-rooms       { background: #92400e; }
+.config-nav-bar-lms         { background: #991b1b; }
+
 /* ── Enrollments page ── */
 .enrol-filter { margin-bottom: .75rem; }
 .enrol-filter input { padding: .3rem .5rem; border: 1px solid #ccc; border-radius: 4px; width: 22rem; }

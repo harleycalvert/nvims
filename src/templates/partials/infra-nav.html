@@ -1,0 +1,28 @@
+{{define "infra-nav"}}
+<div class="admin-nav">
+  <a class="admin-nav-tile" href="/admin/infrastructure/orgs" data-nav="/admin/infrastructure/orgs">
+    <span class="admin-nav-bar infra-nav-bar-orgs"></span>
+    <span class="admin-nav-label">Organisations</span>
+  </a>
+  <a class="admin-nav-tile" href="/admin/infrastructure/locations" data-nav="/admin/infrastructure/locations">
+    <span class="admin-nav-bar infra-nav-bar-locations"></span>
+    <span class="admin-nav-label">Locations</span>
+  </a>
+  <a class="admin-nav-tile" href="/admin/infrastructure/buildings" data-nav="/admin/infrastructure/buildings">
+    <span class="admin-nav-bar infra-nav-bar-buildings"></span>
+    <span class="admin-nav-label">Buildings</span>
+  </a>
+  <a class="admin-nav-tile" href="/admin/infrastructure/rooms" data-nav="/admin/infrastructure/rooms">
+    <span class="admin-nav-bar infra-nav-bar-rooms"></span>
+    <span class="admin-nav-label">Rooms</span>
+  </a>
+</div>
+<script>
+(function(){
+  const p = location.pathname;
+  document.querySelectorAll('.admin-nav-tile[data-nav]').forEach(function(a){
+    if (p === a.dataset.nav || p.startsWith(a.dataset.nav + '/')) a.classList.add('active');
+  });
+})();
+</script>
+{{end}}
