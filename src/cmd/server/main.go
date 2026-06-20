@@ -242,6 +242,7 @@ func main() {
 	mux.HandleFunc("GET /admin/sessions",                              P("sessions:view",   h.AdminSessions))
 	mux.HandleFunc("GET /admin/sessions/week-data",                    P("sessions:view",   h.AdminSessionsWeekData))
 	mux.HandleFunc("GET /admin/sessions/holidays",                     P("sessions:view",   h.AdminSessionsHolidays))
+	mux.HandleFunc("GET /admin/sessions/teacher-suggestions",          P("sessions:view",   h.AdminSessionTeacherSuggestions))
 	mux.HandleFunc("GET /admin/sessions/schedule",                     P("sessions:view",   h.AdminSessionSchedule))
 	mux.HandleFunc("POST /admin/sessions/new",                         P("sessions:manage", h.AdminSessionCreate))
 	mux.HandleFunc("POST /admin/sessions/delete-all",                  P("sessions:manage", h.AdminSessionsDeleteAll))

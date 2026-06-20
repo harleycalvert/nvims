@@ -509,3 +509,104 @@
   display: flex;
   justify-content: flex-end;
 }
+
+/* ── Teacher Suggestions dialog ── */
+.ts-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  border: none;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.3);
+  padding: 0;
+  width: min(900px, 95vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.ts-dialog::backdrop { background: rgba(0,0,0,.45); }
+
+.ts-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 16px 20px 14px;
+  border-bottom: 1px solid #e5e7eb;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.ts-title { display: block; font-size: 15px; font-weight: 700; color: #111; }
+.ts-sub   { font-size: 12px; color: #666; margin-top: 2px; display: block; }
+.ts-close {
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: #888;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.ts-close:hover { background: #f3f4f6; color: #333; }
+
+.ts-table-wrap {
+  overflow: auto;
+  flex: 1;
+}
+.ts-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.ts-table th {
+  position: sticky;
+  top: 0;
+  background: #f4f6f9;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #555;
+  padding: 8px 10px;
+  border-bottom: 2px solid #ddd;
+  white-space: nowrap;
+  text-align: left;
+}
+.ts-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #eee;
+  vertical-align: middle;
+}
+.ts-row:hover td { background: #f9fbff; }
+.ts-name { font-weight: 600; white-space: nowrap; }
+.ts-rank { color: #555; white-space: nowrap; font-size: 12px; }
+.ts-cell-yes { text-align: center; }
+.ts-cell-no  { text-align: center; color: #ccc; font-size: 15px; }
+
+.ts-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #e5e7eb;
+  color: #444;
+}
+.ts-badge-current { background: #d1fae5; color: #065f46; }
+.ts-badge-super   { background: #fef3c7; color: #92400e; }
+.ts-badge-exp     { background: #dbeafe; color: #1e40af; }
+
+.ts-coverage { font-weight: 700; color: #1a4480; }
+.ts-bar {
+  display: inline-block;
+  width: 60px;
+  height: 6px;
+  background: #e5e7eb;
+  border-radius: 3px;
+  vertical-align: middle;
+  overflow: hidden;
+}
+.ts-bar-fill { display: block; height: 100%; background: #1a4480; border-radius: 3px; }

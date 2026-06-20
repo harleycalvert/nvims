@@ -2569,6 +2569,128 @@ func (s *Store) UpdateSession(ctx context.Context, id int64, date, startTime, en
 	return err
 }
 
+// ── Teacher Suggestions ──────────────────────────────────────────────────────
+
+type TeacherSuggestionClassUnit struct {
+	Code string `json:"code"`
+	Name string `json:"name"`
+}
+
+type TeacherSuggestionCoveredUnit struct {
+	Code             string `json:"code"`
+	CompetencyMethod string `json:"method"`
+	Enthusiasm       int    `json:"enthusiasm"`
+	Confidence       int    `json:"confidence"`
+}
+
+type TeacherSuggestionRow struct {
+	ID             int64                          `json:"id"`
+	Name           string                         `json:"name"`
+	PreferenceRank int                            `json:"rank"` // 0 = not ranked for this campus
+	CoveredUnits   []TeacherSuggestionCoveredUnit `json:"covered"`
+}
+
+func (s *Store) TeacherSuggestionsForClass(ctx context.Context, classID int64) (classCode, locationName string, classUnits []TeacherSuggestionClassUnit, teachers []TeacherSuggestionRow, err error) {
+	// 1. Class code + location name
+	err = s.pool.QueryRow(ctx, `
+		SELECT c.class_code, COALESCE(dl.name, '')
+		FROM public.classes c
+		LEFT JOIN public.delivery_locations dl ON dl.id = c.delivery_location_id
+		WHERE c.id = $1
+	`, classID).Scan(&classCode, &locationName)
+	if err != nil {
+		return
+	}
+
+	// 2. Units (subjects) for this class
+	uRows, e := s.pool.Query(ctx, `
+		SELECT s.subject_code, COALESCE(cs.subject_label, s.subject_name)
+		FROM public.class_subjects cs
+		JOIN public.subjects s ON s.id = cs.subject_id
+		WHERE cs.class_id = $1
+		ORDER BY s.subject_code
+	`, classID)
+	if e != nil {
+		err = e
+		return
+	}
+	var unitCodes []string
+	for uRows.Next() {
+		var u TeacherSuggestionClassUnit
+		if e2 := uRows.Scan(&u.Code, &u.Name); e2 == nil {
+			classUnits = append(classUnits, u)
+			unitCodes = append(unitCodes, u.Code)
+		}
+	}
+	uRows.Close()
+
+	// 3. All teachers with preference rank for this class's location
+	tRows, e := s.pool.Query(ctx, `
+		SELECT t.id,
+		       COALESCE(p.preferred_name, p.first_given_name) || ' ' || p.family_name,
+		       COALESCE(plp.preference_rank, 0)
+		FROM public.teachers t
+		JOIN public.people p ON p.id = t.id
+		LEFT JOIN public.classes c ON c.id = $1
+		LEFT JOIN public.person_location_preferences plp
+		       ON plp.person_id = t.id AND plp.delivery_location_id = c.delivery_location_id
+		ORDER BY plp.preference_rank NULLS LAST, p.family_name, p.first_given_name
+	`, classID)
+	if e != nil {
+		err = e
+		return
+	}
+	teacherIdx := map[int64]int{}
+	for tRows.Next() {
+		var r TeacherSuggestionRow
+		if e2 := tRows.Scan(&r.ID, &r.Name, &r.PreferenceRank); e2 == nil {
+			r.CoveredUnits = []TeacherSuggestionCoveredUnit{} // ensure JSON array, never null
+			teacherIdx[r.ID] = len(teachers)
+			teachers = append(teachers, r)
+		}
+	}
+	tRows.Close()
+
+	if len(unitCodes) == 0 || len(teachers) == 0 {
+		return
+	}
+
+	// 4. VCC unit coverage — latest approved/submitted VCC per teacher, filtered to class units
+	vRows, e := s.pool.Query(ctx, `
+		SELECT DISTINCT ON (tv.teacher_id, tvu.unit_code)
+		       tv.teacher_id,
+		       tvu.unit_code,
+		       tvu.competency_method,
+		       COALESCE(tvu.enthusiasm_rating, 0),
+		       COALESCE(tvu.confidence_rating, 0)
+		FROM (
+		    SELECT DISTINCT ON (teacher_id) id, teacher_id
+		    FROM public.teacher_vccs
+		    WHERE status IN ('Approved', 'Submitted')
+		    ORDER BY teacher_id, calendar_year DESC, id DESC
+		) tv
+		JOIN public.teacher_vcc_units tvu ON tvu.vcc_id = tv.id
+		WHERE tvu.unit_code = ANY($1)
+		ORDER BY tv.teacher_id, tvu.unit_code,
+		         tvu.enthusiasm_rating DESC NULLS LAST
+	`, unitCodes)
+	if e != nil {
+		err = e
+		return
+	}
+	for vRows.Next() {
+		var teacherID int64
+		var u TeacherSuggestionCoveredUnit
+		if e2 := vRows.Scan(&teacherID, &u.Code, &u.CompetencyMethod, &u.Enthusiasm, &u.Confidence); e2 == nil {
+			if idx, ok := teacherIdx[teacherID]; ok {
+				teachers[idx].CoveredUnits = append(teachers[idx].CoveredUnits, u)
+			}
+		}
+	}
+	vRows.Close()
+	return
+}
+
 func (s *Store) DeleteSessionsForClass(ctx context.Context, classID int64) (int64, error) {
 	tag, err := s.pool.Exec(ctx,
 		`DELETE FROM public.class_sessions WHERE class_id = $1`, classID)

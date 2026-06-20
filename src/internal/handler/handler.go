@@ -2480,6 +2480,27 @@ func (h *Handler) AdminSessionDelete(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
+func (h *Handler) AdminSessionTeacherSuggestions(w http.ResponseWriter, r *http.Request) {
+	classID := parseInt64(r.URL.Query().Get("class_id"))
+	if classID == 0 {
+		jsonError(w, "class_id required")
+		return
+	}
+	classCode, location, units, teachers, err := h.store.TeacherSuggestionsForClass(r.Context(), classID)
+	if err != nil {
+		log.Printf("TeacherSuggestionsForClass(%d): %v", classID, err)
+		jsonError(w, "database error")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"class_code": classCode,
+		"location":   location,
+		"units":      units,
+		"teachers":   teachers,
+	})
+}
+
 func (h *Handler) AdminSessionsDeleteAll(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		jsonError(w, "bad request")

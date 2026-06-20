@@ -96,10 +96,11 @@
         <option value="">— Class —</option>
         {{range .ViewClasses}}<option value="{{.ID}}">{{.ClassCode}}</option>{{end}}
       </select>
-      <select id="cf-teacher-sel"  class="cf-select"><option value="">— Teacher —</option></select>
       <select id="cf-location-sel" class="cf-select"><option value="">— Location —</option></select>
       <select id="cf-building-sel" class="cf-select"><option value="">— Building —</option></select>
       <select id="cf-room-sel"     class="cf-select"><option value="">— Room —</option></select>
+      <select id="cf-teacher-sel"  class="cf-select"><option value="">— Teacher —</option></select>
+      <button id="btn-teacher-suggest" class="btn-sm" type="button" style="white-space:nowrap" disabled>Teacher Suggestions</button>
     </div>
     {{end}}
 
@@ -900,6 +901,145 @@
       window.ttUpdateRoom?.(rid);
       prefillNewRow();
     });
+  })();
+
+  /* ── Teacher Suggestions ─────────────────────────────────────────────── */
+  (function () {
+    const btn      = document.getElementById('btn-teacher-suggest');
+    const classSel = document.getElementById('cf-class-sel');
+    const teachSel = document.getElementById('cf-teacher-sel');
+    if (!btn) return;
+
+    // Enable button only when a class is selected
+    classSel?.addEventListener('change', () => {
+      btn.disabled = !classSel.value;
+    });
+    btn.disabled = !classSel?.value;
+
+    btn.addEventListener('click', async () => {
+      const classID = classSel?.value;
+      if (!classID) return;
+      btn.disabled = true;
+      btn.textContent = 'Loading…';
+      try {
+        const res  = await fetch(`/admin/sessions/teacher-suggestions?class_id=${classID}`);
+        const data = await res.json();
+        showSuggestDialog(data);
+      } catch {
+        showToast('Could not load teacher suggestions.', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Teacher Suggestions';
+      }
+    });
+
+    function rankLabel(r) {
+      if (!r) return '—';
+      const sfx = ['th','st','nd','rd'];
+      const mod = r % 100;
+      return r + (sfx[(mod - 20) % 10] || sfx[mod] || sfx[0]) + ' choice';
+    }
+
+    function methodBadge(method) {
+      if (!method) return '';
+      if (method.includes('current unit'))     return '<span class="ts-badge ts-badge-current">Current</span>';
+      if (method.includes('superseded'))       return '<span class="ts-badge ts-badge-super">Superseded</span>';
+      if (method.includes('work experience'))  return '<span class="ts-badge ts-badge-exp">Experience</span>';
+      return '<span class="ts-badge">' + method.slice(0,12) + '…</span>';
+    }
+
+    function showSuggestDialog(data) {
+      const units    = data.units    || [];
+      const teachers = data.teachers || [];
+      const perUnit  = units.length <= 6;
+
+      // Build header
+      let thUnits = '';
+      if (perUnit) {
+        thUnits = units.map(u => `<th title="${u.name}">${u.code}</th>`).join('');
+      } else {
+        thUnits = '<th>Units covered</th>';
+      }
+
+      // Build rows — sorted: covered desc, rank asc, name asc
+      const sorted = [...teachers].sort((a, b) => {
+        const ca = a.covered.length, cb = b.covered.length;
+        if (ca !== cb) return cb - ca;
+        const ra = a.rank || 999, rb = b.rank || 999;
+        if (ra !== rb) return ra - rb;
+        return a.name.localeCompare(b.name);
+      });
+
+      const rows = sorted.map(t => {
+        const covSet = {};
+        (t.covered || []).forEach(u => { covSet[u.code] = u; });
+
+        let unitCells = '';
+        if (perUnit) {
+          unitCells = units.map(u => {
+            const cu = covSet[u.code];
+            if (!cu) return '<td class="ts-cell-no">✗</td>';
+            return `<td class="ts-cell-yes" title="${cu.method}">${methodBadge(cu.method)}</td>`;
+          }).join('');
+        } else {
+          const n = t.covered.length;
+          const pct = units.length ? Math.round(n / units.length * 100) : 0;
+          unitCells = `<td><span class="ts-coverage">${n}/${units.length}</span> <span class="ts-bar"><span class="ts-bar-fill" style="width:${pct}%"></span></span></td>`;
+        }
+
+        return `<tr class="ts-row" data-id="${t.id}" data-name="${t.name}">
+          <td class="ts-name">${t.name}</td>
+          <td class="ts-rank">${rankLabel(t.rank)}</td>
+          ${unitCells}
+          <td><button class="btn-primary btn-sm ts-select-btn" type="button">Select</button></td>
+        </tr>`;
+      }).join('');
+
+      const dlg = document.createElement('dialog');
+      dlg.className = 'ts-dialog';
+      dlg.innerHTML = `
+        <div class="ts-header">
+          <div>
+            <strong class="ts-title">Teacher Suggestions — ${data.class_code}</strong>
+            <span class="ts-sub">${data.location || ''}</span>
+          </div>
+          <button class="ts-close" type="button" aria-label="Close">✕</button>
+        </div>
+        <div class="ts-table-wrap">
+          <table class="ts-table">
+            <thead><tr>
+              <th>Teacher</th>
+              <th>Campus preference</th>
+              ${thUnits}
+              <th></th>
+            </tr></thead>
+            <tbody>${rows || '<tr><td colspan="10" style="text-align:center;padding:20px;color:#888">No teachers found.</td></tr>'}</tbody>
+          </table>
+        </div>`;
+      document.body.appendChild(dlg);
+
+      dlg.querySelector('.ts-close').addEventListener('click', () => dlg.close());
+      dlg.addEventListener('close', () => dlg.remove());
+
+      dlg.querySelectorAll('.ts-select-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const row = btn.closest('.ts-row');
+          const id   = row.dataset.id;
+          const name = row.dataset.name;
+          // Add option if missing
+          if (!teachSel.querySelector(`option[value="${id}"]`)) {
+            const opt = document.createElement('option');
+            opt.value = id; opt.textContent = name;
+            teachSel.appendChild(opt);
+          }
+          teachSel.value = id;
+          teachSel.dispatchEvent(new Event('change'));
+          dlg.close();
+        });
+      });
+
+      dlg.showModal();
+    }
   })();
 })();
 </script>
