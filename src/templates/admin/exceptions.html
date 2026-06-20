@@ -204,11 +204,24 @@
         <tbody id="obs-tbody">
           {{range .Observances}}
           <tr class="sess-row obs-row" data-id="{{.ID}}">
-            <td>{{dateISO .HolidayDate}}</td>
-            <td>{{.HolidayName}}</td>
-            <td>{{if .StateCode}}{{.StateCode}}{{else}}All{{end}}</td>
-            <td style="text-align:center">{{if .IsSubstitute}}&#10003;{{end}}</td>
-            <td>{{if .RuleID}}Rule #{{.RuleID}}{{else}}Manual{{end}}</td>
+            <td><div class="date-wrap">
+              <input class="sess-input si-date" type="text" name="holiday_date"
+                     placeholder="DD/MM/YYYY" maxlength="10" value="{{dateDMY .HolidayDate}}">
+              <input type="date" class="date-native" tabindex="-1" value="{{dateISO .HolidayDate}}">
+            </div></td>
+            <td><input class="sess-input" type="text" name="holiday_name"
+                       value="{{.HolidayName}}" maxlength="100" placeholder="Holiday name"></td>
+            <td>
+              <select class="sess-input exc-state" name="state_code">
+                <option value=""{{if eq .StateCode ""}} selected{{end}}>All</option>
+                {{$sc := .StateCode}}
+                {{range $.States}}<option value="{{.}}"{{if eq . $sc}} selected{{end}}>{{.}}</option>{{end}}
+              </select>
+            </td>
+            <td style="text-align:center">
+              <input type="checkbox" name="is_substitute" value="1"{{if .IsSubstitute}} checked{{end}}>
+            </td>
+            <td class="sess-static">{{if .RuleID}}Rule #{{.RuleID}}{{else}}Manual{{end}}</td>
             <td class="sess-actions">
               <span class="sess-status"></span>
               <button class="btn-danger-sm obs-delete" type="button" title="Delete">&#10005;</button>
@@ -221,29 +234,6 @@
 
     <div class="sess-add-bar">
       <button class="btn-primary btn-sm" id="btn-add-obs" type="button">+ Add Observance</button>
-    </div>
-
-    {{/* Add observance form (hidden by default) */}}
-    <div id="obs-add-form" style="display:none;margin-top:1rem;padding:1rem;border:1px solid #ddd;border-radius:4px;max-width:500px">
-      <h3 style="margin:0 0 .75rem">Add Observance</h3>
-      <div style="display:grid;gap:.5rem">
-        <label>Date <input class="sess-input" type="date" id="obs-date"></label>
-        <label>Name <input class="sess-input" type="text" id="obs-name" placeholder="Holiday name" maxlength="100"></label>
-        <label>State
-          <select class="sess-input" id="obs-state">
-            <option value="">All</option>
-            {{range .States}}
-            <option value="{{.}}">{{.}}</option>
-            {{end}}
-          </select>
-        </label>
-        <label><input type="checkbox" id="obs-substitute"> Substitute day</label>
-        <div style="display:flex;gap:.5rem;margin-top:.5rem">
-          <button class="btn-primary btn-sm" id="obs-save-btn" type="button">Save</button>
-          <button class="btn-secondary btn-sm" id="obs-cancel-btn" type="button">Cancel</button>
-          <span id="obs-form-status"></span>
-        </div>
-      </div>
     </div>
 
   </main>
@@ -492,11 +482,68 @@
     }
   });
 
-  // ── Delete observance ──────────────────────────────────────────────────────────
+  // ── Observance rows ────────────────────────────────────────────────────────────
+
+  function dmyToIso(dmy) {
+    const m = dmy.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+  }
+  function isoToDmy(iso) {
+    const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
+  }
+
+  function obsCollect(tr) {
+    const dateText = tr.querySelector('[name=holiday_date]');
+    const iso = dmyToIso(dateText?.value || '');
+    return {
+      holiday_date:  iso,
+      holiday_name:  tr.querySelector('[name=holiday_name]')?.value.trim() || '',
+      state_code:    tr.querySelector('[name=state_code]')?.value || '',
+      is_substitute: tr.querySelector('[name=is_substitute]')?.checked ? '1' : '0',
+    };
+  }
+
+  async function saveObsRow(tr) {
+    const id = tr.dataset.id;
+    const f  = obsCollect(tr);
+    if (!f.holiday_date || !f.holiday_name) return;
+    setStatus(tr, 'saving');
+    const url  = id === 'new' ? '/admin/exceptions/observances/new' : `/admin/exceptions/observances/${id}`;
+    try {
+      const res  = await fetch(url, { method: 'POST', body: new URLSearchParams(f) });
+      const json = await res.json();
+      if (!json.ok) { setStatus(tr, 'error'); return; }
+      if (id === 'new') { location.reload(); return; }
+      setStatus(tr, 'saved');
+    } catch { setStatus(tr, 'error'); }
+  }
+
+  function wireDatePicker(tr) {
+    const dateText   = tr.querySelector('[name=holiday_date]');
+    const dateNative = dateText?.closest('.date-wrap')?.querySelector('.date-native');
+    if (!dateText || !dateNative) return;
+    dateText.addEventListener('click', () => {
+      const iso = dmyToIso(dateText.value);
+      if (iso) dateNative.value = iso;
+      try { dateNative.showPicker(); } catch {}
+    });
+    dateText.addEventListener('blur', () => saveObsRow(tr));
+    dateNative.addEventListener('change', () => {
+      if (!dateNative.value) return;
+      dateText.value = isoToDmy(dateNative.value);
+      saveObsRow(tr);
+    });
+  }
 
   function attachObsListeners(tr) {
+    wireDatePicker(tr);
+    tr.querySelector('[name=holiday_name]')?.addEventListener('blur',   () => saveObsRow(tr));
+    tr.querySelector('[name=state_code]')?.addEventListener('change',   () => saveObsRow(tr));
+    tr.querySelector('[name=is_substitute]')?.addEventListener('change',() => saveObsRow(tr));
     tr.querySelector('.obs-delete')?.addEventListener('click', async () => {
       const id = tr.dataset.id;
+      if (id === 'new') { tr.remove(); return; }
       if (!confirm('Delete this observance?')) return;
       setStatus(tr, 'saving');
       try {
@@ -510,45 +557,35 @@
 
   document.querySelectorAll('#obs-tbody .obs-row').forEach(attachObsListeners);
 
-  // ── Add observance form ────────────────────────────────────────────────────────
-
-  const obsForm = document.getElementById('obs-add-form');
+  // ── Add observance inline row ──────────────────────────────────────────────────
 
   document.getElementById('btn-add-obs')?.addEventListener('click', () => {
-    obsForm.style.display = '';
-    document.getElementById('obs-date').focus();
-  });
-
-  document.getElementById('obs-cancel-btn')?.addEventListener('click', () => {
-    obsForm.style.display = 'none';
-  });
-
-  document.getElementById('obs-save-btn')?.addEventListener('click', async () => {
-    const dateVal = document.getElementById('obs-date').value;
-    const nameVal = document.getElementById('obs-name').value.trim();
-    if (!dateVal || !nameVal) {
-      alert('Date and name are required.');
-      return;
-    }
-    const statusEl = document.getElementById('obs-form-status');
-    statusEl.textContent = '…';
-    const body = new URLSearchParams({
-      holiday_date:  dateVal,
-      holiday_name:  nameVal,
-      state_code:    document.getElementById('obs-state').value,
-      is_substitute: document.getElementById('obs-substitute').checked ? '1' : '0',
-    });
-    try {
-      const res  = await fetch('/admin/exceptions/observances/new', { method: 'POST', body });
-      const json = await res.json();
-      if (json.ok) {
-        location.reload();
-      } else {
-        statusEl.textContent = '! ' + (json.error || 'error');
-      }
-    } catch {
-      statusEl.textContent = '! network error';
-    }
+    const tbody = document.getElementById('obs-tbody');
+    tbody.querySelector('.obs-new')?.remove();
+    const tr = document.createElement('tr');
+    tr.className = 'sess-row obs-row obs-new';
+    tr.dataset.id = 'new';
+    tr.innerHTML = `
+      <td><div class="date-wrap">
+        <input class="sess-input si-date" type="text" name="holiday_date"
+               placeholder="DD/MM/YYYY" maxlength="10">
+        <input type="date" class="date-native" tabindex="-1">
+      </div></td>
+      <td><input class="sess-input" type="text" name="holiday_name" maxlength="100" placeholder="Holiday name"></td>
+      <td>
+        <select class="sess-input exc-state" name="state_code">
+          ${stateOptions('')}
+        </select>
+      </td>
+      <td style="text-align:center"><input type="checkbox" name="is_substitute" value="1"></td>
+      <td class="sess-static">Manual</td>
+      <td class="sess-actions">
+        <span class="sess-status"></span>
+        <button class="btn-danger-sm obs-delete" type="button" title="Remove">&#10005;</button>
+      </td>`;
+    tbody.appendChild(tr);
+    attachObsListeners(tr);
+    tr.querySelector('[name=holiday_date]').focus();
   });
 
 })();

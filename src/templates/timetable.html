@@ -78,6 +78,7 @@
         <div class="tt-day-header">
           <span class="tt-day-name">{{.DayName}}</span>
           <span class="tt-day-date">{{.DayLabel}}</span>
+          {{range .HolidayNames}}<span class="tt-holiday-tag">{{.}}</span>{{end}}
         </div>
         <div class="tt-day-body">
           {{if not .Sessions}}
@@ -171,6 +172,7 @@
         {{range .}}
         <div class="tt-month-cell{{if not .IsThisMonth}} tt-cell-other{{end}}{{if .IsToday}} tt-cell-today{{end}}">
           <div class="tt-cell-num">{{.DayNum}}</div>
+          {{range .HolidayNames}}<div class="tt-chip tt-chip-holiday">{{.}}</div>{{end}}
           <div class="tt-cell-sessions">
             {{range $i, $s := .Sessions}}
               {{if lt $i 3}}

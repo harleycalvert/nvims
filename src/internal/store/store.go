@@ -1818,6 +1818,11 @@ func (s *Store) TimetableRange(ctx context.Context, start, end time.Time, f Time
 		%s
 		WHERE cs.session_date >= $1 AND cs.session_date < $2
 		  AND NOT cs.cancelled
+		  AND NOT EXISTS (
+		      SELECT 1 FROM public.holiday_observances ho
+		      WHERE ho.holiday_date = cs.session_date
+		        AND (ho.state_code IS NULL OR ho.state_code = dl.state_code)
+		  )
 		  %s
 		GROUP BY cs.id, c.id, c.class_code,
 		         cs.session_date, cs.start_time, cs.end_time, cs.session_type, dl.name,
@@ -2541,6 +2546,75 @@ func (s *Store) DeleteSession(ctx context.Context, id int64) error {
 	return err
 }
 
+// RepeatSessionWeekly copies sessionID forward by one week at a time until periodEnd
+// (YYYY-MM-DD). It copies all fields including room/building and teacher assignments.
+// Teacher conflicts are silently skipped. Returns count of newly-created sessions.
+func (s *Store) RepeatSessionWeekly(ctx context.Context, sessionID int64, periodEnd string) (int, error) {
+	var classID, roomID, buildingID int64
+	var sessionDate, startTime, endTime time.Time
+	var sessionType, notes string
+
+	err := s.pool.QueryRow(ctx, `
+		SELECT class_id, session_date, start_time, end_time,
+		       session_type, COALESCE(notes,''),
+		       COALESCE(room_id,0), COALESCE(building_id,0)
+		FROM public.class_sessions WHERE id = $1
+	`, sessionID).Scan(&classID, &sessionDate, &startTime, &endTime,
+		&sessionType, &notes, &roomID, &buildingID)
+	if err != nil {
+		return 0, err
+	}
+
+	tRows, err := s.pool.Query(ctx, `SELECT teacher_id FROM public.session_teachers WHERE session_id = $1`, sessionID)
+	if err != nil {
+		return 0, err
+	}
+	var teacherIDs []int64
+	for tRows.Next() {
+		var tid int64
+		_ = tRows.Scan(&tid)
+		teacherIDs = append(teacherIDs, tid)
+	}
+	tRows.Close()
+
+	endDate, err := time.Parse("2006-01-02", periodEnd)
+	if err != nil || !endDate.After(sessionDate) {
+		return 0, nil
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+
+	inserted := 0
+	for d := sessionDate.AddDate(0, 0, 7); !d.After(endDate); d = d.AddDate(0, 0, 7) {
+		var newID int64
+		scanErr := tx.QueryRow(ctx, `
+			INSERT INTO public.class_sessions
+			    (class_id, session_date, start_time, end_time, session_type,
+			     notes, room_id, building_id)
+			VALUES ($1, $2, $3, $4, $5, NULLIF($6,''), NULLIF($7,0), NULLIF($8,0))
+			ON CONFLICT (class_id, session_date, start_time) DO NOTHING
+			RETURNING id
+		`, classID, d, startTime, endTime, sessionType, notes, roomID, buildingID).Scan(&newID)
+		if scanErr != nil || newID == 0 {
+			continue
+		}
+		inserted++
+		for _, tid := range teacherIDs {
+			// teacher conflicts are silently ignored in bulk repeat
+			_, _ = tx.Exec(ctx, `
+				INSERT INTO public.session_teachers (session_id, teacher_id)
+				VALUES ($1, $2)
+			`, newID, tid)
+		}
+	}
+
+	return inserted, tx.Commit(ctx)
+}
+
 func (s *Store) ScheduleForTeacher(ctx context.Context, teacherID int64, from, to string) ([]ScheduleSession, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT cs.session_date, cs.start_time, cs.end_time, c.class_code,
@@ -2571,6 +2645,11 @@ func (s *Store) ScheduleForTeacher(ctx context.Context, teacherID int64, from, t
 		  AND cs.session_date >= $2::date
 		  AND cs.session_date <= $3::date
 		  AND NOT cs.cancelled
+		  AND NOT EXISTS (
+		      SELECT 1 FROM public.holiday_observances ho
+		      WHERE ho.holiday_date = cs.session_date
+		        AND (ho.state_code IS NULL OR ho.state_code = dl.state_code)
+		  )
 		ORDER BY cs.session_date, cs.start_time
 	`, teacherID, from, to)
 	if err != nil {
@@ -2619,6 +2698,11 @@ func (s *Store) ScheduleForIntakeGroup(ctx context.Context, groupID int64, from,
 		  AND cs.session_date >= $2::date
 		  AND cs.session_date <= $3::date
 		  AND NOT cs.cancelled
+		  AND NOT EXISTS (
+		      SELECT 1 FROM public.holiday_observances ho
+		      WHERE ho.holiday_date = cs.session_date
+		        AND (ho.state_code IS NULL OR ho.state_code = dl.state_code)
+		  )
 		ORDER BY cs.session_date, cs.start_time
 	`, groupID, from, to)
 	if err != nil {
@@ -2667,6 +2751,11 @@ func (s *Store) WeekSessionsForRoom(ctx context.Context, roomID int64, from, to 
 		  AND cs.session_date >= $2::date
 		  AND cs.session_date <= $3::date
 		  AND NOT cs.cancelled
+		  AND NOT EXISTS (
+		      SELECT 1 FROM public.holiday_observances ho
+		      WHERE ho.holiday_date = cs.session_date
+		        AND (ho.state_code IS NULL OR ho.state_code = dl.state_code)
+		  )
 		ORDER BY cs.session_date, cs.start_time
 	`, roomID, from, to)
 	if err != nil {
@@ -5540,6 +5629,29 @@ func (s *Store) DeleteHolidayRule(ctx context.Context, id int64) error {
 	return err
 }
 
+// HolidayNamesForRange returns a map of ISO date → holiday names for dates in [from, to].
+func (s *Store) HolidayNamesForRange(ctx context.Context, from, to string) (map[string][]string, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT TO_CHAR(holiday_date, 'YYYY-MM-DD'), holiday_name
+		FROM public.holiday_observances
+		WHERE holiday_date >= $1::date AND holiday_date <= $2::date
+		ORDER BY holiday_date, holiday_name
+	`, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string][]string)
+	for rows.Next() {
+		var iso, name string
+		if err := rows.Scan(&iso, &name); err != nil {
+			return nil, err
+		}
+		out[iso] = append(out[iso], name)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) ListHolidayObservances(ctx context.Context, year int) ([]HolidayObservanceRow, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, holiday_date, holiday_name, COALESCE(state_code,''),
@@ -5571,8 +5683,20 @@ func (s *Store) CreateHolidayObservance(ctx context.Context, date time.Time, nam
 		INSERT INTO public.holiday_observances
 		    (holiday_date, holiday_name, state_code, rule_id, is_substitute)
 		VALUES ($1, $2, NULLIF($3,''), NULLIF($4,0), $5)
-		ON CONFLICT ON CONSTRAINT uq_observance DO NOTHING
+		ON CONFLICT (holiday_date, COALESCE(state_code, '*'), holiday_name) DO NOTHING
 	`, date, name, stateCode, ruleID, isSubstitute)
+	return err
+}
+
+func (s *Store) UpdateHolidayObservance(ctx context.Context, id int64, date time.Time, name, stateCode string, isSubstitute bool) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE public.holiday_observances
+		SET holiday_date  = $2,
+		    holiday_name  = $3,
+		    state_code    = NULLIF($4,''),
+		    is_substitute = $5
+		WHERE id = $1
+	`, id, date, name, stateCode, isSubstitute)
 	return err
 }
 

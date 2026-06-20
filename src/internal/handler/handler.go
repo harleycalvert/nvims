@@ -521,12 +521,16 @@ func (h *Handler) Timetable(w http.ResponseWriter, r *http.Request) {
 			byDay[k] = append(byDay[k], s)
 		}
 
+		holidays, _ := h.store.HolidayNamesForRange(r.Context(),
+			gridStart.Format("2006-01-02"), gridEnd.Format("2006-01-02"))
+
 		type monthCell struct {
-			ISO         string
-			DayNum      int
-			IsThisMonth bool
-			IsToday     bool
-			Sessions    []store.TimetableSession
+			ISO          string
+			DayNum       int
+			IsThisMonth  bool
+			IsToday      bool
+			Sessions     []store.TimetableSession
+			HolidayNames []string
 		}
 		var monthGrid [][]monthCell
 		for d := gridStart; d.Before(gridEnd); d = d.AddDate(0, 0, 7) {
@@ -535,11 +539,12 @@ func (h *Handler) Timetable(w http.ResponseWriter, r *http.Request) {
 				day := d.AddDate(0, 0, i)
 				iso := day.Format("2006-01-02")
 				row = append(row, monthCell{
-					ISO:         iso,
-					DayNum:      day.Day(),
-					IsThisMonth: day.Month() == monthStart.Month(),
-					IsToday:     iso == todayISO,
-					Sessions:    byDay[iso],
+					ISO:          iso,
+					DayNum:       day.Day(),
+					IsThisMonth:  day.Month() == monthStart.Month(),
+					IsToday:      iso == todayISO,
+					Sessions:     byDay[iso],
+					HolidayNames: holidays[iso],
 				})
 			}
 			monthGrid = append(monthGrid, row)
@@ -568,13 +573,17 @@ func (h *Handler) Timetable(w http.ResponseWriter, r *http.Request) {
 			byDay[k] = append(byDay[k], s)
 		}
 
+		weekHolidays, _ := h.store.HolidayNamesForRange(r.Context(),
+			weekStart.Format("2006-01-02"), weekStart.AddDate(0, 0, 6).Format("2006-01-02"))
+
 		type ttDay struct {
-			ISO       string
-			DayName   string
-			DayLabel  string
-			IsToday   bool
-			IsWeekend bool
-			Sessions  []store.TimetableSession
+			ISO          string
+			DayName      string
+			DayLabel     string
+			IsToday      bool
+			IsWeekend    bool
+			Sessions     []store.TimetableSession
+			HolidayNames []string
 		}
 		allDays := make([]ttDay, 7)
 		for i := 0; i < 7; i++ {
@@ -582,12 +591,13 @@ func (h *Handler) Timetable(w http.ResponseWriter, r *http.Request) {
 			wd := d.Weekday()
 			iso := d.Format("2006-01-02")
 			allDays[i] = ttDay{
-				ISO:       iso,
-				DayName:   d.Format("Monday"),
-				DayLabel:  d.Format("2 Jan"),
-				IsToday:   iso == todayISO,
-				IsWeekend: wd == time.Saturday || wd == time.Sunday,
-				Sessions:  byDay[iso],
+				ISO:          iso,
+				DayName:      d.Format("Monday"),
+				DayLabel:     d.Format("2 Jan"),
+				IsToday:      iso == todayISO,
+				IsWeekend:    wd == time.Saturday || wd == time.Sunday,
+				Sessions:     byDay[iso],
+				HolidayNames: weekHolidays[iso],
 			}
 		}
 		displayDays := allDays[:]
@@ -2383,6 +2393,23 @@ func (h *Handler) AdminSessionsWeekData(w http.ResponseWriter, r *http.Request) 
 	_ = json.NewEncoder(w).Encode(out)
 }
 
+func (h *Handler) AdminSessionsHolidays(w http.ResponseWriter, r *http.Request) {
+	from := r.URL.Query().Get("from")
+	to   := r.URL.Query().Get("to")
+	w.Header().Set("Content-Type", "application/json")
+	if from == "" || to == "" {
+		w.Write([]byte("{}"))
+		return
+	}
+	m, err := h.store.HolidayNamesForRange(r.Context(), from, to)
+	if err != nil {
+		log.Printf("HolidayNamesForRange: %v", err)
+		w.Write([]byte("{}"))
+		return
+	}
+	_ = json.NewEncoder(w).Encode(m)
+}
+
 // checkSessionTimes returns an error if start/end are not valid HH:MM or end <= start.
 func checkSessionTimes(startTime, endTime string) error {
 	layout := "15:04"
@@ -2451,6 +2478,33 @@ func (h *Handler) AdminSessionDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminSessionRepeat(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id == 0 {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	periodEnd := r.FormValue("period_end")
+	if periodEnd == "" {
+		http.Error(w, `{"error":"missing period_end"}`, http.StatusBadRequest)
+		return
+	}
+	n, err := h.store.RepeatSessionWeekly(r.Context(), id, periodEnd)
+	if err != nil {
+		log.Printf("RepeatSessionWeekly(%d): %v", id, err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"repeat failed"}`))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"created":%d}`, n)
 }
 
 func (h *Handler) AdminSessionSchedule(w http.ResponseWriter, r *http.Request) {
@@ -6129,6 +6183,38 @@ func (h *Handler) AdminExceptionObservanceCreate(w http.ResponseWriter, r *http.
 	}
 	if err := h.store.CreateHolidayObservance(r.Context(), d, name, stateCode, ruleID, isSubstitute); err != nil {
 		log.Printf("CreateHolidayObservance: %v", err)
+		jsonError(w, "database error")
+		return
+	}
+	jsonOK(w)
+}
+
+func (h *Handler) AdminExceptionObservanceUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id == 0 {
+		jsonError(w, "bad id")
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		jsonError(w, "bad request")
+		return
+	}
+	dateStr := strings.TrimSpace(r.FormValue("holiday_date"))
+	name := strings.TrimSpace(r.FormValue("holiday_name"))
+	stateCode := strings.TrimSpace(r.FormValue("state_code"))
+	isSubstitute := r.FormValue("is_substitute") == "1" || r.FormValue("is_substitute") == "on"
+
+	if dateStr == "" || name == "" {
+		jsonError(w, "holiday_date and holiday_name are required")
+		return
+	}
+	d, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		jsonError(w, "invalid date format")
+		return
+	}
+	if err := h.store.UpdateHolidayObservance(r.Context(), id, d, name, stateCode, isSubstitute); err != nil {
+		log.Printf("UpdateHolidayObservance(%d): %v", id, err)
 		jsonError(w, "database error")
 		return
 	}

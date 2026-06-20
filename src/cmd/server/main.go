@@ -241,11 +241,13 @@ func main() {
 	// ── Admin — sessions & classes ───────────────────────────────────────────
 	mux.HandleFunc("GET /admin/sessions",                              P("sessions:view",   h.AdminSessions))
 	mux.HandleFunc("GET /admin/sessions/week-data",                    P("sessions:view",   h.AdminSessionsWeekData))
+	mux.HandleFunc("GET /admin/sessions/holidays",                     P("sessions:view",   h.AdminSessionsHolidays))
 	mux.HandleFunc("GET /admin/sessions/schedule",                     P("sessions:view",   h.AdminSessionSchedule))
 	mux.HandleFunc("POST /admin/sessions/new",                         P("sessions:manage", h.AdminSessionCreate))
 	mux.HandleFunc("POST /admin/sessions/generate",                    P("sessions:manage", h.AdminSessionsGenerate))
 	mux.HandleFunc("POST /admin/sessions/{id}",                        P("sessions:manage", h.AdminSessionUpdate))
 	mux.HandleFunc("POST /admin/sessions/{id}/delete",                 P("sessions:manage", h.AdminSessionDelete))
+	mux.HandleFunc("POST /admin/sessions/{id}/repeat",                 P("sessions:manage", h.AdminSessionRepeat))
 	mux.HandleFunc("GET /admin/classes",                               P("sessions:view",   h.AdminClasses))
 	mux.HandleFunc("POST /admin/classes/new",                          P("sessions:manage", h.AdminClassCreate))
 	mux.HandleFunc("POST /admin/classes/{id}",                         P("sessions:manage", h.AdminClassUpdate))
@@ -260,6 +262,7 @@ func main() {
 	mux.HandleFunc("POST /admin/exceptions/rules/{id}",                P("sessions:manage", h.AdminExceptionRuleUpdate))
 	mux.HandleFunc("POST /admin/exceptions/rules/{id}/delete",         P("sessions:manage", h.AdminExceptionRuleDelete))
 	mux.HandleFunc("POST /admin/exceptions/observances/new",           P("sessions:manage", h.AdminExceptionObservanceCreate))
+	mux.HandleFunc("POST /admin/exceptions/observances/{id}",          P("sessions:manage", h.AdminExceptionObservanceUpdate))
 	mux.HandleFunc("POST /admin/exceptions/observances/{id}/delete",   P("sessions:manage", h.AdminExceptionObservanceDelete))
 	mux.HandleFunc("POST /admin/exceptions/generate",                  P("sessions:manage", h.AdminExceptionGenerate))
 

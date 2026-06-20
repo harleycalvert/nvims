@@ -172,6 +172,33 @@
 .tt-day-date { font-size: 13px; font-weight: 600; color: #222; }
 .tt-day-today .tt-day-date { color: #fff; }
 
+.tt-holiday-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #fff3cd;
+  color: #856404;
+  border: 1px solid #f5c842;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.tt-day-today .tt-holiday-tag {
+  background: rgba(255,243,205,0.25);
+  color: #ffe082;
+  border-color: rgba(245,200,66,0.4);
+}
+
+.tt-chip-holiday {
+  background: #fff3cd;
+  border-left: 3px solid #f5c842;
+  color: #856404;
+  font-weight: 600;
+}
+
 .tt-day-body {
   padding: 6px;
   display: flex;

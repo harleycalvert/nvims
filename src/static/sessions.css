@@ -210,6 +210,19 @@
 
 .btn-danger-sm:hover { background: #fde8e8; }
 
+.sess-repeat {
+  padding: 2px 7px;
+  background: #fff;
+  color: #1a4480;
+  border: 1px solid #b0c4e8;
+  border-radius: 3px;
+  font-size: 13px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+.sess-repeat:hover { background: #f0f4fb; }
+.sess-repeat:disabled { opacity: .5; cursor: default; }
+
 .muted { color: #bbb; }
 .hidden { display: none !important; }
 
@@ -449,4 +462,14 @@
   background: #fef2f2;
   border: 1px solid #fca5a5;
   color: #991b1b;
+}
+.sess-toast-warn {
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+}
+.sess-toast-info {
+  background: #eff6ff;
+  border: 1px solid #93c5fd;
+  color: #1e40af;
 }
