@@ -50,9 +50,9 @@
 .student-picker { position: relative; min-width: 14rem; }
 .student-picker input[type=text] { width: 100%; box-sizing: border-box; }
 .student-results {
-  position: absolute; top: 100%; left: 0; right: 0; z-index: 100;
-  background: #fff; border: 1px solid #c0c8d8; border-top: none;
-  border-radius: 0 0 4px 4px; max-height: 220px; overflow-y: auto;
+  position: fixed; z-index: 9999;
+  background: #fff; border: 1px solid #c0c8d8;
+  border-radius: 4px; max-height: 220px; overflow-y: auto;
   box-shadow: 0 4px 12px rgba(0,0,0,.12);
 }
 .student-result {

@@ -1701,6 +1701,10 @@ type ScheduleSession struct {
 	ClassCode    string
 	SubjectCodes string
 	SessionType  string
+	LocationName string
+	BuildingName string
+	RoomName     string
+	TeacherNames string
 }
 
 type ScheduledSessionRow struct {
@@ -1749,6 +1753,7 @@ type TimetableSession struct {
 	GroupInfo    string
 	SubjectCodes string
 	BuildingName string
+	RoomName     string
 	BuildingLat  string
 	BuildingLng  string
 }
@@ -1796,6 +1801,7 @@ func (s *Store) TimetableRange(ctx context.Context, start, end time.Time, f Time
 		        JOIN public.subjects subj ON subj.id = _cs3.subject_id
 		        WHERE _cs3.class_id = c.id),
 		       COALESCE(b.building_name,''),
+		       COALESCE(r.room_name,''),
 		       COALESCE(b.latitude::text,''),
 		       COALESCE(b.longitude::text,'')
 		FROM public.class_sessions cs
@@ -1816,7 +1822,7 @@ func (s *Store) TimetableRange(ctx context.Context, start, end time.Time, f Time
 		GROUP BY cs.id, c.id, c.class_code,
 		         cs.session_date, cs.start_time, cs.end_time, cs.session_type, dl.name,
 		         prog.program_code, ig.group_code, ig.group_name,
-		         b.building_name, b.latitude, b.longitude
+		         b.building_name, r.room_name, b.latitude, b.longitude
 		ORDER BY cs.session_date, cs.start_time, c.class_code
 	`, joinSQL, whereSQL)
 
@@ -1832,7 +1838,7 @@ func (s *Store) TimetableRange(ctx context.Context, start, end time.Time, f Time
 			&ts.SessionDate, &ts.StartTime, &ts.EndTime, &ts.SessionType,
 			&ts.LocationName, &ts.Teachers,
 			&ts.ProgramCode, &ts.GroupInfo, &ts.SubjectCodes,
-			&ts.BuildingName, &ts.BuildingLat, &ts.BuildingLng); err != nil {
+			&ts.BuildingName, &ts.RoomName, &ts.BuildingLat, &ts.BuildingLng); err != nil {
 			return nil, err
 		}
 		out = append(out, ts)
@@ -2544,10 +2550,23 @@ func (s *Store) ScheduleForTeacher(ctx context.Context, teacherID int64, from, t
 		           JOIN public.subjects subj ON subj.id = _cs.subject_id
 		           WHERE _cs.class_id = c.id
 		       ),''),
-		       cs.session_type
+		       cs.session_type,
+		       COALESCE(dl.name,''),
+		       COALESCE(b.building_name,''),
+		       COALESCE(r.room_name,''),
+		       COALESCE((
+		           SELECT string_agg(p.first_given_name || ' ' || p.family_name, ', '
+		                            ORDER BY p.family_name, p.first_given_name)
+		           FROM public.session_teachers _st
+		           JOIN public.people p ON p.id = _st.teacher_id
+		           WHERE _st.session_id = cs.id
+		       ),'')
 		FROM public.class_sessions cs
 		JOIN public.classes c ON c.id = cs.class_id
 		JOIN public.session_teachers st ON st.session_id = cs.id
+		LEFT JOIN public.delivery_locations dl ON dl.id = c.delivery_location_id
+		LEFT JOIN public.rooms r ON r.id = cs.room_id
+		LEFT JOIN public.buildings b ON b.id = COALESCE(cs.building_id, r.building_id)
 		WHERE st.teacher_id = $1
 		  AND cs.session_date >= $2::date
 		  AND cs.session_date <= $3::date
@@ -2562,7 +2581,8 @@ func (s *Store) ScheduleForTeacher(ctx context.Context, teacherID int64, from, t
 	for rows.Next() {
 		var r ScheduleSession
 		if err := rows.Scan(&r.SessionDate, &r.StartTime, &r.EndTime,
-			&r.ClassCode, &r.SubjectCodes, &r.SessionType); err != nil {
+			&r.ClassCode, &r.SubjectCodes, &r.SessionType,
+			&r.LocationName, &r.BuildingName, &r.RoomName, &r.TeacherNames); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -2579,9 +2599,22 @@ func (s *Store) ScheduleForIntakeGroup(ctx context.Context, groupID int64, from,
 		           JOIN public.subjects subj ON subj.id = _cs.subject_id
 		           WHERE _cs.class_id = c.id
 		       ),''),
-		       cs.session_type
+		       cs.session_type,
+		       COALESCE(dl.name,''),
+		       COALESCE(b.building_name,''),
+		       COALESCE(r.room_name,''),
+		       COALESCE((
+		           SELECT string_agg(p.first_given_name || ' ' || p.family_name, ', '
+		                            ORDER BY p.family_name, p.first_given_name)
+		           FROM public.session_teachers _st
+		           JOIN public.people p ON p.id = _st.teacher_id
+		           WHERE _st.session_id = cs.id
+		       ),'')
 		FROM public.class_sessions cs
 		JOIN public.classes c ON c.id = cs.class_id
+		LEFT JOIN public.delivery_locations dl ON dl.id = c.delivery_location_id
+		LEFT JOIN public.rooms r ON r.id = cs.room_id
+		LEFT JOIN public.buildings b ON b.id = COALESCE(cs.building_id, r.building_id)
 		WHERE c.intake_group_id = $1
 		  AND cs.session_date >= $2::date
 		  AND cs.session_date <= $3::date
@@ -2596,7 +2629,56 @@ func (s *Store) ScheduleForIntakeGroup(ctx context.Context, groupID int64, from,
 	for rows.Next() {
 		var r ScheduleSession
 		if err := rows.Scan(&r.SessionDate, &r.StartTime, &r.EndTime,
-			&r.ClassCode, &r.SubjectCodes, &r.SessionType); err != nil {
+			&r.ClassCode, &r.SubjectCodes, &r.SessionType,
+			&r.LocationName, &r.BuildingName, &r.RoomName, &r.TeacherNames); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) WeekSessionsForRoom(ctx context.Context, roomID int64, from, to string) ([]ScheduleSession, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT cs.session_date, cs.start_time, cs.end_time, c.class_code,
+		       COALESCE((
+		           SELECT string_agg(subj.subject_code, ' · ' ORDER BY subj.subject_code)
+		           FROM public.class_subjects _cs
+		           JOIN public.subjects subj ON subj.id = _cs.subject_id
+		           WHERE _cs.class_id = c.id
+		       ),''),
+		       cs.session_type,
+		       COALESCE(dl.name,''),
+		       COALESCE(b.building_name,''),
+		       COALESCE(r2.room_name,''),
+		       COALESCE((
+		           SELECT string_agg(p.first_given_name || ' ' || p.family_name, ', '
+		                            ORDER BY p.family_name, p.first_given_name)
+		           FROM public.session_teachers _st
+		           JOIN public.people p ON p.id = _st.teacher_id
+		           WHERE _st.session_id = cs.id
+		       ),'')
+		FROM public.class_sessions cs
+		JOIN public.classes c ON c.id = cs.class_id
+		LEFT JOIN public.delivery_locations dl ON dl.id = c.delivery_location_id
+		LEFT JOIN public.rooms r2 ON r2.id = cs.room_id
+		LEFT JOIN public.buildings b ON b.id = COALESCE(cs.building_id, r2.building_id)
+		WHERE cs.room_id = $1
+		  AND cs.session_date >= $2::date
+		  AND cs.session_date <= $3::date
+		  AND NOT cs.cancelled
+		ORDER BY cs.session_date, cs.start_time
+	`, roomID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ScheduleSession
+	for rows.Next() {
+		var r ScheduleSession
+		if err := rows.Scan(&r.SessionDate, &r.StartTime, &r.EndTime,
+			&r.ClassCode, &r.SubjectCodes, &r.SessionType,
+			&r.LocationName, &r.BuildingName, &r.RoomName, &r.TeacherNames); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

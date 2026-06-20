@@ -240,6 +240,7 @@ func main() {
 
 	// ── Admin — sessions & classes ───────────────────────────────────────────
 	mux.HandleFunc("GET /admin/sessions",                              P("sessions:view",   h.AdminSessions))
+	mux.HandleFunc("GET /admin/sessions/week-data",                    P("sessions:view",   h.AdminSessionsWeekData))
 	mux.HandleFunc("GET /admin/sessions/schedule",                     P("sessions:view",   h.AdminSessionSchedule))
 	mux.HandleFunc("POST /admin/sessions/new",                         P("sessions:manage", h.AdminSessionCreate))
 	mux.HandleFunc("POST /admin/sessions/generate",                    P("sessions:manage", h.AdminSessionsGenerate))

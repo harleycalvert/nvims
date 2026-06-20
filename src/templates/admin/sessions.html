@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/people.css">
   <link rel="stylesheet" href="/static/sessions.css">
+  <link rel="stylesheet" href="/static/timetable.css">
   <link rel="stylesheet" href="/static/sidebar.css">
   <link rel="stylesheet" href="/static/admin.css">
   <script>document.documentElement.dataset.sidebar=localStorage.getItem("nvims-sidebar")||"open";</script>
@@ -105,6 +106,17 @@
     </form>
     {{end}}
 
+    {{/* ── Conflict-check menus ── */}}
+    {{if and .EntityID .PeriodID}}
+    <div class="sess-cf-bar">
+      <span class="sess-cf-label">Conflict check:</span>
+      <select id="cf-teacher-sel"  class="cf-select"><option value="">— Teacher —</option></select>
+      <select id="cf-location-sel" class="cf-select"><option value="">— Location —</option></select>
+      <select id="cf-building-sel" class="cf-select"><option value="">— Building —</option></select>
+      <select id="cf-room-sel"     class="cf-select"><option value="">— Room —</option></select>
+    </div>
+    {{end}}
+
     {{/* ── Sessions table ── */}}
     {{if not .EntityID}}
       <p class="hint">Select a teacher or intake group and a period above.</p>
@@ -184,15 +196,53 @@
     </div>
     {{end}}
 
+    {{/* ── Inline week timetable ── */}}
+    <div id="sess-timetable" class="sess-tt-panel" style="display:none">
+      <div class="sess-tt-hdr">
+        <span class="sess-tt-title">Week view &mdash; <span id="sess-tt-week-label"></span></span>
+        <button id="sess-tt-wkdays" class="tt-ctrl-btn" type="button">Weekdays only</button>
+        <div class="sess-tt-nav">
+          <button id="sess-tt-prev" class="tt-nav-btn" type="button">&#8592;</button>
+          <button id="sess-tt-next" class="tt-nav-btn" type="button">&#8594;</button>
+        </div>
+      </div>
+      <div id="sess-tt-grid" class="tt-week tt-week-5"></div>
+      <div id="sess-tt-legend" class="sess-tt-legend" style="display:none">
+        <span class="sess-tt-legend-primary">{{if eq .View "teacher"}}Teacher schedule{{else}}Group schedule{{end}}</span>
+        <span id="sess-tt-legend-group" class="sess-tt-legend-group" style="display:none">Group bookings</span>
+        <span id="sess-tt-legend-teacher" class="sess-tt-legend-teacher" style="display:none">Teacher bookings</span>
+        <span id="sess-tt-legend-room" class="sess-tt-legend-room" style="display:none">Room bookings</span>
+      </div>
+    </div>
+
   </main>
 
 <script>
+/* ── Toast notification ── */
+(function() {
+  const container = document.createElement('div');
+  container.id = 'sess-toast-container';
+  document.body.appendChild(container);
+
+  window.showToast = function(msg, type) {
+    const el = document.createElement('div');
+    el.className = 'sess-toast sess-toast-' + (type || 'info');
+    el.textContent = msg;
+    container.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('sess-toast-visible'));
+    setTimeout(() => {
+      el.classList.remove('sess-toast-visible');
+      el.addEventListener('transitionend', () => el.remove());
+    }, 5000);
+  };
+})();
+
 (function () {
   const sessionTypes = [{{range $i,$t := .SessionTypes}}{{if $i}},{{end}}"{{$t}}"{{end}}];
-  const allClasses   = [{{range $i,$c := .Classes}}{{if $i}},{{end}}{"id":{{$c.ID}},"label":"{{$c.ClassCode}} — {{$c.PeriodName}}","loc":"{{$c.LocationName}}"}{{end}}];
+  const allClasses   = [{{range $i,$c := .Classes}}{{if $i}},{{end}}{"id":{{$c.ID}},"label":"{{$c.ClassCode}} — {{$c.PeriodName}}","loc":"{{$c.LocationName}}","gid":{{$c.IntakeGroupID}}}{{end}}];
   const allTeachers  = [{{range $i,$t := .Teachers}}{{if $i}},{{end}}{"id":{{$t.ID}},"name":"{{$t.FullName}}"}{{end}}];
   const allRooms     = [{{range $i,$r := .Rooms}}{{if $i}},{{end}}{"id":{{$r.ID}},"bid":{{$r.BuildingID}},"room":{{printf "%q" $r.RoomName}}}{{end}}];
-  const allBuildings = [{{range $i,$b := .Buildings}}{{if $i}},{{end}}{"id":{{$b.ID}},"name":{{printf "%q" $b.BuildingName}}}{{end}}];
+  const allBuildings = [{{range $i,$b := .Buildings}}{{if $i}},{{end}}{"id":{{$b.ID}},"name":{{printf "%q" $b.BuildingName}},"lid":{{$b.LocationID}},"loc":{{printf "%q" $b.LocationName}}}{{end}}];
   const periodEnd    = "{{.PeriodEndDate}}";
   const periodEndDMY = "{{.PeriodEndDMY}}";
 
@@ -381,10 +431,13 @@
       ).join('');
   }
 
-  function setStatus(tr, state) {
+  function setStatus(tr, state, msg) {
     const el = tr.querySelector('.sess-status');
     el.className = 'sess-status sess-status-' + state;
-    el.textContent = state === 'saving' ? '…' : state === 'saved' ? '✓' : state === 'error' ? '!' : '';
+    if (state === 'saving') { el.textContent = '…'; el.title = ''; }
+    else if (state === 'saved') { el.textContent = '✓'; el.title = ''; }
+    else if (state === 'error') { el.textContent = '!'; el.title = msg || 'Error'; }
+    else { el.textContent = ''; el.title = ''; }
     if (state === 'saved') setTimeout(() => { el.textContent = ''; el.className = 'sess-status'; }, 1500);
   }
 
@@ -413,9 +466,15 @@
       });
       try {
         const res = await fetch('/admin/sessions/new', {method:'POST', body});
-        if (!res.ok) { setStatus(tr, 'error'); return; }
+        if (!res.ok) {
+          let msg = 'Error saving session.';
+          try { const j = await res.json(); if (j.error) msg = j.error; } catch {}
+          setStatus(tr, 'error', msg);
+          showToast(msg, 'error');
+          return;
+        }
         location.reload();
-      } catch { setStatus(tr, 'error'); }
+      } catch { setStatus(tr, 'error', 'Network error.'); showToast('Network error — session not saved.', 'error'); }
       return;
     }
 
@@ -505,10 +564,12 @@
     tr.querySelector('select[name=session_type]')?.addEventListener('change', () => saveRow(tr));
     tr.querySelector('select[name=class_id]')?.addEventListener('change', () => {
       const locSpan = tr.querySelector('.si-location .sess-loc-label');
-      if (locSpan) {
-        const cid = parseInt(tr.querySelector('[name=class_id]').value);
-        const cls = allClasses.find(c => c.id === cid);
-        locSpan.textContent = cls?.loc || '';
+      const cid = parseInt(tr.querySelector('[name=class_id]').value);
+      const cls = allClasses.find(c => c.id === cid);
+      if (locSpan) locSpan.textContent = cls?.loc || '';
+      if (cls?.gid) {
+        window.__ttGroupID = cls.gid;
+        window.ttUpdateGroup?.(cls.gid);
       }
       saveRow(tr);
     });
@@ -526,7 +587,22 @@
         roomEl.innerHTML = roomOptions(bid, 0);
         saveRow(tr);
       });
-      roomEl.addEventListener('change', () => saveRow(tr));
+      roomEl.addEventListener('change', () => {
+        const rid = parseInt(roomEl.value || '0');
+        window.__ttRoomID = rid;
+        window.ttUpdateRoom?.(rid);
+        saveRow(tr);
+      });
+    }
+
+    const teacherEl = tr.querySelector('[name=teacher_id]');
+    if (teacherEl) {
+      teacherEl.addEventListener('change', () => {
+        const tid = parseInt(teacherEl.value || '0');
+        window.__ttTeacherID = tid;
+        window.ttUpdateTeacher?.(tid);
+        saveRow(tr);
+      });
     }
 
     tr.querySelector('[name=notes]')?.addEventListener('blur', () => saveRow(tr));
@@ -535,6 +611,9 @@
 
   document.querySelectorAll('#sessions-tbody .sess-row').forEach(attachRowListeners);
   updateTotals();
+
+  /* shared state written by conflict-check menus, read by btn-add-row */
+  const cfState = {teacherID: 0, buildingID: 0, roomID: 0};
 
   document.getElementById('btn-add-row')?.addEventListener('click', () => {
     const tbody = document.getElementById('sessions-tbody');
@@ -545,6 +624,11 @@
     const grpOpt     = grpSel?.options[grpSel.selectedIndex];
     const defaultLoc = grpOpt?.dataset.location || '';
 
+    const _h  = String(new Date().getHours()).padStart(2, '0');
+    const _h1 = String(new Date().getHours() + 1).padStart(2, '0');
+    const defStart = `${_h}:00`;
+    const defEnd   = `${_h1}:00`;
+
     const tr = document.createElement('tr');
     tr.className = 'sess-row sess-new';
     tr.dataset.id = 'new';
@@ -554,14 +638,14 @@
         <input type="date" class="date-native" tabindex="-1">
       </div></td>
       <td class="sess-day"></td>
-      <td><div class="time-wrap"><input class="sess-input si-time" type="text" name="start_time" placeholder="HH:MM" maxlength="5"><input type="time" class="time-native" tabindex="-1"></div></td>
-      <td><div class="time-wrap"><input class="sess-input si-time" type="text" name="end_time"   placeholder="HH:MM" maxlength="5"><input type="time" class="time-native" tabindex="-1"></div></td>
+      <td><div class="time-wrap"><input class="sess-input si-time" type="text" name="start_time" value="${defStart}" maxlength="5"><input type="time" class="time-native" tabindex="-1" value="${defStart}"></div></td>
+      <td><div class="time-wrap"><input class="sess-input si-time" type="text" name="end_time"   value="${defEnd}"   maxlength="5"><input type="time" class="time-native" tabindex="-1" value="${defEnd}"></div></td>
       <td><select class="sess-input si-class" name="class_id">${classOptions()}</select></td>
       <td><select class="sess-input si-type" name="session_type">${typeOptions('Scheduled')}</select></td>
-      <td><select class="sess-input si-teacher" name="teacher_id">${teacherOptions(0)}</select></td>
+      <td><select class="sess-input si-teacher" name="teacher_id">${teacherOptions(cfState.teacherID)}</select></td>
       <td class="sess-static si-location"><span class="sess-loc-label">${defaultLoc}</span></td>
-      <td><select class="sess-input si-building" name="building_id" data-init-bid="0"></select></td>
-      <td><select class="sess-input si-room"     name="room_id"     data-init-rid="0"></select></td>
+      <td><select class="sess-input si-building" name="building_id" data-init-bid="${cfState.buildingID}"></select></td>
+      <td><select class="sess-input si-room"     name="room_id"     data-init-rid="${cfState.roomID}"></select></td>
       <td><input class="sess-input si-notes" type="text" name="notes" maxlength="255" placeholder="—"></td>
       <td class="sess-actions">
         <span class="sess-status"></span>
@@ -584,6 +668,310 @@
 
     tr.querySelector('[name=session_date]').focus();
   });
+
+  /* ── Conflict-check menus ───────────────────────────────────────── */
+  (function () {
+    const teacherSel  = document.getElementById('cf-teacher-sel');
+    const locationSel = document.getElementById('cf-location-sel');
+    const buildingSel = document.getElementById('cf-building-sel');
+    const roomSel     = document.getElementById('cf-room-sel');
+    if (!teacherSel) return;
+
+    const allLocations = [...new Map(
+      allBuildings.map(b => [b.lid, {id: b.lid, name: b.loc}])
+    ).values()].sort((a, b) => a.name.localeCompare(b.name));
+
+    /* populate teacher options */
+    teacherSel.innerHTML = '<option value="">— Teacher —</option>' +
+      allTeachers.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+
+    /* populate location options */
+    locationSel.innerHTML = '<option value="">— Location —</option>' +
+      allLocations.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
+
+    function buildingOpts(lid) {
+      const blds = lid ? allBuildings.filter(b => b.lid === lid) : allBuildings;
+      return '<option value="">— Building —</option>' +
+        blds.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+    }
+
+    function roomOpts(bid) {
+      const rooms = bid ? allRooms.filter(r => r.bid === bid) : allRooms;
+      return '<option value="">— Room —</option>' +
+        rooms.map(r => {
+          const bld = allBuildings.find(b => b.id === r.bid);
+          const label = (bid || !bld) ? r.room : `${bld.name} · ${r.room}`;
+          return `<option value="${r.id}">${label}</option>`;
+        }).join('');
+    }
+
+    buildingSel.innerHTML = buildingOpts(0);
+    roomSel.innerHTML     = roomOpts(0);
+
+    /* prefill the new-session row if it is open */
+    function prefillNewRow() {
+      const newRow = document.querySelector('#sessions-tbody .sess-new');
+      if (!newRow) return;
+      if (cfState.teacherID) {
+        const tSel = newRow.querySelector('[name=teacher_id]');
+        if (tSel && tSel.value != cfState.teacherID) {
+          tSel.value = cfState.teacherID;
+          tSel.dispatchEvent(new Event('change', {bubbles: true}));
+        }
+      }
+      if (cfState.buildingID) {
+        const bEl = newRow.querySelector('[name=building_id]');
+        const rEl = newRow.querySelector('[name=room_id]');
+        if (bEl) {
+          bEl.innerHTML = buildingOptions(cfState.buildingID);
+          bEl.value = cfState.buildingID;
+          if (rEl) {
+            rEl.innerHTML = roomOptions(cfState.buildingID, cfState.roomID);
+            if (cfState.roomID) rEl.value = cfState.roomID;
+          }
+        }
+      }
+    }
+
+    teacherSel.addEventListener('change', () => {
+      const tid = parseInt(teacherSel.value || '0');
+      cfState.teacherID = tid;
+      window.__ttTeacherID = tid;
+      window.ttUpdateTeacher?.(tid);
+      prefillNewRow();
+    });
+
+    locationSel.addEventListener('change', () => {
+      const lid = parseInt(locationSel.value || '0');
+      /* cascade: repopulate building and reset room */
+      buildingSel.innerHTML = buildingOpts(lid);
+      cfState.buildingID = 0;
+      roomSel.innerHTML = roomOpts(0);
+      cfState.roomID = 0;
+      window.__ttRoomID = 0;
+      window.ttUpdateRoom?.(0);
+    });
+
+    buildingSel.addEventListener('change', () => {
+      const bid = parseInt(buildingSel.value || '0');
+      cfState.buildingID = bid;
+      /* cascade: repopulate room */
+      roomSel.innerHTML = roomOpts(bid);
+      cfState.roomID = 0;
+      window.__ttRoomID = 0;
+      window.ttUpdateRoom?.(0);
+      /* prefill building in open new row */
+      const newRow = document.querySelector('#sessions-tbody .sess-new');
+      if (newRow && bid) {
+        const bEl = newRow.querySelector('[name=building_id]');
+        if (bEl) {
+          bEl.innerHTML = buildingOptions(bid);
+          bEl.value = bid;
+          const rEl = newRow.querySelector('[name=room_id]');
+          if (rEl) rEl.innerHTML = roomOptions(bid, 0);
+        }
+      }
+    });
+
+    roomSel.addEventListener('change', () => {
+      const rid = parseInt(roomSel.value || '0');
+      cfState.roomID = rid;
+      /* auto-set building if not already chosen */
+      if (rid && !cfState.buildingID) {
+        const r = allRooms.find(r => r.id === rid);
+        if (r) {
+          cfState.buildingID = r.bid;
+          buildingSel.innerHTML = buildingOpts(parseInt(locationSel.value || '0'));
+          buildingSel.value = r.bid;
+          /* narrow room list to this building now */
+          roomSel.innerHTML = roomOpts(r.bid);
+          roomSel.value = rid;
+        }
+      }
+      window.__ttRoomID = rid;
+      window.ttUpdateRoom?.(rid);
+      prefillNewRow();
+    });
+  })();
+})();
+</script>
+
+<script>
+/* ── Inline week timetable ──────────────────────────────────────────────── */
+(function () {
+  const panel    = document.getElementById('sess-timetable');
+  const grid     = document.getElementById('sess-tt-grid');
+  const weekLbl  = document.getElementById('sess-tt-week-label');
+  const legend      = document.getElementById('sess-tt-legend');
+  const groupLeg    = document.getElementById('sess-tt-legend-group');
+  const teacherLeg  = document.getElementById('sess-tt-legend-teacher');
+  const roomLeg     = document.getElementById('sess-tt-legend-room');
+  if (!panel) return;
+
+  const entityView = "{{.View}}";
+  const entityID   = {{.EntityID}};
+
+  const periodSel  = document.getElementById('period-select');
+  const selOpt     = periodSel?.options[periodSel.selectedIndex];
+  const periodStart = selOpt?.dataset.start || '';
+
+  if (!entityID || !periodStart) return;
+
+  function isoDate(d) {
+    return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-');
+  }
+  function parseISO(iso) {
+    const [y,m,d] = iso.split('-').map(Number);
+    return new Date(y, m-1, d); // local time, no UTC shift
+  }
+  function weekMonday(iso) {
+    const d = parseISO(iso);
+    const w = d.getDay();
+    d.setDate(d.getDate() + (w === 0 ? -6 : 1 - w));
+    return isoDate(d);
+  }
+  function addDays(iso, n) {
+    const d = parseISO(iso);
+    d.setDate(d.getDate() + n);
+    return isoDate(d);
+  }
+  function fmtDay(iso) {
+    const d = parseISO(iso);
+    return d.getDate() + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()];
+  }
+  function typeClass(t) {
+    return {Assessment:'sess-assessment',Online:'sess-online',Replacement:'sess-replacement',Other:'sess-other'}[t] || '';
+  }
+
+  async function fetchWeek(type, id, from) {
+    if (!id) return [];
+    const to = addDays(from, 6);
+    try {
+      const r = await fetch(`/admin/sessions/week-data?type=${type}&id=${id}&from=${from}&to=${to}`);
+      return r.ok ? await r.json() : [];
+    } catch { return []; }
+  }
+
+  let weekStart    = weekMonday(periodStart);
+  let primary      = [];
+  let groupSess    = [];
+  let teacherSess  = [];
+  let roomSess     = [];
+  let hideWeekends = localStorage.getItem('nvims-tt-wkdays') !== 'false';
+
+  const wkdaysBtn  = document.getElementById('sess-tt-wkdays');
+
+  function render() {
+    const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    const today = isoDate(new Date());
+
+    const days = DAYS.map((name, i) => ({
+      name, date: addDays(weekStart, i), p: [], g: [], t: [], r: [],
+    }));
+    primary.forEach(s     => { const d = days.find(d => d.date === s.date); if (d) d.p.push(s); });
+    groupSess.forEach(s   => { const d = days.find(d => d.date === s.date); if (d) d.g.push(s); });
+    teacherSess.forEach(s => { const d = days.find(d => d.date === s.date); if (d) d.t.push(s); });
+    roomSess.forEach(s    => { const d = days.find(d => d.date === s.date); if (d) d.r.push(s); });
+
+    const cols = hideWeekends ? days.slice(0, 5) : days;
+    if (wkdaysBtn) wkdaysBtn.classList.toggle('active', hideWeekends);
+
+    grid.className   = `tt-week tt-week-${cols.length}`;
+    grid.innerHTML   = cols.map(d => {
+      const pCards = d.p.map(s => `
+        <div class="tt-session ${typeClass(s.type)}">
+          <div class="tt-session-time">${s.start}–${s.end}</div>
+          <div class="tt-session-class">${s.class}</div>
+          ${s.subjects ? `<div class="tt-session-meta">${s.subjects}</div>` : ''}
+          ${s.teacher ? `<div class="tt-session-meta">${s.teacher}</div>` : ''}
+          ${s.location ? `<div class="tt-session-meta">${s.location}</div>` : ''}
+          ${s.building || s.room ? `<div class="tt-session-meta">${[s.building, s.room].filter(Boolean).join(' · ')}</div>` : ''}
+          ${s.type !== 'Scheduled' ? `<span class="tt-session-type">${s.type}</span>` : ''}
+        </div>`).join('');
+      function overlayCard(s, cls) {
+        return `<div class="tt-session ${cls}">
+          <div class="tt-session-time">${s.start}–${s.end}</div>
+          <div class="tt-session-class">${s.class}</div>
+          ${s.teacher ? `<div class="tt-session-meta">${s.teacher}</div>` : ''}
+          ${s.location ? `<div class="tt-session-meta">${s.location}</div>` : ''}
+          ${s.building || s.room ? `<div class="tt-session-meta">${[s.building, s.room].filter(Boolean).join(' · ')}</div>` : ''}
+        </div>`;
+      }
+      const gCards = d.g.map(s => overlayCard(s, 'tt-session-group')).join('');
+      const tCards = d.t.map(s => overlayCard(s, 'tt-session-teacher')).join('');
+      const rCards = d.r.map(s => overlayCard(s, 'tt-session-room')).join('');
+      return `<div class="tt-day${d.date === today ? ' tt-day-today' : ''}">
+        <div class="tt-day-header">
+          <span class="tt-day-name">${d.name}</span>
+          <span class="tt-day-date">${fmtDay(d.date)}</span>
+        </div>
+        <div class="tt-day-body">${pCards + gCards + tCards + rCards || '<p class="tt-empty">—</p>'}</div>
+      </div>`;
+    }).join('');
+
+    weekLbl.textContent       = `${fmtDay(cols[0].date)} – ${fmtDay(cols[cols.length - 1].date)}`;
+    legend.style.display      = '';
+    groupLeg.style.display    = groupSess.length   ? '' : 'none';
+    teacherLeg.style.display  = teacherSess.length ? '' : 'none';
+    roomLeg.style.display     = roomSess.length    ? '' : 'none';
+    panel.style.display       = '';
+  }
+
+  async function load() {
+    primary  = await fetchWeek(entityView, entityID, weekStart);
+    render();
+  }
+
+  window.ttUpdateGroup = async function (gid) {
+    // Skip when this group IS the primary (group view) — primary already shows it.
+    if (entityView === 'group' && gid === entityID) {
+      groupSess = [];
+    } else {
+      groupSess = gid ? await fetchWeek('group', gid, weekStart) : [];
+    }
+    render();
+  };
+
+  window.ttUpdateTeacher = async function (teacherID) {
+    // Skip when this teacher IS the primary (teacher view) — primary already shows it.
+    if (entityView === 'teacher' && teacherID === entityID) {
+      teacherSess = [];
+    } else {
+      teacherSess = teacherID ? await fetchWeek('teacher', teacherID, weekStart) : [];
+    }
+    render();
+  };
+
+  window.ttUpdateRoom = async function (roomID) {
+    roomSess = roomID ? await fetchWeek('room', roomID, weekStart) : [];
+    render();
+  };
+
+  async function navWeek(delta) {
+    weekStart = addDays(weekStart, delta * 7);
+    const gid = window.__ttGroupID   || 0;
+    const tid = window.__ttTeacherID || 0;
+    const rid = window.__ttRoomID    || 0;
+    const skipGroup   = entityView === 'group'   && gid === entityID;
+    const skipTeacher = entityView === 'teacher' && tid === entityID;
+    [primary, groupSess, teacherSess, roomSess] = await Promise.all([
+      fetchWeek(entityView, entityID, weekStart),
+      (!skipGroup   && gid) ? fetchWeek('group',   gid, weekStart) : Promise.resolve([]),
+      (!skipTeacher && tid) ? fetchWeek('teacher', tid, weekStart) : Promise.resolve([]),
+      rid ? fetchWeek('room', rid, weekStart) : Promise.resolve([]),
+    ]);
+    render();
+  }
+
+  document.getElementById('sess-tt-prev')?.addEventListener('click', () => navWeek(-1));
+  document.getElementById('sess-tt-next')?.addEventListener('click', () => navWeek(1));
+  wkdaysBtn?.addEventListener('click', () => {
+    hideWeekends = !hideWeekends;
+    localStorage.setItem('nvims-tt-wkdays', hideWeekends);
+    render();
+  });
+
+  load();
 })();
 </script>
   </div>

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/crypto/bcrypt"
 
@@ -2317,6 +2319,70 @@ func (h *Handler) AdminSessions(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type weekSessionJSON struct {
+	Date     string `json:"date"`
+	Start    string `json:"start"`
+	End      string `json:"end"`
+	Class    string `json:"class"`
+	Subjects string `json:"subjects,omitempty"`
+	Type     string `json:"type"`
+	Location string `json:"location,omitempty"`
+	Building string `json:"building,omitempty"`
+	Room     string `json:"room,omitempty"`
+	Teacher  string `json:"teacher,omitempty"`
+}
+
+func (h *Handler) AdminSessionsWeekData(w http.ResponseWriter, r *http.Request) {
+	q      := r.URL.Query()
+	kind   := q.Get("type") // teacher | group | room
+	id     := parseInt64(q.Get("id"))
+	from   := q.Get("from") // YYYY-MM-DD
+	to     := q.Get("to")   // YYYY-MM-DD
+
+	if id == 0 || from == "" || to == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("[]"))
+		return
+	}
+
+	var raw []store.ScheduleSession
+	var queryErr error
+	switch kind {
+	case "teacher":
+		raw, queryErr = h.store.ScheduleForTeacher(r.Context(), id, from, to)
+	case "group":
+		raw, queryErr = h.store.ScheduleForIntakeGroup(r.Context(), id, from, to)
+	case "room":
+		raw, queryErr = h.store.WeekSessionsForRoom(r.Context(), id, from, to)
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("[]"))
+		return
+	}
+	if queryErr != nil {
+		log.Printf("AdminSessionsWeekData(%s id=%d): %v", kind, id, queryErr)
+	}
+
+	out := make([]weekSessionJSON, 0, len(raw))
+	for _, s := range raw {
+		out = append(out, weekSessionJSON{
+			Date:     s.SessionDate.Format("2006-01-02"),
+			Start:    s.StartTime.Format("15:04"),
+			End:      s.EndTime.Format("15:04"),
+			Class:    s.ClassCode,
+			Subjects: s.SubjectCodes,
+			Type:     s.SessionType,
+			Location: s.LocationName,
+			Building: s.BuildingName,
+			Room:     s.RoomName,
+			Teacher:  s.TeacherNames,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
 // checkSessionTimes returns an error if start/end are not valid HH:MM or end <= start.
 func checkSessionTimes(startTime, endTime string) error {
 	layout := "15:04"
@@ -2474,6 +2540,19 @@ func (h *Handler) AdminSessionCreate(w http.ResponseWriter, r *http.Request) {
 	if teacherID > 0 && sessionID > 0 {
 		if err2 := h.store.AddSessionTeacher(r.Context(), sessionID, teacherID); err2 != nil {
 			log.Printf("AddSessionTeacher(%d,%d): %v", sessionID, teacherID, err2)
+			// Roll back the session we just created so it doesn't linger unattached.
+			if delErr := h.store.DeleteSession(r.Context(), sessionID); delErr != nil {
+				log.Printf("DeleteSession(%d) rollback: %v", sessionID, delErr)
+			}
+			msg := "Could not assign teacher: database error."
+			var pgErr *pgconn.PgError
+			if errors.As(err2, &pgErr) {
+				msg = pgErr.Message
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			fmt.Fprintf(w, `{"error":%q}`, msg)
+			return
 		}
 	}
 

@@ -144,6 +144,13 @@
     const hidden  = td.querySelector('input[name=student_id]');
     let debounce  = null;
 
+    function positionResults() {
+      const rect = input.getBoundingClientRect();
+      results.style.top   = rect.bottom + 2 + 'px';
+      results.style.left  = rect.left + 'px';
+      results.style.width = rect.width + 'px';
+    }
+
     function showResults(items) {
       results.innerHTML = '';
       if (!items.length) {
@@ -163,6 +170,7 @@
           results.appendChild(div);
         });
       }
+      positionResults();
       results.hidden = false;
     }
 

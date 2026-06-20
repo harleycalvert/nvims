@@ -294,3 +294,159 @@
   font-weight: 700;
   color: #333;
 }
+
+/* ── Inline week timetable panel ───────────────────────────────────────── */
+.sess-tt-panel {
+  margin-top: 24px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+.sess-tt-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 9px;
+  background: #f4f6f9;
+  border-bottom: 1px solid #e0e0e0;
+}
+.sess-tt-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #222;
+}
+.sess-tt-nav { display: flex; gap: 4px; }
+.sess-tt-nav .tt-nav-btn {
+  padding: 3px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  color: #1a4480;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1.4;
+}
+.sess-tt-nav .tt-nav-btn:hover { background: #f0f4fb; }
+#sess-tt-grid { padding: 10px; }
+.sess-tt-legend {
+  display: flex;
+  gap: 16px;
+  padding: 0 14px 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.sess-tt-legend-primary {
+  color: #1a4480;
+}
+.sess-tt-legend-primary::before {
+  content: '■';
+  margin-right: 4px;
+  font-size: 10px;
+}
+.sess-tt-legend-room {
+  color: #92400e;
+}
+.sess-tt-legend-room::before {
+  content: '■';
+  margin-right: 4px;
+  font-size: 10px;
+}
+/* Room-booked session card in timetable */
+.tt-session-room {
+  background: #fff8e6;
+  border-left-color: #b97800;
+}
+.sess-tt-legend-teacher {
+  color: #6b21a8;
+}
+.sess-tt-legend-teacher::before {
+  content: '■';
+  margin-right: 4px;
+  font-size: 10px;
+}
+/* Group-booked session card in timetable (overlay shown in teacher view) */
+.tt-session-group {
+  background: #ecfdf5;
+  border-left-color: #059669;
+}
+.sess-tt-legend-group {
+  color: #065f46;
+}
+.sess-tt-legend-group::before {
+  content: '■';
+  margin-right: 4px;
+  font-size: 10px;
+}
+/* Teacher-booked session card in timetable */
+.tt-session-teacher {
+  background: #f5f0ff;
+  border-left-color: #7c3aed;
+}
+
+/* ── Conflict-check menu bar ── */
+.sess-cf-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0 6px;
+  flex-wrap: wrap;
+}
+.sess-cf-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: #888;
+  white-space: nowrap;
+  margin-right: 2px;
+}
+.cf-select {
+  flex: 1;
+  min-width: 130px;
+  max-width: 220px;
+  height: 28px;
+  padding: 3px 6px;
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
+  font-size: 12px;
+  background: #fff;
+  color: #222;
+  cursor: pointer;
+}
+.cf-select:focus { outline: none; border-color: #1a4480; box-shadow: 0 0 0 2px rgba(26,68,128,.1); }
+.cf-select:not([value=""]):has(option[value=""]:not(:checked)) { border-color: #1a4480; background: #f0f4fb; font-weight: 600; }
+
+/* ── Toast notifications ── */
+#sess-toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.sess-toast {
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  max-width: 380px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.18);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity .2s, transform .2s;
+  pointer-events: auto;
+}
+.sess-toast-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.sess-toast-error {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #991b1b;
+}
