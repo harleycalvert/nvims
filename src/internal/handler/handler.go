@@ -2485,16 +2485,14 @@ func (h *Handler) AdminSessionsDeleteAll(w http.ResponseWriter, r *http.Request)
 		jsonError(w, "bad request")
 		return
 	}
-	kind := r.FormValue("view") // "teacher" or "group"
-	entityID := parseInt64(r.FormValue("entity_id"))
-	periodID := parseInt64(r.FormValue("period_id"))
-	if entityID == 0 || periodID == 0 {
-		jsonError(w, "entity_id and period_id are required")
+	classID := parseInt64(r.FormValue("class_id"))
+	if classID == 0 {
+		jsonError(w, "class_id is required")
 		return
 	}
-	n, err := h.store.DeleteSessionsForEntity(r.Context(), kind, entityID, periodID)
+	n, err := h.store.DeleteSessionsForClass(r.Context(), classID)
 	if err != nil {
-		log.Printf("DeleteSessionsForEntity(%s %d period %d): %v", kind, entityID, periodID, err)
+		log.Printf("DeleteSessionsForClass(%d): %v", classID, err)
 		jsonError(w, "database error")
 		return
 	}

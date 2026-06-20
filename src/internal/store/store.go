@@ -1216,6 +1216,11 @@ func (s *Store) SessionsForTeacher(ctx context.Context, teacherID int64, from, t
 	q := scheduledSessionSQL + `
 	JOIN public.session_teachers st ON st.session_id = cs.id AND st.teacher_id = $1
 	WHERE cs.session_date >= $2::date AND cs.session_date <= $3::date` + classFilter + `
+	  AND NOT EXISTS (
+	      SELECT 1 FROM public.holiday_observances ho
+	      WHERE ho.holiday_date = cs.session_date
+	        AND (ho.state_code IS NULL OR ho.state_code = dl.state_code)
+	  )
 	GROUP BY cs.id, c.id, c.class_code, cs.session_date, cs.start_time, cs.end_time,
 	         cs.session_type, cs.notes, cs.cancelled, dl.id, dl.name,
 	         cs.room_id, cs.building_id, r.building_id, b.building_name, r.room_name
@@ -1291,6 +1296,11 @@ func (s *Store) SessionsForIntakeGroup(ctx context.Context, groupID int64, from,
 	q := scheduledSessionSQL + `
 	WHERE c.intake_group_id = $1
 	  AND cs.session_date >= $2::date AND cs.session_date <= $3::date` + classFilter + `
+	  AND NOT EXISTS (
+	      SELECT 1 FROM public.holiday_observances ho
+	      WHERE ho.holiday_date = cs.session_date
+	        AND (ho.state_code IS NULL OR ho.state_code = dl.state_code)
+	  )
 	GROUP BY cs.id, c.id, c.class_code, cs.session_date, cs.start_time, cs.end_time,
 	         cs.session_type, cs.notes, cs.cancelled, dl.id, dl.name,
 	         cs.room_id, cs.building_id, r.building_id, b.building_name, r.room_name
@@ -2544,6 +2554,12 @@ func (s *Store) UpdateSession(ctx context.Context, id int64, date, startTime, en
 		WHERE id = $1
 	`, id, date, startTime, endTime, sessionType, notes, roomID, buildingID)
 	return err
+}
+
+func (s *Store) DeleteSessionsForClass(ctx context.Context, classID int64) (int64, error) {
+	tag, err := s.pool.Exec(ctx,
+		`DELETE FROM public.class_sessions WHERE class_id = $1`, classID)
+	return tag.RowsAffected(), err
 }
 
 func (s *Store) DeleteSession(ctx context.Context, id int64) error {

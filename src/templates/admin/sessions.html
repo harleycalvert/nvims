@@ -185,7 +185,7 @@
         Delete All Sessions
       </button>
       {{if .PeriodEndDMY}}
-      <label class="sess-autofill-label" style="margin-left:.5rem">
+      <label class="sess-autofill-label">
         <input type="checkbox" id="autofill-cb" checked>
         Autofill weekly for the rest of the period (until {{.PeriodEndDMY}})
       </label>
@@ -658,18 +658,19 @@
 
   document.getElementById('btn-delete-all')?.addEventListener('click', async function () {
     const btn = this;
-    const view     = btn.dataset.view;
-    const entityID = btn.dataset.entityId;
-    const periodID = btn.dataset.periodId;
-    if (!entityID || entityID === '0' || !periodID || periodID === '0') return;
-    const count = document.querySelectorAll('#sessions-tbody .sess-row:not(.sess-new)').length;
-    if (!confirm(`Delete all ${count} session${count !== 1 ? 's' : ''} for this selection? This cannot be undone.`)) return;
+    const classID = cfState.classID;
+    if (!classID) {
+      showToast('Select a class first.', 'error');
+      return;
+    }
+    const count = document.querySelectorAll('#sessions-tbody .sess-row:not(.sess-new):not([hidden])').length;
+    if (!confirm(`Delete all ${count} session${count !== 1 ? 's' : ''} for this class? This cannot be undone.`)) return;
     btn.disabled = true;
     btn.textContent = 'Deleting…';
     try {
       const res = await fetch('/admin/sessions/delete-all', {
         method: 'POST',
-        body: new URLSearchParams({view, entity_id: entityID, period_id: periodID}),
+        body: new URLSearchParams({class_id: classID}),
       });
       const j = await res.json().catch(() => ({}));
       if (res.ok) {
