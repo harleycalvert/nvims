@@ -1,8 +1,8 @@
-# A National VET Information Management System (NVIMS), Student Management System (SMS) — Database Design v0.49, 2026-06-19
+# A National VET Information Management System (NVIMS), Student Management System (SMS) — Database Design v0.50, 2026-06-20
 
 PostgreSQL schema for a national, AVETMISS-compliant Student Management System (SMS)
 supporting both VET and Higher Education delivery for TAFEs and RTOs. This document
-describes the design of `v0.49` (2026-06-19): its entities, relationships, business rules, and the
+describes the design of `v0.50` (2026-06-20): its entities, relationships, business rules, and the
 mapping to the AVETMISS NAT reporting files.
 
 > **Status:** design schema. Reference data (SACC countries, ASCL languages, full
@@ -58,6 +58,12 @@ mapping to the AVETMISS NAT reporting files.
 ## Changelog
 
 > **`nvims.sql` is a single fresh-install script** — run it once on an empty PostgreSQL database to create the complete schema. It contains no `ALTER TABLE` migration blocks; all columns and constraints are defined inline in their `CREATE TABLE` statements.
+
+### v0.50 — 2026-06-20
+
+1. **New trigger `trg_check_group_session_conflict` / `fn_check_group_session_conflict`.** Fires `BEFORE INSERT OR UPDATE` on `class_sessions`. Looks up the class's `intake_group_id`; if the group already has a non-cancelled session with an overlapping time on the same date, raises `ERRCODE P0002` with the human-readable message `'Group "%" is already scheduled for % at %.'` (group name, conflicting class code, conflicting start time). Returns immediately (no-op) if the class has no intake group. This completes session-level double-booking protection for all three schedulable entities: room (exclusion constraint), teacher (trigger on `session_teachers`), and intake group (this trigger on `class_sessions`).
+
+2. **`fn_check_teacher_session_conflict` updated.** Now returns a human-readable error message instead of raw IDs. Looks up the teacher's `preferred_name`/`first_given_name`/`family_name` from `people` (via the shared PK — `teachers.id = staff.id = people.id`) and the conflicting class's `class_code` and `start_time`. Raises `'% is already scheduled for % at %.'` (teacher name, conflicting class code, start time as `HH24:MI`).
 
 ### v0.49 — 2026-06-19
 
@@ -1047,7 +1053,7 @@ Tables are grouped by domain. "Key relationships" lists the most important forei
 
 ## Data dictionary
 
-Every table and column, current as of `v0.49`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
+Every table and column, current as of `v0.50`. **Null** = whether the column accepts NULL. **Key**: PK = primary key, UK = unique, FK &rarr; target = foreign key. Table-level constraints (checks, composite keys, exclusion constraints, unique indexes) are listed under each table.
 
 ### Identity & reference
 
@@ -3620,8 +3626,9 @@ min_capps_required = actual_teaching_hours × capps_ratio
 |---|---|
 | Teacher in two overlapping **slots** (same period) | `EXCLUDE` constraint on `class_slots (academic_period_id, teacher_id, day_of_week, timerange)` |
 | Room in two overlapping **slots** (same period) | `EXCLUDE` constraint on `class_slots (academic_period_id, room_id, day_of_week, timerange)` |
-| Room in two overlapping **sessions** | `EXCLUDE` constraint on `class_sessions (room_id, session_date, timerange)` |
-| Teacher in two overlapping **sessions** (incl. ad-hoc) | `fn_check_teacher_session_conflict` trigger on `session_teachers` |
+| Room in two overlapping **sessions** | `EXCLUDE` constraint on `class_sessions (room_id, session_date, timerange)` — raises `23P01` |
+| Teacher in two overlapping **sessions** (incl. ad-hoc) | `fn_check_teacher_session_conflict` trigger on `session_teachers` — raises human-readable message with teacher name, class code, and time |
+| Intake group in two overlapping **sessions** | `fn_check_group_session_conflict` trigger on `class_sessions` — raises `P0002` with group name, conflicting class code, and time |
 
 Period scoping means the same weekday/time in *different* terms is **not** a clash.
 
@@ -3704,7 +3711,8 @@ Timesheets bridge session-derived actual hours to fortnightly payroll. The recor
 | `fn_session_change_hours` | trigger fn | Re-applies hours when a session is cancelled or its date/time changes; updates both annual and per-period balances. |
 | `fn_recompute_teacher_balance` | utility | Rebuilds a teacher's yearly balance from sessions (for backfills/repairs). Reads cap from `teachers.default_max_hours_per_year`. |
 | `fn_recompute_teacher_period_balance` | utility | Rebuilds a teacher's per-period balance from sessions. No-op if `max_hours_per_period IS NULL`. |
-| `fn_check_teacher_session_conflict` | trigger fn | Blocks overlapping session assignments for a teacher. |
+| `fn_check_teacher_session_conflict` | trigger fn | Blocks overlapping session assignments for a teacher. Raises a human-readable message: teacher name (from `people` via shared PK), conflicting class code, and start time. |
+| `fn_check_group_session_conflict` | trigger fn | `BEFORE INSERT OR UPDATE` on `class_sessions`. Looks up the class's intake group; if the group already has a non-cancelled overlapping session on the same date, raises `P0002` with the group name, conflicting class code, and start time. No-op when the class has no intake group. |
 | `fn_easter_sunday` | utility | Computus (Meeus/Jones/Butcher) for Easter Sunday. |
 | `fn_nth_weekday` | utility | nth (or last) weekday of a month. |
 | `fn_materialise_holidays` | utility | Expands `holiday_rules` into `holiday_observances` for a year (idempotent). |

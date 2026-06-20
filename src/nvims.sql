@@ -1,5 +1,5 @@
 -- =========================================================================
--- AVETMISS-compliant SMS schema  --  version 0.49, 2026-06-19
+-- AVETMISS-compliant SMS schema  --  version 0.50, 2026-06-20
 -- =========================================================================
 -- Tables: people, students, staff, teachers, programs, subjects, classes,
 --         sessions, timetabling, workplans, timesheets, VCC, system_settings.
