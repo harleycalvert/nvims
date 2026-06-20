@@ -2610,7 +2610,26 @@ func (h *Handler) AdminSessionCreate(w http.ResponseWriter, r *http.Request) {
 	sessionID, err := h.store.CreateSession(r.Context(), classID, buildingID, roomID, sessionDate, startTime, endTime, sessionType, notes)
 	if err != nil {
 		log.Printf("CreateSession: %v", err)
-		http.Redirect(w, r, fmt.Sprintf("/admin/sessions?class_id=%d&error=db", classID), http.StatusSeeOther)
+		msg := "Could not save session: database error."
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			switch pgErr.ConstraintName {
+			case "no_room_session_double_booking":
+				if roomID > 0 {
+					name := h.store.RoomDisplayName(r.Context(), roomID)
+					if name != "" {
+						msg = fmt.Sprintf("%s is already booked at that time.", name)
+						break
+					}
+				}
+				msg = "This room is already booked at that time."
+			default:
+				msg = pgErr.Message
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		fmt.Fprintf(w, `{"error":%q}`, msg)
 		return
 	}
 	if teacherID > 0 && sessionID > 0 {

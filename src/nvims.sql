@@ -2002,12 +2002,21 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION public.fn_check_teacher_session_conflict()
 RETURNS TRIGGER AS $$
 DECLARE
-    v_conflict bigint;
+    v_teacher_name  text;
+    v_conflict_class text;
+    v_conflict_start time;
 BEGIN
-    SELECT cs2.id INTO v_conflict
+    SELECT COALESCE(p.preferred_name, p.first_given_name) || ' ' || p.family_name
+    INTO v_teacher_name
+    FROM public.people p
+    WHERE p.id = NEW.teacher_id;
+
+    SELECT c.class_code, cs2.start_time
+    INTO v_conflict_class, v_conflict_start
     FROM public.class_sessions cs1
     JOIN public.session_teachers st2 ON st2.teacher_id = NEW.teacher_id
     JOIN public.class_sessions cs2 ON cs2.id = st2.session_id
+    JOIN public.classes c ON c.id = cs2.class_id
     WHERE cs1.id = NEW.session_id
       AND cs2.id <> cs1.id
       AND cs2.session_date = cs1.session_date
@@ -2015,8 +2024,11 @@ BEGIN
       AND public.timerange(cs1.start_time, cs1.end_time) && public.timerange(cs2.start_time, cs2.end_time)
     LIMIT 1;
 
-    IF v_conflict IS NOT NULL THEN
-        RAISE EXCEPTION 'Teacher % is already booked in session % at an overlapping time.', NEW.teacher_id, v_conflict;
+    IF FOUND THEN
+        RAISE EXCEPTION '% is already scheduled for % at %.',
+            COALESCE(v_teacher_name, NEW.teacher_id::text),
+            v_conflict_class,
+            TO_CHAR(v_conflict_start, 'HH24:MI');
     END IF;
     RETURN NEW;
 END;
@@ -2025,6 +2037,53 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE TRIGGER trg_check_teacher_session_conflict
     BEFORE INSERT ON public.session_teachers
     FOR EACH ROW EXECUTE FUNCTION public.fn_check_teacher_session_conflict();
+
+-- Prevent scheduling two sessions for the same intake group at overlapping times.
+CREATE OR REPLACE FUNCTION public.fn_check_group_session_conflict()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+    v_group_id    bigint;
+    v_group_name  text;
+    v_conflict_class text;
+    v_conflict_start time;
+BEGIN
+    SELECT c.intake_group_id, ig.group_name
+    INTO v_group_id, v_group_name
+    FROM public.classes c
+    JOIN public.intake_groups ig ON ig.id = c.intake_group_id
+    WHERE c.id = NEW.class_id;
+
+    IF v_group_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT c2.class_code, cs2.start_time
+    INTO v_conflict_class, v_conflict_start
+    FROM public.class_sessions cs2
+    JOIN public.classes c2 ON c2.id = cs2.class_id
+    WHERE c2.intake_group_id = v_group_id
+      AND cs2.id <> NEW.id
+      AND cs2.session_date = NEW.session_date
+      AND cs2.cancelled = false
+      AND public.timerange(cs2.start_time, cs2.end_time)
+          && public.timerange(NEW.start_time, NEW.end_time)
+    LIMIT 1;
+
+    IF FOUND THEN
+        RAISE EXCEPTION 'Group "%" is already scheduled for % at %.',
+            COALESCE(v_group_name, v_group_id::text),
+            v_conflict_class,
+            TO_CHAR(v_conflict_start, 'HH24:MI')
+            USING ERRCODE = 'P0002';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER trg_check_group_session_conflict
+    BEFORE INSERT OR UPDATE ON public.class_sessions
+    FOR EACH ROW EXECUTE FUNCTION public.fn_check_group_session_conflict();
 
 -- Existing v8 compliance notices, retained.
 CREATE OR REPLACE FUNCTION public.fn_validate_training_plan_compliance()

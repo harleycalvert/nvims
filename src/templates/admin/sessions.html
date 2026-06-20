@@ -232,6 +232,27 @@
       el.addEventListener('transitionend', () => el.remove());
     }, 5000);
   };
+
+  /* Blocking centre-screen alert for errors that need acknowledgment */
+  window.showAlert = function(msg) {
+    const dlg = document.createElement('dialog');
+    dlg.className = 'sess-alert-dialog';
+    const p = document.createElement('p');
+    p.className = 'sess-alert-msg';
+    p.textContent = msg;
+    const form = document.createElement('form');
+    form.method = 'dialog';
+    const btn = document.createElement('button');
+    btn.className = 'btn-primary btn-sm';
+    btn.type = 'submit';
+    btn.textContent = 'OK';
+    form.appendChild(btn);
+    dlg.appendChild(p);
+    dlg.appendChild(form);
+    document.body.appendChild(dlg);
+    dlg.addEventListener('close', () => dlg.remove());
+    dlg.showModal();
+  };
 })();
 
 (function () {
@@ -474,7 +495,7 @@
           let msg = 'Error saving session.';
           try { const j = await res.json(); if (j.error) msg = j.error; } catch {}
           setStatus(tr, 'error', msg);
-          showToast(msg, 'error');
+          showAlert(msg);
           return;
         }
         location.reload();

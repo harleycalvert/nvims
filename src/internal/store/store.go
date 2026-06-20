@@ -2251,6 +2251,19 @@ type RoomLabSpecs struct {
 	Notes         string
 }
 
+func (s *Store) RoomDisplayName(ctx context.Context, roomID int64) string {
+	var building, room string
+	_ = s.pool.QueryRow(ctx,
+		`SELECT COALESCE(b.building_name,''), r.room_name
+		 FROM public.rooms r
+		 LEFT JOIN public.buildings b ON b.id = r.building_id
+		 WHERE r.id = $1`, roomID).Scan(&building, &room)
+	if building != "" {
+		return building + " – " + room
+	}
+	return room
+}
+
 func (s *Store) GetRoomLabSpecs(ctx context.Context, roomID int64) (*RoomLabSpecs, error) {
 	var sp RoomLabSpecs
 	err := s.pool.QueryRow(ctx, `
