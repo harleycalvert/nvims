@@ -244,6 +244,7 @@ func main() {
 	mux.HandleFunc("GET /admin/sessions/holidays",                     P("sessions:view",   h.AdminSessionsHolidays))
 	mux.HandleFunc("GET /admin/sessions/schedule",                     P("sessions:view",   h.AdminSessionSchedule))
 	mux.HandleFunc("POST /admin/sessions/new",                         P("sessions:manage", h.AdminSessionCreate))
+	mux.HandleFunc("POST /admin/sessions/delete-all",                  P("sessions:manage", h.AdminSessionsDeleteAll))
 	mux.HandleFunc("POST /admin/sessions/generate",                    P("sessions:manage", h.AdminSessionsGenerate))
 	mux.HandleFunc("POST /admin/sessions/{id}",                        P("sessions:manage", h.AdminSessionUpdate))
 	mux.HandleFunc("POST /admin/sessions/{id}/delete",                 P("sessions:manage", h.AdminSessionDelete))

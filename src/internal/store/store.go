@@ -1164,6 +1164,7 @@ const scheduledSessionSQL = `
 	           DISTINCT p.family_name || ', ' || p.first_given_name,
 	           ' · ' ORDER BY p.family_name || ', ' || p.first_given_name
 	       ),''),
+	       dl.id,
 	       dl.name,
 	       COALESCE(cs.room_id, 0),
 	       COALESCE(cs.building_id, r.building_id, 0),
@@ -1192,7 +1193,7 @@ func scanScheduledRows(rows interface {
 		if err := rows.Scan(&r.ID, &r.ClassID, &r.ClassCode,
 			&r.SessionDate, &r.StartTime, &r.EndTime,
 			&r.SessionType, &r.Notes, &r.Cancelled,
-			&r.Teachers, &r.Location,
+			&r.Teachers, &r.LocationID, &r.Location,
 			&r.RoomID, &r.BuildingID, &r.BuildingName, &r.RoomName); err != nil {
 			return nil, err
 		}
@@ -1216,7 +1217,7 @@ func (s *Store) SessionsForTeacher(ctx context.Context, teacherID int64, from, t
 	JOIN public.session_teachers st ON st.session_id = cs.id AND st.teacher_id = $1
 	WHERE cs.session_date >= $2::date AND cs.session_date <= $3::date` + classFilter + `
 	GROUP BY cs.id, c.id, c.class_code, cs.session_date, cs.start_time, cs.end_time,
-	         cs.session_type, cs.notes, cs.cancelled, dl.name,
+	         cs.session_type, cs.notes, cs.cancelled, dl.id, dl.name,
 	         cs.room_id, cs.building_id, r.building_id, b.building_name, r.room_name
 	ORDER BY cs.session_date, cs.start_time`
 	rows, err := s.pool.Query(ctx, q, args...)
@@ -1228,7 +1229,7 @@ func (s *Store) SessionsForTeacher(ctx context.Context, teacherID int64, from, t
 
 func (s *Store) TeacherClassesForPeriod(ctx context.Context, teacherID, periodID int64) ([]ClassListRow, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT DISTINCT c.id, c.class_code, ap.period_name || ' ' || ap.year, dl.name
+		SELECT DISTINCT c.id, c.class_code, ap.period_name || ' ' || ap.year, dl.id, dl.name
 		FROM public.class_sessions cs
 		JOIN public.classes c ON c.id = cs.class_id
 		JOIN public.academic_periods ap ON ap.id = c.academic_period_id
@@ -1244,7 +1245,7 @@ func (s *Store) TeacherClassesForPeriod(ctx context.Context, teacherID, periodID
 	var out []ClassListRow
 	for rows.Next() {
 		var r ClassListRow
-		if err := rows.Scan(&r.ID, &r.ClassCode, &r.PeriodName, &r.LocationName); err != nil {
+		if err := rows.Scan(&r.ID, &r.ClassCode, &r.PeriodName, &r.DeliveryLocationID, &r.LocationName); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -1254,7 +1255,7 @@ func (s *Store) TeacherClassesForPeriod(ctx context.Context, teacherID, periodID
 
 func (s *Store) GroupClassesForPeriod(ctx context.Context, groupID, periodID int64) ([]ClassListRow, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT DISTINCT c.id, c.class_code, ap.period_name || ' ' || ap.year, dl.name
+		SELECT DISTINCT c.id, c.class_code, ap.period_name || ' ' || ap.year, dl.id, dl.name
 		FROM public.classes c
 		JOIN public.academic_periods ap ON ap.id = c.academic_period_id
 		JOIN public.delivery_locations dl ON dl.id = c.delivery_location_id
@@ -1268,7 +1269,7 @@ func (s *Store) GroupClassesForPeriod(ctx context.Context, groupID, periodID int
 	var out []ClassListRow
 	for rows.Next() {
 		var r ClassListRow
-		if err := rows.Scan(&r.ID, &r.ClassCode, &r.PeriodName, &r.LocationName); err != nil {
+		if err := rows.Scan(&r.ID, &r.ClassCode, &r.PeriodName, &r.DeliveryLocationID, &r.LocationName); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -1291,7 +1292,7 @@ func (s *Store) SessionsForIntakeGroup(ctx context.Context, groupID int64, from,
 	WHERE c.intake_group_id = $1
 	  AND cs.session_date >= $2::date AND cs.session_date <= $3::date` + classFilter + `
 	GROUP BY cs.id, c.id, c.class_code, cs.session_date, cs.start_time, cs.end_time,
-	         cs.session_type, cs.notes, cs.cancelled, dl.name,
+	         cs.session_type, cs.notes, cs.cancelled, dl.id, dl.name,
 	         cs.room_id, cs.building_id, r.building_id, b.building_name, r.room_name
 	ORDER BY cs.session_date, cs.start_time
 	`
@@ -1718,6 +1719,7 @@ type ScheduledSessionRow struct {
 	Notes        string
 	Cancelled    bool
 	Teachers     string
+	LocationID   int64
 	Location     string // delivery location name
 	RoomID       int64
 	BuildingID   int64
@@ -1726,11 +1728,14 @@ type ScheduledSessionRow struct {
 }
 
 type SessionInput struct {
-	Date      string // YYYY-MM-DD
-	StartTime string // HH:MM
-	EndTime   string // HH:MM
-	Type      string
-	Notes     string
+	Date       string // YYYY-MM-DD
+	StartTime  string // HH:MM
+	EndTime    string // HH:MM
+	Type       string
+	Notes      string
+	BuildingID int64
+	RoomID     int64
+	TeacherID  int64
 }
 
 // ── Timetable ──────────────────────────────────────────────────────────────
@@ -2546,6 +2551,42 @@ func (s *Store) DeleteSession(ctx context.Context, id int64) error {
 	return err
 }
 
+// DeleteSessionsForEntity deletes all sessions for a teacher or intake group within a period.
+// kind must be "teacher" or "group". Returns count of deleted rows.
+func (s *Store) DeleteSessionsForEntity(ctx context.Context, kind string, entityID, periodID int64) (int64, error) {
+	var n int64
+	switch kind {
+	case "teacher":
+		tag, err := s.pool.Exec(ctx, `
+			DELETE FROM public.class_sessions cs
+			USING public.session_teachers st, public.classes c
+			WHERE cs.id = st.session_id
+			  AND c.id = cs.class_id
+			  AND st.teacher_id = $1
+			  AND c.academic_period_id = $2
+		`, entityID, periodID)
+		if err != nil {
+			return 0, err
+		}
+		n = tag.RowsAffected()
+	case "group":
+		tag, err := s.pool.Exec(ctx, `
+			DELETE FROM public.class_sessions cs
+			USING public.classes c
+			WHERE c.id = cs.class_id
+			  AND c.intake_group_id = $1
+			  AND c.academic_period_id = $2
+		`, entityID, periodID)
+		if err != nil {
+			return 0, err
+		}
+		n = tag.RowsAffected()
+	default:
+		return 0, fmt.Errorf("unknown kind %q", kind)
+	}
+	return n, nil
+}
+
 // RepeatSessionWeekly copies sessionID forward by one week at a time until periodEnd
 // (YYYY-MM-DD). It copies all fields including room/building and teacher assignments.
 // Teacher conflicts are silently skipped. Returns count of newly-created sessions.
@@ -2775,15 +2816,18 @@ func (s *Store) WeekSessionsForRoom(ctx context.Context, roomID int64, from, to 
 	return out, rows.Err()
 }
 
-func (s *Store) CreateSession(ctx context.Context, classID int64, sessionDate, startTime, endTime, sessionType, notes string) (int64, error) {
+func (s *Store) CreateSession(ctx context.Context, classID, buildingID, roomID int64, sessionDate, startTime, endTime, sessionType, notes string) (int64, error) {
 	var id int64
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO public.class_sessions
-		    (class_id, session_date, start_time, end_time, session_type, notes)
-		VALUES ($1, $2::date, $3::time, $4::time, $5, NULLIF($6,''))
+		    (class_id, session_date, start_time, end_time, session_type, notes,
+		     building_id, room_id)
+		VALUES ($1, $2::date, $3::time, $4::time, $5, NULLIF($6,''),
+		        NULLIF($7,0), NULLIF($8,0))
 		ON CONFLICT (class_id, session_date, start_time) DO NOTHING
 		RETURNING id
-	`, classID, sessionDate, startTime, endTime, sessionType, notes).Scan(&id)
+	`, classID, sessionDate, startTime, endTime, sessionType, notes,
+		buildingID, roomID).Scan(&id)
 	return id, err
 }
 
@@ -2801,13 +2845,24 @@ func (s *Store) BulkCreateSessions(ctx context.Context, classID int64, sessions 
 		var id int64
 		err := tx.QueryRow(ctx, `
 			INSERT INTO public.class_sessions
-			    (class_id, session_date, start_time, end_time, session_type, notes)
-			VALUES ($1, $2::date, $3::time, $4::time, $5, NULLIF($6,''))
+			    (class_id, session_date, start_time, end_time, session_type, notes,
+			     building_id, room_id)
+			VALUES ($1, $2::date, $3::time, $4::time, $5, NULLIF($6,''),
+			        NULLIF($7,0), NULLIF($8,0))
 			ON CONFLICT (class_id, session_date, start_time) DO NOTHING
 			RETURNING id
-		`, classID, si.Date, si.StartTime, si.EndTime, si.Type, si.Notes).Scan(&id)
-		if err == nil {
-			inserted++
+		`, classID, si.Date, si.StartTime, si.EndTime, si.Type, si.Notes,
+			si.BuildingID, si.RoomID).Scan(&id)
+		if err != nil || id == 0 {
+			continue
+		}
+		inserted++
+		if si.TeacherID > 0 {
+			_, _ = tx.Exec(ctx, `
+				INSERT INTO public.session_teachers (session_id, teacher_id)
+				VALUES ($1, $2)
+				ON CONFLICT DO NOTHING
+			`, id, si.TeacherID)
 		}
 	}
 	return inserted, tx.Commit(ctx)

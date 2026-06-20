@@ -2480,6 +2480,28 @@ func (h *Handler) AdminSessionDelete(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
+func (h *Handler) AdminSessionsDeleteAll(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		jsonError(w, "bad request")
+		return
+	}
+	kind := r.FormValue("view") // "teacher" or "group"
+	entityID := parseInt64(r.FormValue("entity_id"))
+	periodID := parseInt64(r.FormValue("period_id"))
+	if entityID == 0 || periodID == 0 {
+		jsonError(w, "entity_id and period_id are required")
+		return
+	}
+	n, err := h.store.DeleteSessionsForEntity(r.Context(), kind, entityID, periodID)
+	if err != nil {
+		log.Printf("DeleteSessionsForEntity(%s %d period %d): %v", kind, entityID, periodID, err)
+		jsonError(w, "database error")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"ok":true,"deleted":%d}`, n)
+}
+
 func (h *Handler) AdminSessionRepeat(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id == 0 {
@@ -2572,6 +2594,8 @@ func (h *Handler) AdminSessionCreate(w http.ResponseWriter, r *http.Request) {
 	sessionType := r.FormValue("session_type")
 	notes := strings.TrimSpace(r.FormValue("notes"))
 	teacherID := parseInt64(r.FormValue("teacher_id"))
+	buildingID := parseInt64(r.FormValue("building_id"))
+	roomID := parseInt64(r.FormValue("room_id"))
 
 	if classID == 0 || sessionDate == "" || startTime == "" || endTime == "" {
 		http.Error(w, `{"error":"missing fields"}`, http.StatusBadRequest)
@@ -2585,7 +2609,7 @@ func (h *Handler) AdminSessionCreate(w http.ResponseWriter, r *http.Request) {
 		sessionType = "Scheduled"
 	}
 
-	sessionID, err := h.store.CreateSession(r.Context(), classID, sessionDate, startTime, endTime, sessionType, notes)
+	sessionID, err := h.store.CreateSession(r.Context(), classID, buildingID, roomID, sessionDate, startTime, endTime, sessionType, notes)
 	if err != nil {
 		log.Printf("CreateSession: %v", err)
 		http.Redirect(w, r, fmt.Sprintf("/admin/sessions?class_id=%d&error=db", classID), http.StatusSeeOther)
@@ -2618,11 +2642,14 @@ func (h *Handler) AdminSessionCreate(w http.ResponseWriter, r *http.Request) {
 				var inputs []store.SessionInput
 				for d := firstDate.AddDate(0, 0, 7); !d.After(endDate); d = d.AddDate(0, 0, 7) {
 					inputs = append(inputs, store.SessionInput{
-						Date:      d.Format("2006-01-02"),
-						StartTime: startTime,
-						EndTime:   endTime,
-						Type:      sessionType,
-						Notes:     notes,
+						Date:       d.Format("2006-01-02"),
+						StartTime:  startTime,
+						EndTime:    endTime,
+						Type:       sessionType,
+						Notes:      notes,
+						BuildingID: buildingID,
+						RoomID:     roomID,
+						TeacherID:  teacherID,
 					})
 				}
 				if len(inputs) > 0 {
