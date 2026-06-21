@@ -2622,7 +2622,7 @@ CREATE TABLE IF NOT EXISTS public.teacher_vcc_units (
     subject_id            bigint       NULL,
     unit_code             varchar(20)  NOT NULL,
     unit_title            varchar(200) NOT NULL,
-    competency_method     varchar(60)  NOT NULL,
+    competency_method     varchar(200) NOT NULL,
     superseded_unit_code  varchar(20)  NULL,
     superseded_unit_title varchar(200) NULL,
     description           text         NULL,          -- study name or employer/dates (method-dependent)
@@ -2640,6 +2640,7 @@ CREATE TABLE IF NOT EXISTS public.teacher_vcc_units (
     CONSTRAINT chk_vcc_unit_method CHECK (competency_method IN (
         'I hold the current unit of competency',
         'I hold a superseded and equivalent unit of competency',
+        'I hold a recognition of relevant study and/or vocational work experience',
         'I hold a recognition of relevant study',
         'I have vocational work experience',
         'Other'
