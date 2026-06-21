@@ -124,6 +124,61 @@
     </form>
 
     {{if and (eq .RoleType "staff") .Person.IsStaff}}
+
+    {{if .AllDepts}}
+    <div class="admin-form">
+    <div class="form-section form-section--spaced" id="dept-section">
+      <h2 class="form-section-title">Departments</h2>
+      <p class="form-hint">Departments this staff member belongs to. Used to determine which programs and faculties they are associated with.</p>
+
+      <div class="table-wrap">
+        <table class="sessions-table" id="dept-assigned-table">
+          <thead>
+            <tr><th class="td-left">Department</th><th class="td-left">Faculty</th><th></th></tr>
+          </thead>
+          <tbody id="dept-assigned-tbody">
+            {{range .AllDepts}}{{if index $.PersonDepts .ID}}
+            <tr class="sess-row dept-row" data-dept-id="{{.ID}}">
+              <td class="orole-name">{{.Name}}</td>
+              <td class="dept-faculty-cell">{{.FacultyName}}</td>
+              <td class="sess-actions">
+                <span class="sess-status"></span>
+                <button class="btn-danger-sm dept-remove-btn" type="button" title="Remove">✕</button>
+              </td>
+            </tr>
+            {{end}}{{end}}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="orole-add-bar" id="dept-add-bar">
+        <button class="btn-primary btn-sm" id="btn-add-dept" type="button">+ Assign To Department</button>
+      </div>
+      <div id="dept-add-form" class="hidden orole-add-form">
+        <div class="form-row">
+          <div class="form-group fg-280">
+            <label>Department <span class="req">*</span></label>
+            <select id="dept-select">
+              <option value="">— select department —</option>
+              {{range .AllDepts}}{{if not (index $.PersonDepts .ID)}}
+              <option value="{{.ID}}" data-faculty="{{.FacultyName}}">{{.Name}}{{if .FacultyName}} — {{.FacultyName}}{{end}}</option>
+              {{end}}{{end}}
+            </select>
+          </div>
+          <div class="form-group orole-add-actions">
+            <label>&nbsp;</label>
+            <div>
+              <button class="btn-primary btn-sm" id="btn-dept-assign" type="button">Assign To</button>
+              <button class="btn-secondary btn-sm" id="btn-dept-cancel" type="button">Cancel</button>
+            </div>
+          </div>
+        </div>
+        <p id="dept-add-error" class="form-error hidden"></p>
+      </div>
+    </div>
+    </div>
+    {{end}}
+
     <div class="admin-form">
     <div class="form-section form-section--spaced" id="org-roles-section">
       <h2 class="form-section-title">Organisational Roles</h2>
@@ -320,6 +375,104 @@
       errEl.classList.remove('hidden');
       saveBtn.disabled = false;
     }
+  });
+})();
+
+(function () {
+  const addBar    = document.getElementById('dept-add-bar');
+  const addBtn    = document.getElementById('btn-add-dept');
+  const addForm   = document.getElementById('dept-add-form');
+  const assignBtn = document.getElementById('btn-dept-assign');
+  const cancelBtn = document.getElementById('btn-dept-cancel');
+  const deptSel   = document.getElementById('dept-select');
+  const errEl     = document.getElementById('dept-add-error');
+  const tbody     = document.getElementById('dept-assigned-tbody');
+  if (!addBtn) return;
+  const personID = {{.Person.ID}};
+
+  function setRowStatus(tr, state) {
+    const el = tr.querySelector('.sess-status');
+    if (!el) return;
+    el.className = 'sess-status sess-status-' + state;
+    el.textContent = state === 'saving' ? '…' : state === 'error' ? '!' : '';
+  }
+
+  function attachRemove(tr) {
+    tr.querySelector('.dept-remove-btn')?.addEventListener('click', async () => {
+      const deptID = tr.dataset.deptId;
+      if (!confirm('Remove this department assignment?')) return;
+      setRowStatus(tr, 'saving');
+      try {
+        const res = await fetch(`/admin/people/${personID}/departments/${deptID}/remove`, { method: 'POST' });
+        if (!res.ok) { setRowStatus(tr, 'error'); return; }
+        // Move option back to select
+        const name = tr.querySelector('.orole-name').textContent.trim();
+        const faculty = tr.querySelector('.dept-faculty-cell').textContent.trim();
+        const opt = document.createElement('option');
+        opt.value = deptID;
+        opt.textContent = name + (faculty ? ' — ' + faculty : '');
+        deptSel.appendChild(opt);
+        tr.remove();
+      } catch { setRowStatus(tr, 'error'); }
+    });
+  }
+
+  document.querySelectorAll('#dept-assigned-tbody .dept-row').forEach(attachRemove);
+
+  addBtn.addEventListener('click', () => {
+    addBtn.classList.add('hidden');
+    addForm.classList.remove('hidden');
+    deptSel.focus();
+  });
+
+  cancelBtn.addEventListener('click', () => {
+    addForm.classList.add('hidden');
+    addBtn.classList.remove('hidden');
+    errEl.classList.add('hidden');
+  });
+
+  assignBtn.addEventListener('click', async () => {
+    const deptID   = deptSel.value;
+    const deptText = deptSel.options[deptSel.selectedIndex]?.text || '';
+    errEl.classList.add('hidden');
+    if (!deptID) { errEl.textContent = 'Please select a department.'; errEl.classList.remove('hidden'); return; }
+    assignBtn.disabled = true;
+    try {
+      const res = await fetch(`/admin/people/${personID}/departments`, {
+        method: 'POST',
+        body: new URLSearchParams({ dept_id: deptID }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        errEl.textContent = d.error || 'Could not assign.';
+        errEl.classList.remove('hidden');
+        assignBtn.disabled = false;
+        return;
+      }
+      // Add row to table
+      const parts = deptText.split(' — ');
+      const name    = parts[0].trim();
+      const faculty = parts[1]?.trim() || '';
+      const tr = document.createElement('tr');
+      tr.className = 'sess-row dept-row';
+      tr.dataset.deptId = deptID;
+      tr.innerHTML = `<td class="orole-name">${name}</td>
+        <td class="dept-faculty-cell">${faculty}</td>
+        <td class="sess-actions"><span class="sess-status"></span>
+          <button class="btn-danger-sm dept-remove-btn" type="button" title="Remove">✕</button>
+        </td>`;
+      tbody.appendChild(tr);
+      attachRemove(tr);
+      // Remove from select
+      deptSel.options[deptSel.selectedIndex].remove();
+      deptSel.value = '';
+      addForm.classList.add('hidden');
+      addBtn.classList.remove('hidden');
+    } catch {
+      errEl.textContent = 'Network error.';
+      errEl.classList.remove('hidden');
+    }
+    assignBtn.disabled = false;
   });
 })();
 {{end}}

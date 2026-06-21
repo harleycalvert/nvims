@@ -352,10 +352,11 @@ type AdminUserRow struct {
 }
 
 type StaffSearchRow struct {
-	ID          int64
-	FullName    string
-	StaffNumber string
-	StaffEmail  string
+	ID               int64
+	FullName         string
+	StaffNumber      string
+	StaffEmail       string
+	ExistingUsername string // their regular (non-Admin) account username, if any
 }
 
 func (s *Store) ListAdminUsers(ctx context.Context) ([]AdminUserRow, error) {
@@ -391,28 +392,33 @@ func (s *Store) ListAdminUsers(ctx context.Context) ([]AdminUserRow, error) {
 
 // SearchCurrentStaff returns current staff matching q. When q is empty, returns all (up to 100).
 func (s *Store) SearchCurrentStaff(ctx context.Context, q string) ([]StaffSearchRow, error) {
-	sql := `
+	// Left-join app_users to surface the person's existing (non-Admin) account username.
+	// If they have multiple accounts, take the one without an active Admin role.
+	baseSelect := `
 		SELECT p.id,
 		       p.first_given_name || ' ' || p.family_name,
 		       sf.staff_number,
-		       sf.staff_email
+		       sf.staff_email,
+		       COALESCE((
+		           SELECT u.username FROM public.app_users u
+		           WHERE u.person_id = p.id
+		             AND NOT EXISTS (
+		                 SELECT 1 FROM public.app_user_roles r
+		                 WHERE r.user_id = u.id AND r.role = 'Admin' AND r.revoked_at IS NULL
+		             )
+		           LIMIT 1
+		       ), '')
 		FROM public.staff sf
-		JOIN public.people p ON p.id = sf.id
-		ORDER BY p.family_name, p.first_given_name
-		LIMIT 100`
+		JOIN public.people p ON p.id = sf.id`
+	var sql string
 	args := []any{}
-	if q != "" {
-		sql = `
-		SELECT p.id,
-		       p.first_given_name || ' ' || p.family_name,
-		       sf.staff_number,
-		       sf.staff_email
-		FROM public.staff sf
-		JOIN public.people p ON p.id = sf.id
+	if q == "" {
+		sql = baseSelect + ` ORDER BY p.family_name, p.first_given_name LIMIT 100`
+	} else {
+		sql = baseSelect + `
 		WHERE (p.first_given_name ILIKE $1 OR p.family_name ILIKE $1
 		    OR sf.staff_email ILIKE $1 OR sf.staff_number ILIKE $1)
-		ORDER BY p.family_name, p.first_given_name
-		LIMIT 50`
+		ORDER BY p.family_name, p.first_given_name LIMIT 50`
 		args = append(args, "%"+q+"%")
 	}
 	rows, err := s.pool.Query(ctx, sql, args...)
@@ -423,7 +429,7 @@ func (s *Store) SearchCurrentStaff(ctx context.Context, q string) ([]StaffSearch
 	var out []StaffSearchRow
 	for rows.Next() {
 		var row StaffSearchRow
-		if err := rows.Scan(&row.ID, &row.FullName, &row.StaffNumber, &row.StaffEmail); err != nil {
+		if err := rows.Scan(&row.ID, &row.FullName, &row.StaffNumber, &row.StaffEmail, &row.ExistingUsername); err != nil {
 			return nil, err
 		}
 		out = append(out, row)
@@ -452,6 +458,45 @@ func (s *Store) CreateAdminUserForPerson(ctx context.Context, personID int64, us
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// CreateUserForPerson creates a login account with no role. Role is granted
+// separately when the person's type (staff/student etc.) is assigned.
+func (s *Store) CreateUserForPerson(ctx context.Context, personID int64, username, passwordHash string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO public.app_users (person_id, username, password_hash, is_active)
+		VALUES ($1, $2, $3, true)
+	`, personID, username, passwordHash)
+	return err
+}
+
+// PersonHasUsername reports whether any existing app_users row for personID
+// already uses username (case-insensitive).
+func (s *Store) PersonHasUsername(ctx context.Context, personID int64, username string) (bool, error) {
+	var exists bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+		    SELECT 1 FROM public.app_users
+		    WHERE person_id = $1 AND lower(username) = lower($2)
+		)
+	`, personID, username).Scan(&exists)
+	return exists, err
+}
+
+// GrantAppUserRole grants role to the app_user linked to personID, if one exists
+// and does not already have the role active. No-ops if the person has no account.
+func (s *Store) GrantAppUserRole(ctx context.Context, personID int64, role string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO public.app_user_roles (user_id, role, granted_at)
+		SELECT u.id, $2, NOW()
+		FROM public.app_users u
+		WHERE u.person_id = $1
+		  AND NOT EXISTS (
+		      SELECT 1 FROM public.app_user_roles r
+		      WHERE r.user_id = u.id AND r.role = $2 AND r.revoked_at IS NULL
+		  )
+	`, personID, role)
+	return err
 }
 
 type PersonAppUser struct {
@@ -871,7 +916,7 @@ type PeopleResult struct {
 	Total int // total matching rows across all pages
 }
 
-func (s *Store) ListPeople(ctx context.Context, search, role string, limit int) (PeopleResult, error) {
+func (s *Store) ListPeople(ctx context.Context, search, role string, deptID int64, limit int) (PeopleResult, error) {
 	const sel = `
 		SELECT p.id, p.first_given_name, p.family_name, p.dob,
 		       (st.id IS NOT NULL)            AS is_student,
@@ -912,6 +957,14 @@ func (s *Store) ListPeople(ctx context.Context, search, role string, limit int) 
 			SELECT 1 FROM public.staff_roles sr
 			JOIN public.role_types rt ON rt.id = sr.role_type_id
 			WHERE sr.staff_id = p.id AND rt.role_name = $%d AND sr.ended_on IS NULL
+		)`, len(args)))
+	}
+
+	if deptID > 0 {
+		args = append(args, deptID)
+		conds = append(conds, fmt.Sprintf(`EXISTS (
+			SELECT 1 FROM public.person_departments pd
+			WHERE pd.person_id = p.id AND pd.department_id = $%d
 		)`, len(args)))
 	}
 
@@ -3066,6 +3119,67 @@ func (s *Store) ListDepartments(ctx context.Context) ([]DepartmentRow, error) {
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) GetPersonDepartments(ctx context.Context, personID int64) (map[int64]bool, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT department_id FROM public.person_departments WHERE person_id = $1
+	`, personID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) SetPersonDepartments(ctx context.Context, personID int64, deptIDs []int64) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, `DELETE FROM public.person_departments WHERE person_id = $1`, personID); err != nil {
+		return err
+	}
+	for _, deptID := range deptIDs {
+		if _, err = tx.Exec(ctx, `
+			INSERT INTO public.person_departments (person_id, department_id) VALUES ($1, $2)
+		`, personID, deptID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+func (s *Store) IsCurrentStaff(ctx context.Context, personID int64) (bool, error) {
+	var exists bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM public.staff WHERE id = $1)
+	`, personID).Scan(&exists)
+	return exists, err
+}
+
+func (s *Store) AddPersonDepartment(ctx context.Context, personID, deptID int64) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO public.person_departments (person_id, department_id) VALUES ($1, $2)
+		ON CONFLICT DO NOTHING
+	`, personID, deptID)
+	return err
+}
+
+func (s *Store) RemovePersonDepartment(ctx context.Context, personID, deptID int64) error {
+	_, err := s.pool.Exec(ctx, `
+		DELETE FROM public.person_departments WHERE person_id = $1 AND department_id = $2
+	`, personID, deptID)
+	return err
 }
 
 func (s *Store) CreateDepartment(ctx context.Context, name string, facultyID pgtype.Int8) (int64, error) {

@@ -1052,6 +1052,7 @@ func (h *Handler) AdminMenu(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) AdminPeople(w http.ResponseWriter, r *http.Request) {
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
 	roleTypes, _ := h.store.ListRoleTypes(r.Context())
+	depts, _ := h.store.ListDepartments(r.Context())
 
 	// build allowed role filter values: system roles + all org role names
 	allowed := map[string]bool{"Student": true, "Staff": true}
@@ -1063,6 +1064,17 @@ func (h *Handler) AdminPeople(w http.ResponseWriter, r *http.Request) {
 		role = ""
 	}
 
+	// validate dept filter against known department IDs
+	var deptID int64
+	if d, err := strconv.ParseInt(r.URL.Query().Get("dept"), 10, 64); err == nil && d > 0 {
+		for _, dept := range depts {
+			if dept.ID == d {
+				deptID = d
+				break
+			}
+		}
+	}
+
 	limit := 50
 	switch r.URL.Query().Get("limit") {
 	case "20":
@@ -1070,7 +1082,7 @@ func (h *Handler) AdminPeople(w http.ResponseWriter, r *http.Request) {
 	case "100":
 		limit = 100
 	}
-	result, err := h.store.ListPeople(r.Context(), search, role, limit)
+	result, err := h.store.ListPeople(r.Context(), search, role, deptID, limit)
 	if err != nil {
 		log.Printf("ListPeople: %v", err)
 		http.Error(w, "database error", http.StatusInternalServerError)
@@ -1083,6 +1095,8 @@ func (h *Handler) AdminPeople(w http.ResponseWriter, r *http.Request) {
 		"Limit":     limit,
 		"Search":    search,
 		"Role":      role,
+		"DeptID":    deptID,
+		"Depts":     depts,
 		"RoleTypes": roleTypes,
 		"User":      user,
 	})
@@ -1109,28 +1123,27 @@ func (h *Handler) AdminPersonCreate(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
 	newPw := r.FormValue("new_password")
 	confirmPw := r.FormValue("confirm_password")
-	wantsAccount := f.Username != "" || newPw != ""
-	if wantsAccount {
-		if f.Username == "" {
-			h.render(w, "admin-person", map[string]any{
-				"IsNew": true, "Form": f, "Error": "Please enter a username for the login account.", "States": auStates, "User": user,
-			})
-			return
-		}
-		if len(newPw) < 8 {
-			h.render(w, "admin-person", map[string]any{
-				"IsNew": true, "Form": f, "Error": "Password must be at least 8 characters.", "States": auStates, "User": user,
-			})
-			return
-		}
-		if newPw != confirmPw {
-			h.render(w, "admin-person", map[string]any{
-				"IsNew": true, "Form": f, "Error": "Passwords do not match.", "States": auStates, "User": user,
-			})
-			return
-		}
+	username := strings.TrimSpace(r.FormValue("username"))
+	if username == "" {
+		h.render(w, "admin-person", map[string]any{
+			"IsNew": true, "Form": f, "Error": "Please enter a username for the login account.", "States": auStates, "User": user,
+		})
+		return
+	}
+	if len(newPw) < 8 {
+		h.render(w, "admin-person", map[string]any{
+			"IsNew": true, "Form": f, "Error": "Password must be at least 8 characters.", "States": auStates, "User": user,
+		})
+		return
+	}
+	if newPw != confirmPw {
+		h.render(w, "admin-person", map[string]any{
+			"IsNew": true, "Form": f, "Error": "Passwords do not match.", "States": auStates, "User": user,
+		})
+		return
 	}
 
 	id, err := h.store.CreatePerson(r.Context(),
@@ -1151,12 +1164,10 @@ func (h *Handler) AdminPersonCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if wantsAccount {
-		hash, err := bcrypt.GenerateFromPassword([]byte(newPw), bcrypt.DefaultCost)
-		if err == nil {
-			if err := h.store.CreateAdminUserForPerson(r.Context(), id, f.Username, string(hash)); err != nil {
-				log.Printf("CreateAdminUserForPerson(person=%d): %v", id, err)
-			}
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPw), bcrypt.DefaultCost)
+	if err == nil {
+		if err := h.store.CreateUserForPerson(r.Context(), id, username, string(hash)); err != nil {
+			log.Printf("CreateUserForPerson(person=%d): %v", id, err)
 		}
 	}
 
@@ -1352,6 +1363,8 @@ func (h *Handler) AdminRoleForm(w http.ResponseWriter, r *http.Request) {
 	if roleType == "staff" && person.IsStaff {
 		data["OrgRoles"], _ = h.store.ListStaffOrgRoles(r.Context(), id)
 		data["RoleTypes"], _ = h.store.ListRoleTypes(r.Context())
+		data["AllDepts"], _ = h.store.ListDepartments(r.Context())
+		data["PersonDepts"], _ = h.store.GetPersonDepartments(r.Context(), id)
 	}
 
 	h.render(w, "admin-role-form", data)
@@ -1375,9 +1388,11 @@ func (h *Handler) AdminRoleAdd(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.Current(r)
 
 	var roleErr error
+	var appRole string
 	switch roleType {
 	case "student":
 		roleErr = h.store.AddStudentRole(r.Context(), id, number, email)
+		appRole = "Student"
 	case "teacher":
 		person, pErr := h.store.GetPerson(r.Context(), id)
 		if pErr != nil || !person.IsStaff {
@@ -1385,11 +1400,19 @@ func (h *Handler) AdminRoleAdd(w http.ResponseWriter, r *http.Request) {
 		} else {
 			roleErr = h.store.AddTeacherRole(r.Context(), id)
 		}
+		appRole = "Teacher"
 	case "staff":
 		roleErr = h.store.AddStaffRole(r.Context(), id, number, email, empStatus, fte)
+		appRole = "Staff"
 	default:
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
+	}
+
+	if roleErr == nil && appRole != "" {
+		if err := h.store.GrantAppUserRole(r.Context(), id, appRole); err != nil {
+			log.Printf("GrantAppUserRole(%d, %s): %v", id, appRole, err)
+		}
 	}
 
 	if roleErr != nil {
@@ -3014,6 +3037,49 @@ func (h *Handler) AdminOrgRoleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.store.DeleteStaffOrgRole(r.Context(), roleID, personID); err != nil {
 		log.Printf("DeleteStaffOrgRole(%d,%d): %v", roleID, personID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) AdminPersonDeptAdd(w http.ResponseWriter, r *http.Request) {
+	personID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || personID == 0 {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	deptID, err := strconv.ParseInt(r.FormValue("dept_id"), 10, 64)
+	if err != nil || deptID == 0 {
+		http.Error(w, `{"error":"invalid department"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.AddPersonDepartment(r.Context(), personID, deptID); err != nil {
+		log.Printf("AddPersonDepartment(%d,%d): %v", personID, deptID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) AdminPersonDeptRemove(w http.ResponseWriter, r *http.Request) {
+	personID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || personID == 0 {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	deptID, err := strconv.ParseInt(r.PathValue("deptId"), 10, 64)
+	if err != nil || deptID == 0 {
+		http.Error(w, `{"error":"bad dept id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.store.RemovePersonDepartment(r.Context(), personID, deptID); err != nil {
+		log.Printf("RemovePersonDepartment(%d,%d): %v", personID, deptID, err)
 		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 		return
 	}
@@ -5290,12 +5356,13 @@ func (h *Handler) SystemUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.render(w, "system-users", map[string]any{
-		"User":           user,
-		"Admins":         admins,
-		"Saved":          r.URL.Query().Get("saved") == "1",
-		"ErrDup":         r.URL.Query().Get("err") == "dup",
-		"ErrPwd":         r.URL.Query().Get("err") == "pwd",
-		"AutoRevoked":    revoked,
+		"User":        user,
+		"Admins":      admins,
+		"Saved":       r.URL.Query().Get("saved") == "1",
+		"ErrDup":      r.URL.Query().Get("err") == "dup",
+		"ErrPwd":      r.URL.Query().Get("err") == "pwd",
+		"ErrSameUser": r.URL.Query().Get("err") == "sameuser",
+		"AutoRevoked": revoked,
 	})
 }
 
@@ -5309,6 +5376,11 @@ func (h *Handler) SystemUserCreate(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/system/users?err=nostaff", http.StatusSeeOther)
 		return
 	}
+	// Verify person is actually current staff before creating a login.
+	if ok, err := h.store.IsCurrentStaff(r.Context(), personID); err != nil || !ok {
+		http.Redirect(w, r, "/system/users?err=nostaff", http.StatusSeeOther)
+		return
+	}
 	username := strings.TrimSpace(r.FormValue("username"))
 	password := r.FormValue("password")
 	confirm  := r.FormValue("confirm")
@@ -5318,6 +5390,11 @@ func (h *Handler) SystemUserCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	if password != confirm {
 		http.Redirect(w, r, "/system/users?err=pwd", http.StatusSeeOther)
+		return
+	}
+	// Admin username must be distinct from the person's regular account username.
+	if taken, err := h.store.PersonHasUsername(r.Context(), personID, username); err != nil || taken {
+		http.Redirect(w, r, "/system/users?err=sameuser", http.StatusSeeOther)
 		return
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -5342,14 +5419,15 @@ func (h *Handler) SystemUsersStaffSearch(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	type row struct {
-		ID          int64  `json:"id"`
-		FullName    string `json:"full_name"`
-		StaffNumber string `json:"staff_number"`
-		StaffEmail  string `json:"staff_email"`
+		ID               int64  `json:"id"`
+		FullName         string `json:"full_name"`
+		StaffNumber      string `json:"staff_number"`
+		StaffEmail       string `json:"staff_email"`
+		ExistingUsername string `json:"existing_username"`
 	}
 	out := make([]row, len(results))
 	for i, r := range results {
-		out[i] = row{r.ID, r.FullName, r.StaffNumber, r.StaffEmail}
+		out[i] = row{r.ID, r.FullName, r.StaffNumber, r.StaffEmail, r.ExistingUsername}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)

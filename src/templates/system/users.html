@@ -43,6 +43,9 @@
     {{if .ErrDup}}
     <div class="form-error" style="margin-bottom:1rem">That username is already taken — choose a different one.</div>
     {{end}}
+    {{if .ErrSameUser}}
+    <div class="form-error" style="margin-bottom:1rem">The Admin username must be different from the person's regular account username.</div>
+    {{end}}
     {{if .ErrPwd}}
     <div class="form-error" style="margin-bottom:1rem">Passwords did not match or were empty.</div>
     {{end}}
@@ -166,11 +169,12 @@
         <td>${s.staff_email}</td>
         <td class="sess-actions">
           <button class="btn-row-action add-btn" type="button"
-                  data-id="${s.id}" data-name="${s.full_name}" data-email="${s.staff_email}">Add</button>
+                  data-id="${s.id}" data-name="${s.full_name}"
+                  data-existing="${s.existing_username}">Add</button>
         </td>
       </tr>`).join('');
     tbody.querySelectorAll('.add-btn').forEach(btn => {
-      btn.addEventListener('click', () => openAddPanel(btn.dataset.id, btn.dataset.name, btn.dataset.email));
+      btn.addEventListener('click', () => openAddPanel(btn.dataset.id, btn.dataset.name, btn.dataset.existing));
     });
   }
 
@@ -195,23 +199,47 @@
   const panel     = document.getElementById('add-panel');
   const panelName = document.getElementById('add-panel-name');
 
-  function openAddPanel(id, name, email) {
+  let currentExistingUsername = '';
+
+  function openAddPanel(id, name, existingUsername) {
+    currentExistingUsername = existingUsername || '';
     document.getElementById('add-person-id').value = id;
-    document.getElementById('add-username').value  = email;
+    // Suggest a distinct Admin username — append .admin to their regular username,
+    // or leave blank if no regular account exists.
+    const suggestedAdmin = existingUsername ? existingUsername + '.admin' : '';
+    document.getElementById('add-username').value = suggestedAdmin;
     panelName.textContent = name;
     panel.classList.remove('hidden');
     panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    document.getElementById('add-pwd').focus();
+    document.getElementById('add-username').focus();
+    checkSameUser();
   }
 
   document.getElementById('add-cancel').addEventListener('click', () => {
     panel.classList.add('hidden');
+    currentExistingUsername = '';
     document.getElementById('add-person-id').value = '';
     document.getElementById('add-username').value  = '';
     document.getElementById('add-pwd').value        = '';
     document.getElementById('add-confirm').value    = '';
     document.getElementById('pwd-hint').textContent = '';
+    userHint.textContent = '';
+    submit.disabled = false;
   });
+
+  // ── Username distinct check ───────────────────────────────────────────────
+  const usernameInput = document.getElementById('add-username');
+  const userHint      = document.createElement('span');
+  userHint.className  = 'field-hint';
+  usernameInput.parentNode.appendChild(userHint);
+
+  function checkSameUser() {
+    const same = currentExistingUsername &&
+                 usernameInput.value.trim().toLowerCase() === currentExistingUsername.toLowerCase();
+    userHint.textContent = same ? 'Must differ from their regular account username' : '';
+    document.getElementById('add-submit').disabled = same;
+  }
+  usernameInput.addEventListener('input', checkSameUser);
 
   // ── Password match ───────────────────────────────────────────────────────
   const pwd          = document.getElementById('add-pwd');
@@ -220,10 +248,10 @@
   const submit       = document.getElementById('add-submit');
 
   function checkMatch() {
-    if (!confirmInput.value) { hint.textContent = ''; submit.disabled = false; return; }
+    if (!confirmInput.value) { hint.textContent = ''; return; }
     const ok = pwd.value === confirmInput.value;
     hint.textContent = ok ? '' : 'Passwords do not match';
-    submit.disabled  = !ok;
+    submit.disabled  = !ok || !!userHint.textContent;
   }
   pwd.addEventListener('input', checkMatch);
   confirmInput.addEventListener('input', checkMatch);

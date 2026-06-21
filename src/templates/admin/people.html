@@ -32,6 +32,7 @@
     <div class="admin-toolbar">
       <form id="people-search" class="admin-search" method="GET" action="/admin/people">
         <input id="q" type="search" name="q" value="{{.Search}}" placeholder="Search by name, email, or ID…" autocomplete="off">
+        <a class="btn-primary" href="/admin/people/new">+ Add Person</a>
         <select id="role-filter" name="role" class="search-role-select">
           <option value=""{{if eq .Role ""}} selected{{end}}>All roles</option>
           <optgroup label="System">
@@ -46,13 +47,20 @@
           </optgroup>
           {{end}}
         </select>
+        {{if .Depts}}
+        <select id="dept-filter" name="dept" class="search-role-select">
+          <option value=""{{if eq .DeptID 0}} selected{{end}}>All departments</option>
+          {{range .Depts}}
+          <option value="{{.ID}}"{{if eq $.DeptID .ID}} selected{{end}}>{{.Name}}{{if .FacultyName}} — {{.FacultyName}}{{end}}</option>
+          {{end}}
+        </select>
+        {{end}}
         <select id="limit-select" name="limit" class="search-role-select">
           <option value="20"{{if eq .Limit 20}} selected{{end}}>20</option>
           <option value="50"{{if eq .Limit 50}} selected{{end}}>50</option>
           <option value="100"{{if eq .Limit 100}} selected{{end}}>100</option>
         </select>
       </form>
-      <a class="btn-primary" href="/admin/people/new">+ Add Person</a>
     </div>
 
     {{if not .People}}
@@ -78,9 +86,9 @@
           {{range .People}}
           <tr>
             <td class="col-name">{{.FamilyName}}, {{.FirstName}}</td>
-            <td class="col-role">{{if .IsStudent}}<span class="role-badge role-student">{{.StudentNumber}}</span>{{end}}</td>
-            <td class="col-role">{{if .IsTeacher}}<span class="role-badge role-teacher">{{.StaffNumber}}</span>{{end}}</td>
-            <td class="col-role">{{if .IsStaff}}<span class="role-badge role-staff">{{.StaffNumber}}</span>{{end}}</td>
+            <td class="col-role">{{if .IsStudent}}<a class="role-badge role-student" href="/admin/people/{{.ID}}/role?type=student">{{.StudentNumber}}</a>{{end}}</td>
+            <td class="col-role">{{if .IsTeacher}}<a class="role-badge role-teacher" href="/admin/people/{{.ID}}/role?type=staff">{{.StaffNumber}}</a>{{end}}</td>
+            <td class="col-role">{{if .IsStaff}}<a class="role-badge role-staff" href="/admin/people/{{.ID}}/role?type=staff">{{.StaffNumber}}</a>{{end}}</td>
             <td><a class="btn-row-action" href="/admin/people/{{.ID}}">Edit</a></td>
           </tr>
           {{end}}
@@ -98,7 +106,7 @@
         clearTimeout(debounce);
         debounce = setTimeout(function () { form.submit(); }, 300);
       });
-      ['role-filter', 'limit-select'].forEach(function (id) {
+      ['role-filter', 'dept-filter', 'limit-select'].forEach(function (id) {
         document.getElementById(id).addEventListener('change', function () {
           clearTimeout(debounce);
           form.submit();

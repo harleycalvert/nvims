@@ -213,6 +213,8 @@ func main() {
 	mux.HandleFunc("POST /admin/people/{id}/org-roles/new",        P("people:manage", h.AdminOrgRoleAdd))
 	mux.HandleFunc("POST /admin/people/{id}/org-roles/{rid}",      P("people:manage", h.AdminOrgRoleUpdateEnd))
 	mux.HandleFunc("POST /admin/people/{id}/org-roles/{rid}/delete",P("people:manage",h.AdminOrgRoleDelete))
+	mux.HandleFunc("POST /admin/people/{id}/departments",               P("people:manage", h.AdminPersonDeptAdd))
+	mux.HandleFunc("POST /admin/people/{id}/departments/{deptId}/remove", P("people:manage", h.AdminPersonDeptRemove))
 	mux.HandleFunc("POST /admin/people/{id}/change-password",      P("people:manage", h.AdminPersonChangePassword))
 	mux.HandleFunc("POST /admin/people/{id}/location-pref",        P("people:manage", h.AdminPersonLocationPrefSave))
 	mux.HandleFunc("GET /admin/students/search",                   P("people:view",   h.AdminStudentSearch))
