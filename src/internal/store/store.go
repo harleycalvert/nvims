@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -3294,7 +3295,7 @@ type VCCDetail struct {
 	TeacherID    int64
 	TeacherName  string
 	CalendarYear int
-	VersionLabel string
+	VersionLabel *string
 	Status       string
 	ApprovedAt   time.Time // zero means not set
 	Notes        string
@@ -3828,6 +3829,20 @@ func (s *Store) DeleteVCCUnitElement(ctx context.Context, teacherID, elemID int6
 	return err
 }
 
+func (s *Store) CreateVCC(ctx context.Context, teacherID int64, year int) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO public.teacher_vccs (teacher_id, calendar_year, version, status)
+		VALUES ($1, $2, 1, 'Draft')
+		ON CONFLICT (teacher_id, calendar_year, version) DO NOTHING
+		RETURNING id
+	`, teacherID, year).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
 func (s *Store) GetLatestVCCForTeacher(ctx context.Context, teacherID int64) (*VCCDetail, error) {
 	var id int64
 	err := s.pool.QueryRow(ctx, `
@@ -3879,6 +3894,41 @@ func (s *Store) UpdateVCCUnitRatings(ctx context.Context, teacherID, unitID int6
 		  AND vcc_id IN (SELECT id FROM teacher_vccs WHERE teacher_id = $4)
 	`, enthusiasm, confidence, unitID, teacherID)
 	return err
+}
+
+// UpsertSubjectRating finds the teacher_vcc_units record matching the subject's
+// code and updates the enthusiasm/confidence ratings. If no record exists, it
+// creates a minimal one with default method so the rating can be saved.
+func (s *Store) UpsertSubjectRating(ctx context.Context, teacherID, subjectID int64, enthusiasm, confidence pgtype.Int2) (int64, error) {
+	var unitID int64
+	// Try to find an existing unit record matching this subject's code in the teacher's latest VCC.
+	err := s.pool.QueryRow(ctx, `
+		SELECT tu.id
+		FROM public.teacher_vcc_units tu
+		JOIN public.teacher_vccs tv ON tv.id = tu.vcc_id AND tv.teacher_id = $1
+		JOIN public.subjects s      ON s.subject_code = tu.unit_code AND s.id = $2
+		ORDER BY tv.calendar_year DESC, tv.version DESC
+		LIMIT 1
+	`, teacherID, subjectID).Scan(&unitID)
+	if err == pgx.ErrNoRows {
+		// Auto-create a minimal unit record linked to this subject's code.
+		err = s.pool.QueryRow(ctx, `
+			INSERT INTO teacher_vcc_units (vcc_id, unit_code, unit_title, competency_method, status)
+			SELECT (SELECT id FROM teacher_vccs WHERE teacher_id = $1
+			        ORDER BY calendar_year DESC, version DESC LIMIT 1),
+			       s.subject_code, s.subject_name,
+			       'I hold the current unit of competency', 'Pending'
+			FROM public.subjects s WHERE s.id = $2
+			RETURNING id
+		`, teacherID, subjectID).Scan(&unitID)
+		if err != nil {
+			return 0, err
+		}
+	} else if err != nil {
+		return 0, err
+	}
+	err = s.UpdateVCCUnitRatings(ctx, teacherID, unitID, enthusiasm, confidence)
+	return unitID, err
 }
 
 func (s *Store) UpdateVCCPQ(ctx context.Context, teacherID, pqID int64,
@@ -4984,6 +5034,9 @@ type SubjectWithEvidence struct {
 	SubjectID       int64                 `json:"subjectId"`
 	SubjectCode     string                `json:"subjectCode"`
 	SubjectName     string                `json:"subjectName"`
+	UnitID          int64                 `json:"unitId"`
+	Enthusiasm      int                   `json:"enthusiasm"`
+	Confidence      int                   `json:"confidence"`
 	Links           []SubjectEvidenceLink `json:"links"`
 	HasVoc          bool                  `json:"hasVoc"`
 	HasProf         bool                  `json:"hasProf"`
@@ -5078,12 +5131,17 @@ func (s *Store) ProgramsWithSubjects(ctx context.Context, vccID, facultyID int64
 	}
 
 	subRows, err := s.pool.Query(ctx, `
-		SELECT sp.program_id, s.id, s.subject_code, s.subject_name
+		SELECT sp.program_id, s.id, s.subject_code, s.subject_name,
+		       COALESCE(tu.id, 0),
+		       COALESCE(tu.enthusiasm_rating, 0),
+		       COALESCE(tu.confidence_rating, 0)
 		FROM public.subject_programs sp
 		JOIN public.subjects s ON s.id = sp.subject_id
+		LEFT JOIN public.teacher_vcc_units tu
+		       ON tu.unit_code = s.subject_code AND tu.vcc_id = $2
 		WHERE sp.program_id = ANY($1)
 		ORDER BY sp.program_id, s.subject_code
-	`, programIDs)
+	`, programIDs, vccID)
 	if err != nil {
 		return nil, err
 	}
@@ -5093,9 +5151,10 @@ func (s *Store) ProgramsWithSubjects(ctx context.Context, vccID, facultyID int64
 	// subjectIdx: programID → subjectID → index in Subjects slice
 	subjectIdx := map[int64]map[int64]int{}
 	for subRows.Next() {
-		var programID, subjectID int64
+		var programID, subjectID, unitID int64
 		var code, name string
-		if err := subRows.Scan(&programID, &subjectID, &code, &name); err != nil {
+		var enthusiasm, confidence int
+		if err := subRows.Scan(&programID, &subjectID, &code, &name, &unitID, &enthusiasm, &confidence); err != nil {
 			return nil, err
 		}
 		pi := progIdx[programID]
@@ -5107,6 +5166,9 @@ func (s *Store) ProgramsWithSubjects(ctx context.Context, vccID, facultyID int64
 			SubjectID:   subjectID,
 			SubjectCode: code,
 			SubjectName: name,
+			UnitID:      unitID,
+			Enthusiasm:  enthusiasm,
+			Confidence:  confidence,
 			Links:       []SubjectEvidenceLink{},
 		})
 		subjectIDs = append(subjectIDs, subjectID)

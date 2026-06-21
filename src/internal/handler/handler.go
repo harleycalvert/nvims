@@ -142,6 +142,7 @@ func New(st *store.Store, sessions *auth.Sessions, stor *storage.Client) *Handle
 	}
 	funcs["dateDayName"] = func(t time.Time) string { return t.Format("Mon") }
 	funcs["sub"] = func(a, b int) int { return a - b }
+	funcs["currentYear"] = func() int { return time.Now().Year() }
 	funcs["sessionTypeClass"] = func(t string) string {
 		switch t {
 		case "Assessment":  return "sess-assessment"
@@ -3750,6 +3751,23 @@ func (h *Handler) VCCVocationalEvidence(w http.ResponseWriter, r *http.Request) 
 }
 
 // VCCIndex — show the current user's own VCC as an editable page.
+func (h *Handler) VCCCreate(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	year := time.Now().Year()
+	id, err := h.store.CreateVCC(r.Context(), user.PersonID, year)
+	if err != nil {
+		log.Printf("CreateVCC(%d, %d): %v", user.PersonID, year, err)
+		http.Error(w, "Could not create VCC — ensure your account is linked to a teacher record.", http.StatusBadRequest)
+		return
+	}
+	if id == 0 {
+		// ON CONFLICT DO NOTHING — a record for this year/version already exists
+		http.Redirect(w, r, "/vcc/detail", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/vcc/detail", http.StatusSeeOther)
+}
+
 func (h *Handler) VCCIndex(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.Current(r)
 	vcc, err := h.store.GetLatestVCCForTeacher(r.Context(), user.PersonID)
@@ -4172,6 +4190,30 @@ func (h *Handler) VCCUnitRatingSave(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *Handler) VCCSubjectRatingSave(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	subjectID, err := strconv.ParseInt(r.PathValue("sid"), 10, 64)
+	if err != nil || subjectID == 0 {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	unitID, err := h.store.UpsertSubjectRating(r.Context(), user.PersonID, subjectID,
+		parseRating(r.FormValue("enthusiasm_rating")),
+		parseRating(r.FormValue("confidence_rating")),
+	)
+	if err != nil {
+		log.Printf("UpsertSubjectRating(%d,%d): %v", user.PersonID, subjectID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"ok":true,"unit_id":%d}`, unitID)
 }
 
 func (h *Handler) VCCPQUpdate(w http.ResponseWriter, r *http.Request) {

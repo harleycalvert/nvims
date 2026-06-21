@@ -31,7 +31,12 @@
   <main class="sessions-main">
 
   {{if not .VCC}}
-    <p class="vcc-empty">No VCC record found for your account.</p>
+    <div class="vcc-empty-state">
+      <p class="vcc-empty">No VCC record found for your account.</p>
+      <form method="POST" action="/vcc/new">
+        <button class="btn-primary" type="submit">Start {{currentYear}} VCC</button>
+      </form>
+    </div>
   {{else}}
 
     {{$vcc := .VCC}}
@@ -839,6 +844,22 @@
     const linksHtml = (s.links && s.links.length)
       ? s.links.map(pitRenderLink).join('')
       : '<p class="pit-no-links">No evidence linked yet.</p>';
+    const ratingsHtml = `<div class="vcc-ratings pit-ratings"
+          data-subject-id="${s.subjectId}"
+          data-unit-id="${s.unitId||0}"
+          data-enthusiasm="${s.enthusiasm||0}"
+          data-confidence="${s.confidence||0}">
+        <div class="vcc-rating-row">
+          <span class="vcc-rating-prompt">How enthusiastic are you about teaching this unit?</span>
+          <div class="vcc-stars" data-field="enthusiasm_rating"></div>
+          <span class="vcc-rating-ind"></span>
+        </div>
+        <div class="vcc-rating-row">
+          <span class="vcc-rating-prompt">How confident are you about teaching this unit?</span>
+          <div class="vcc-stars" data-field="confidence_rating"></div>
+          <span class="vcc-rating-ind"></span>
+        </div>
+      </div>`;
     return `<tr class="pit-subj-row" data-subject-id="${s.subjectId}">
         <td class="pit-col-code mono">${s.subjectCode}</td>
         <td class="pit-col-name">${s.subjectName}</td>
@@ -850,6 +871,7 @@
       <tr class="pit-ev-row hidden" data-subject-id="${s.subjectId}">
         <td colspan="4" class="pit-ev-cell">
           <div class="pit-ev-panel">
+            ${ratingsHtml}
             <div class="pit-ev-links" id="pit-links-${s.subjectId}">${linksHtml}</div>
             <div class="pit-ev-add">
               <div class="pit-ev-add-row">
@@ -907,6 +929,62 @@
       const body = el.querySelector('.pit-program-body');
       body.classList.toggle('hidden');
       el.classList.toggle('open', !body.classList.contains('hidden'));
+    });
+
+    // star ratings on each subject
+    el.querySelectorAll('.pit-ratings').forEach(ratingsEl => {
+      const subjectId = ratingsEl.dataset.subjectId;
+      function pitInitStars(container, field) {
+        const key = field === 'enthusiasm_rating' ? 'enthusiasm' : 'confidence';
+        let current = +ratingsEl.dataset[key] || 0;
+        for (let i = 1; i <= 5; i++) {
+          const s = document.createElement('span');
+          s.className = 'vcc-star' + (i <= current ? ' filled' : '');
+          s.textContent = '★';
+          s.dataset.v = i;
+          container.appendChild(s);
+        }
+        function applyFill(val) {
+          container.querySelectorAll('.vcc-star').forEach(st =>
+            st.classList.toggle('filled', +st.dataset.v <= val));
+        }
+        container.addEventListener('mouseover', e => {
+          const s = e.target.closest('.vcc-star');
+          if (!s) return;
+          container.querySelectorAll('.vcc-star').forEach(st =>
+            st.classList.toggle('preview', +st.dataset.v <= +s.dataset.v));
+        });
+        container.addEventListener('mouseleave', () =>
+          container.querySelectorAll('.vcc-star').forEach(st => st.classList.remove('preview')));
+        container.addEventListener('click', async e => {
+          const s = e.target.closest('.vcc-star');
+          if (!s) return;
+          const val = +s.dataset.v;
+          ratingsEl.dataset[key] = val;
+          applyFill(val);
+          const ind = container.nextElementSibling;
+          ind.textContent = '…';
+          try {
+            const res = await fetch(`/vcc/subjects/${subjectId}/rating`, {
+              method: 'POST',
+              body: new URLSearchParams({
+                enthusiasm_rating: ratingsEl.dataset.enthusiasm,
+                confidence_rating: ratingsEl.dataset.confidence,
+              }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.unit_id) ratingsEl.dataset.unitId = data.unit_id;
+              ind.textContent = '✓';
+            } else {
+              ind.textContent = '!';
+            }
+            setTimeout(() => { ind.textContent = ''; }, 1500);
+          } catch { ind.textContent = '!'; }
+        });
+      }
+      ratingsEl.querySelectorAll('.vcc-stars').forEach(container =>
+        pitInitStars(container, container.dataset.field));
     });
 
     // subject row expand
