@@ -34,7 +34,7 @@
     <div class="vcc-empty-state">
       <p class="vcc-empty">No VCC record found for your account.</p>
       <form method="POST" action="/vcc/new">
-        <button class="btn-primary" type="submit">Start {{currentYear}} VCC</button>
+        <button class="btn-primary" type="submit">Start VCC</button>
       </form>
     </div>
   {{else}}
@@ -844,6 +844,24 @@
     const linksHtml = (s.links && s.links.length)
       ? s.links.map(pitRenderLink).join('')
       : '<p class="pit-no-links">No evidence linked yet.</p>';
+    const methods = [
+      'I hold the current unit of competency',
+      'I hold a superseded and equivalent unit of competency',
+      'I hold a recognition of relevant study and/or vocational work experience',
+    ];
+    const methodRadios = methods.map((m, i) => {
+      const id = `pit-method-${s.subjectId}-${i}`;
+      const checked = (s.competencyMethod === m) ? ' checked' : '';
+      return `<label class="pit-method-label">
+        <input class="pit-method-radio" type="radio" name="pit-method-${s.subjectId}" value="${m}"${checked}>
+        <span>${m}</span>
+      </label>`;
+    }).join('');
+    const methodHtml = `<div class="pit-method-group" data-subject-id="${s.subjectId}">
+        <div class="pit-method-title">Competency basis</div>
+        ${methodRadios}
+        <span class="pit-method-ind"></span>
+      </div>`;
     const ratingsHtml = `<div class="vcc-ratings pit-ratings"
           data-subject-id="${s.subjectId}"
           data-unit-id="${s.unitId||0}"
@@ -871,6 +889,7 @@
       <tr class="pit-ev-row hidden" data-subject-id="${s.subjectId}">
         <td colspan="4" class="pit-ev-cell">
           <div class="pit-ev-panel">
+            ${methodHtml}
             ${ratingsHtml}
             <div class="pit-ev-links" id="pit-links-${s.subjectId}">${linksHtml}</div>
             <div class="pit-ev-add">
@@ -929,6 +948,34 @@
       const body = el.querySelector('.pit-program-body');
       body.classList.toggle('hidden');
       el.classList.toggle('open', !body.classList.contains('hidden'));
+    });
+
+    // competency method radio buttons
+    el.querySelectorAll('.pit-method-group').forEach(methodEl => {
+      const subjectId = methodEl.dataset.subjectId;
+      const ind = methodEl.querySelector('.pit-method-ind');
+      methodEl.querySelectorAll('.pit-method-radio').forEach(radio => {
+        radio.addEventListener('change', async () => {
+          if (!radio.checked) return;
+          ind.textContent = '…';
+          try {
+            const res = await fetch(`/vcc/subjects/${subjectId}/method`, {
+              method: 'POST',
+              body: new URLSearchParams({ competency_method: radio.value }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              // propagate new unit_id to ratings widget so stars can save
+              const ratingsEl = methodEl.closest('.pit-ev-panel').querySelector('.pit-ratings');
+              if (ratingsEl && data.unit_id) ratingsEl.dataset.unitId = data.unit_id;
+              ind.textContent = '✓';
+            } else {
+              ind.textContent = '!';
+            }
+            setTimeout(() => { ind.textContent = ''; }, 1500);
+          } catch { ind.textContent = '!'; }
+        });
+      });
     });
 
     // star ratings on each subject

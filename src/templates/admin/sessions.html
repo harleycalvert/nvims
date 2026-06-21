@@ -948,6 +948,22 @@
       return '<span class="ts-badge">' + method.slice(0,12) + '…</span>';
     }
 
+    function tsMiniStars(val) {
+      let s = '';
+      for (let i = 1; i <= 5; i++) {
+        s += i <= val ? '<span>★</span>' : '<span class="ts-star-empty">★</span>';
+      }
+      return `<span class="ts-stars-mini">${s}</span>`;
+    }
+
+    function tsAvgRating(covered) {
+      const rated = (covered || []).filter(u => u.enthusiasm || u.confidence);
+      if (!rated.length) return null;
+      const e = Math.round(rated.reduce((a, u) => a + (u.enthusiasm || 0), 0) / rated.length);
+      const c = Math.round(rated.reduce((a, u) => a + (u.confidence || 0), 0) / rated.length);
+      return { e, c };
+    }
+
     function showSuggestDialog(data) {
       const units    = data.units    || [];
       const teachers = data.teachers || [];
@@ -958,7 +974,7 @@
       if (perUnit) {
         thUnits = units.map(u => `<th title="${u.name}">${u.code}</th>`).join('');
       } else {
-        thUnits = '<th>Units covered</th>';
+        thUnits = '<th>Units covered</th><th title="Average enthusiasm rating">Enthusiasm</th><th title="Average confidence rating">Confidence</th>';
       }
 
       // Build rows — sorted: covered desc, rank asc, name asc
@@ -979,12 +995,21 @@
           unitCells = units.map(u => {
             const cu = covSet[u.code];
             if (!cu) return '<td class="ts-cell-no">✗</td>';
-            return `<td class="ts-cell-yes" title="${cu.method}">${methodBadge(cu.method)}</td>`;
+            const ratings = (cu.enthusiasm || cu.confidence)
+              ? `<div class="ts-unit-ratings">
+                   <div class="ts-rating-mini"><span class="ts-rating-label">E</span>${tsMiniStars(cu.enthusiasm)}</div>
+                   <div class="ts-rating-mini"><span class="ts-rating-label">C</span>${tsMiniStars(cu.confidence)}</div>
+                 </div>`
+              : '';
+            return `<td class="ts-cell-yes" title="${cu.method}">${methodBadge(cu.method)}${ratings}</td>`;
           }).join('');
         } else {
           const n = t.covered.length;
           const pct = units.length ? Math.round(n / units.length * 100) : 0;
-          unitCells = `<td><span class="ts-coverage">${n}/${units.length}</span> <span class="ts-bar"><span class="ts-bar-fill" style="width:${pct}%"></span></span></td>`;
+          const avg = tsAvgRating(t.covered);
+          unitCells = `<td><span class="ts-coverage">${n}/${units.length}</span> <span class="ts-bar"><span class="ts-bar-fill" style="width:${pct}%"></span></span></td>
+            <td class="ts-rating-col">${avg ? tsMiniStars(avg.e) : '<span class="ts-rating-none">—</span>'}</td>
+            <td class="ts-rating-col">${avg ? tsMiniStars(avg.c) : '<span class="ts-rating-none">—</span>'}</td>`;
         }
 
         return `<tr class="ts-row" data-id="${t.id}" data-name="${t.name}">

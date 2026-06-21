@@ -4216,6 +4216,38 @@ func (h *Handler) VCCSubjectRatingSave(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `{"ok":true,"unit_id":%d}`, unitID)
 }
 
+var validCompetencyMethods = map[string]bool{
+	"I hold the current unit of competency":                                          true,
+	"I hold a superseded and equivalent unit of competency":                          true,
+	"I hold a recognition of relevant study and/or vocational work experience":       true,
+}
+
+func (h *Handler) VCCSubjectMethodSave(w http.ResponseWriter, r *http.Request) {
+	user, _ := auth.Current(r)
+	subjectID, err := strconv.ParseInt(r.PathValue("sid"), 10, 64)
+	if err != nil || subjectID == 0 {
+		http.Error(w, `{"error":"bad id"}`, http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	method := r.FormValue("competency_method")
+	if !validCompetencyMethods[method] {
+		http.Error(w, `{"error":"invalid method"}`, http.StatusBadRequest)
+		return
+	}
+	unitID, err := h.store.UpsertSubjectMethod(r.Context(), user.PersonID, subjectID, method)
+	if err != nil {
+		log.Printf("UpsertSubjectMethod(%d,%d): %v", user.PersonID, subjectID, err)
+		http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"ok":true,"unit_id":%d}`, unitID)
+}
+
 func (h *Handler) VCCPQUpdate(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.Current(r)
 	pqID, err := strconv.ParseInt(r.PathValue("pid"), 10, 64)

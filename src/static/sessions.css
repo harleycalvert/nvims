@@ -521,8 +521,8 @@
   border-radius: 10px;
   box-shadow: 0 12px 40px rgba(0,0,0,.3);
   padding: 0;
-  width: min(900px, 95vw);
-  max-height: 80vh;
+  width: min(1200px, 96vw);
+  max-height: 88vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -598,6 +598,15 @@
 .ts-badge-current { background: #d1fae5; color: #065f46; }
 .ts-badge-super   { background: #fef3c7; color: #92400e; }
 .ts-badge-exp     { background: #dbeafe; color: #1e40af; }
+
+.ts-unit-ratings { margin-top: 4px; display: flex; flex-direction: column; gap: 1px; }
+.ts-rating-mini { font-size: 11px; display: flex; align-items: center; gap: 3px; white-space: nowrap; }
+.ts-rating-label { font-size: 9px; font-weight: 700; color: #94a3b8; text-transform: uppercase; min-width: 10px; }
+.ts-stars-mini { color: #f59e0b; letter-spacing: -1px; }
+.ts-stars-mini .ts-star-empty { color: #d1d5db; }
+.ts-rating-col { text-align: center; font-size: 12px; white-space: nowrap; }
+.ts-rating-col .ts-stars-mini { font-size: 13px; letter-spacing: 0; }
+.ts-rating-none { color: #ccc; font-size: 12px; }
 
 .ts-coverage { font-weight: 700; color: #1a4480; }
 .ts-bar {

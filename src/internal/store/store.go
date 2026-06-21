@@ -2667,7 +2667,7 @@ func (s *Store) TeacherSuggestionsForClass(ctx context.Context, classID int64) (
 		FROM (
 		    SELECT DISTINCT ON (teacher_id) id, teacher_id
 		    FROM public.teacher_vccs
-		    WHERE status IN ('Approved', 'Submitted')
+		    WHERE status IN ('Approved', 'Submitted', 'Draft')
 		    ORDER BY teacher_id, calendar_year DESC, id DESC
 		) tv
 		JOIN public.teacher_vcc_units tvu ON tvu.vcc_id = tv.id
@@ -3897,11 +3897,10 @@ func (s *Store) UpdateVCCUnitRatings(ctx context.Context, teacherID, unitID int6
 }
 
 // UpsertSubjectRating finds the teacher_vcc_units record matching the subject's
-// code and updates the enthusiasm/confidence ratings. If no record exists, it
-// creates a minimal one with default method so the rating can be saved.
+// code and updates the enthusiasm/confidence ratings. Returns (0, nil) if no
+// VCC unit record exists — ratings are only stored against declared units.
 func (s *Store) UpsertSubjectRating(ctx context.Context, teacherID, subjectID int64, enthusiasm, confidence pgtype.Int2) (int64, error) {
 	var unitID int64
-	// Try to find an existing unit record matching this subject's code in the teacher's latest VCC.
 	err := s.pool.QueryRow(ctx, `
 		SELECT tu.id
 		FROM public.teacher_vcc_units tu
@@ -3911,23 +3910,50 @@ func (s *Store) UpsertSubjectRating(ctx context.Context, teacherID, subjectID in
 		LIMIT 1
 	`, teacherID, subjectID).Scan(&unitID)
 	if err == pgx.ErrNoRows {
-		// Auto-create a minimal unit record linked to this subject's code.
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	err = s.UpdateVCCUnitRatings(ctx, teacherID, unitID, enthusiasm, confidence)
+	return unitID, err
+}
+
+// UpsertSubjectMethod sets the competency_method for the teacher's VCC unit
+// matching the given subject. Creates the unit record if it doesn't exist yet
+// (selecting a method is how teachers formally declare a unit in their VCC).
+func (s *Store) UpsertSubjectMethod(ctx context.Context, teacherID, subjectID int64, method string) (int64, error) {
+	var unitID int64
+	err := s.pool.QueryRow(ctx, `
+		SELECT tu.id
+		FROM public.teacher_vcc_units tu
+		JOIN public.teacher_vccs tv ON tv.id = tu.vcc_id AND tv.teacher_id = $1
+		JOIN public.subjects s      ON s.subject_code = tu.unit_code AND s.id = $2
+		ORDER BY tv.calendar_year DESC, tv.version DESC
+		LIMIT 1
+	`, teacherID, subjectID).Scan(&unitID)
+	if err == pgx.ErrNoRows {
 		err = s.pool.QueryRow(ctx, `
 			INSERT INTO teacher_vcc_units (vcc_id, unit_code, unit_title, competency_method, status)
 			SELECT (SELECT id FROM teacher_vccs WHERE teacher_id = $1
 			        ORDER BY calendar_year DESC, version DESC LIMIT 1),
-			       s.subject_code, s.subject_name,
-			       'I hold the current unit of competency', 'Pending'
+			       s.subject_code, s.subject_name, $3, 'Pending'
 			FROM public.subjects s WHERE s.id = $2
 			RETURNING id
-		`, teacherID, subjectID).Scan(&unitID)
+		`, teacherID, subjectID, method).Scan(&unitID)
 		if err != nil {
 			return 0, err
 		}
-	} else if err != nil {
+		return unitID, nil
+	}
+	if err != nil {
 		return 0, err
 	}
-	err = s.UpdateVCCUnitRatings(ctx, teacherID, unitID, enthusiasm, confidence)
+	_, err = s.pool.Exec(ctx, `
+		UPDATE teacher_vcc_units SET competency_method = $1
+		WHERE id = $2
+		  AND vcc_id IN (SELECT id FROM teacher_vccs WHERE teacher_id = $3)
+	`, method, unitID, teacherID)
 	return unitID, err
 }
 
@@ -5031,12 +5057,13 @@ type SubjectEvidenceLink struct {
 }
 
 type SubjectWithEvidence struct {
-	SubjectID       int64                 `json:"subjectId"`
-	SubjectCode     string                `json:"subjectCode"`
-	SubjectName     string                `json:"subjectName"`
-	UnitID          int64                 `json:"unitId"`
-	Enthusiasm      int                   `json:"enthusiasm"`
-	Confidence      int                   `json:"confidence"`
+	SubjectID        int64                 `json:"subjectId"`
+	SubjectCode      string                `json:"subjectCode"`
+	SubjectName      string                `json:"subjectName"`
+	UnitID           int64                 `json:"unitId"`
+	CompetencyMethod string                `json:"competencyMethod"`
+	Enthusiasm       int                   `json:"enthusiasm"`
+	Confidence       int                   `json:"confidence"`
 	Links           []SubjectEvidenceLink `json:"links"`
 	HasVoc          bool                  `json:"hasVoc"`
 	HasProf         bool                  `json:"hasProf"`
@@ -5133,6 +5160,7 @@ func (s *Store) ProgramsWithSubjects(ctx context.Context, vccID, facultyID int64
 	subRows, err := s.pool.Query(ctx, `
 		SELECT sp.program_id, s.id, s.subject_code, s.subject_name,
 		       COALESCE(tu.id, 0),
+		       COALESCE(tu.competency_method, ''),
 		       COALESCE(tu.enthusiasm_rating, 0),
 		       COALESCE(tu.confidence_rating, 0)
 		FROM public.subject_programs sp
@@ -5152,9 +5180,9 @@ func (s *Store) ProgramsWithSubjects(ctx context.Context, vccID, facultyID int64
 	subjectIdx := map[int64]map[int64]int{}
 	for subRows.Next() {
 		var programID, subjectID, unitID int64
-		var code, name string
+		var code, name, method string
 		var enthusiasm, confidence int
-		if err := subRows.Scan(&programID, &subjectID, &code, &name, &unitID, &enthusiasm, &confidence); err != nil {
+		if err := subRows.Scan(&programID, &subjectID, &code, &name, &unitID, &method, &enthusiasm, &confidence); err != nil {
 			return nil, err
 		}
 		pi := progIdx[programID]
@@ -5163,13 +5191,14 @@ func (s *Store) ProgramsWithSubjects(ctx context.Context, vccID, facultyID int64
 		}
 		subjectIdx[programID][subjectID] = len(programs[pi].Subjects)
 		programs[pi].Subjects = append(programs[pi].Subjects, SubjectWithEvidence{
-			SubjectID:   subjectID,
-			SubjectCode: code,
-			SubjectName: name,
-			UnitID:      unitID,
-			Enthusiasm:  enthusiasm,
-			Confidence:  confidence,
-			Links:       []SubjectEvidenceLink{},
+			SubjectID:        subjectID,
+			SubjectCode:      code,
+			SubjectName:      name,
+			UnitID:           unitID,
+			CompetencyMethod: method,
+			Enthusiasm:       enthusiasm,
+			Confidence:       confidence,
+			Links:            []SubjectEvidenceLink{},
 		})
 		subjectIDs = append(subjectIDs, subjectID)
 	}

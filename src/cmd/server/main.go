@@ -175,6 +175,7 @@ func main() {
 	mux.HandleFunc("POST /vcc/units/{uid}",                               P("vcc:manage", h.VCCUnitUpdate))
 	mux.HandleFunc("POST /vcc/units/{uid}/rating",                        P("vcc:manage", h.VCCUnitRatingSave))
 	mux.HandleFunc("POST /vcc/subjects/{sid}/rating",                     P("vcc:manage", h.VCCSubjectRatingSave))
+	mux.HandleFunc("POST /vcc/subjects/{sid}/method",                     P("vcc:manage", h.VCCSubjectMethodSave))
 	mux.HandleFunc("POST /vcc/units/{uid}/elements/new",                  P("vcc:manage", h.VCCUnitElementCreate))
 	mux.HandleFunc("POST /vcc/elements/{id}",                             P("vcc:manage", h.VCCUnitElementUpdate))
 	mux.HandleFunc("POST /vcc/elements/{id}/delete",                      P("vcc:manage", h.VCCUnitElementDelete))
