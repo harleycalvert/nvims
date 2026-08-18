@@ -2,10 +2,18 @@
 
 NVIMS is a Student Management System (SMS) and more built for Australian RTOs, TAFEs, and Higher Education providers. It is implemented in PostgreSQL and Go, and is designed to support AVETMISS reporting, teacher workforce compliance (VCC), timetabling, attendance, and enrolment management.
 
-> **Status:** Early development. The system is almost in a usable state for class scheduling, timetabling, resulting, and attendance. 
+> **Status:** Development halted. The system is almost in a usable state for class scheduling, timetabling, resulting, and attendance. 
 
 > **Project commenced:** 5 June 2026  
 > **Development cost to date:** $34.00
+
+---
+
+## Redevelopment Plan
+
+The plan is to redevelop NVIMS from the ground up using an API gateway and microservices, rather than continuing the current monolith. This should facilitate modular, parallel development and make it easier to implement new features without the whole system being tightly coupled together.
+
+The redevelopment will also avoid AVETMISS altogether and target the VET Information Standard directly, along with security by design, cloud nativity, and far superior RBAC compared to the current monolithic system.
 
 ---
 
@@ -90,8 +98,8 @@ The following are deliberately outside the system boundary. NVIMS integrates wit
 - **Assessment creation** — build assessments aligned to units of competency, with TGA training package integration (units sourced directly from training.gov.au)
 - **Assessment maintenance** — version control and review workflows for assessment tools
 
-### AVETMISS Reporting
-- NAT file generation (NAT00010, NAT00020, NAT00030, NAT00060, NAT00080, NAT00085, NAT00090, NAT00120)
+### Compliance Reporting (VET Information Standard)
+- Event-based submission to STARS, superseding AVETMISS NAT file generation (see Redevelopment Plan)
 - State funding supplements (Skills First VIC, Smart & Skilled NSW, etc.)
 
 ### Enrolment Extensions
